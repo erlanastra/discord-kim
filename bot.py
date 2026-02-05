@@ -1,11 +1,7 @@
-import discord
 from discord.ext import commands
+import discord
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-TOKEN = os.getenv("DISCORD_TOKEN")
+import asyncio
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -14,13 +10,32 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     print(f"Bot online sebagai {bot.user}")
 
-    for file in os.listdir("./cogs"):
-        if file.endswith(".py") and not file.startswith("__"):
-            try:
-                await bot.load_extension(f"cogs.{file[:-3]}")
-                print(f"Loaded: {file}")
-            except Exception as e:
-                print(f"Gagal load {file}: {e}")
+# Load semua cog
+async def load_cogs():
+    for cog in [
+        "cogs.announce",
+        "cogs.greeting",
+        "cogs.rules",
+        "cogs.warn",
+        "cogs.moderation",
+        "cogs.modlog",
+        "cogs.utility",
+        "cogs.welcome"
+    ]:
+        try:
+            await bot.load_extension(cog)
+            print(f"Loaded: {cog.split('.')[-1]}.py")
+        except Exception as e:
+            print(f"Gagal load {cog.split('.')[-1]}.py: {e}")
 
+async def main():
+    token = os.getenv("DISCORD_TOKEN")
 
-bot.run(TOKEN)
+    if not token:
+        raise RuntimeError("DISCORD_TOKEN tidak ditemukan di environment variable")
+
+    async with bot:
+        await load_cogs()
+        await bot.start(token)
+
+asyncio.run(main())
