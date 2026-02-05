@@ -15,6 +15,7 @@ async def load_cogs():
     for cog in [
         "cogs.announce",
         "cogs.greeting",
+        "cogs.megagombal",
         "cogs.rules",
         "cogs.warn",
         "cogs.moderation",
