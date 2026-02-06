@@ -2,7 +2,6 @@ import discord
 from discord.ext import commands
 import asyncio
 import yt_dlp
-from discord import Embed
 import time
 
 # ================= CONFIG =================
@@ -62,6 +61,9 @@ class Music(commands.Cog):
         gid = guild.id
         vc = guild.voice_client
 
+        if not vc:
+            return
+
         if self.repeat.get(gid) and gid in self.current:
             song = self.current[gid]
         else:
@@ -76,8 +78,10 @@ class Music(commands.Cog):
 
         vc.play(
             discord.FFmpegPCMAudio(song["url"], **FFMPEG_OPTS),
-            after=lambda e: asyncio.run_coroutine_threadsafe(
-                self.play_next(guild, ctx), self.bot.loop
+            after=lambda e: self.bot.loop.call_soon_threadsafe(
+                lambda: self.bot.loop.create_task(
+                    self.play_next(guild, ctx)
+                )
             )
         )
 
@@ -93,13 +97,15 @@ class Music(commands.Cog):
 
     async def progress_loop(self, guild):
         gid = guild.id
-        while gid in self.current:
-            vc = guild.voice_client
-            if not vc or not vc.is_playing():
-                break
 
-            elapsed = int(time.time() - self.start_time[gid])
-            dur = self.current[gid]["duration"]
+        while (
+            gid in self.current
+            and guild.voice_client
+            and guild.voice_client.is_playing()
+        ):
+            elapsed = int(time.time() - self.start_time.get(gid, time.time()))
+            dur = self.current[gid].get("duration", 0)
+
             progress = f"`{elapsed//60:02}:{elapsed%60:02} / {dur//60:02}:{dur%60:02}`"
 
             try:
@@ -114,13 +120,13 @@ class Music(commands.Cog):
     # ---------- EMBEDS ----------
 
     def now_playing_embed(self, song, progress=""):
-        return Embed(
+        return discord.Embed(
             title="🎧 Now Playing",
             description=(
                 f"**{song['title']}**\n\n"
                 f"{progress if progress else '▶️ Sedang diputar...'}"
             ),
-            color=discord.Color.blurple()
+            color=discord.Color.blurple(),
         )
 
     # ================= COMMANDS =================
@@ -144,8 +150,8 @@ class Music(commands.Cog):
         self.queue[gid].append(song)
 
         await ctx.send(
-            embed=Embed(
-                title="📥 Ditambahkan ke Queue",
+            embed=discord.Embed(
+                title="📥 Masuk Queue",
                 description=f"**{song['title']}**",
                 color=discord.Color.green(),
             )
@@ -180,31 +186,64 @@ class Music(commands.Cog):
     async def queue(self, ctx):
         q = self.queue.get(ctx.guild.id)
         if not q:
-            await ctx.send("📭 **Queue masih kosong**")
+            await ctx.send("📭 **Queue kosong**")
             return
 
         text = "\n".join(f"`{i+1}.` {s['title']}" for i, s in enumerate(q))
         await ctx.send(
-            embed=Embed(title="📜 Music Queue", description=text, color=discord.Color.blue())
+            embed=discord.Embed(
+                title="📜 Music Queue",
+                description=text,
+                color=discord.Color.blue(),
+            )
         )
 
     @commands.hybrid_command()
     async def repeat(self, ctx):
         gid = ctx.guild.id
         self.repeat[gid] = not self.repeat.get(gid, False)
-        await ctx.send(
-            f"🔁 **Repeat {'ON' if self.repeat[gid] else 'OFF'}**"
-        )
+        await ctx.send(f"🔁 **Repeat {'ON' if self.repeat[gid] else 'OFF'}**")
 
     @commands.hybrid_command()
     async def stop(self, ctx):
         vc = ctx.guild.voice_client
         if vc:
             vc.stop()
-            self.queue.pop(ctx.guild.id, None)
-            self.current.pop(ctx.guild.id, None)
+            await vc.disconnect()
+
+            gid = ctx.guild.id
+            self.queue.pop(gid, None)
+            self.current.pop(gid, None)
+            self.repeat.pop(gid, None)
+            self.start_time.pop(gid, None)
+
             await self.set_vc_status(ctx.guild, None)
-            await ctx.send("⏹ **Music dihentikan & queue dibersihkan**")
+            await ctx.send("⏹ **Music dihentikan**")
+
+    # ---------- SAFETY: PREVENT FREEZE ----------
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        if member.bot:
+            return
+
+        guild = member.guild
+        vc = guild.voice_client
+        if not vc or not vc.channel:
+            return
+
+        # kalau tinggal bot sendirian
+        if len(vc.channel.members) <= 1:
+            vc.stop()
+            await vc.disconnect()
+
+            gid = guild.id
+            self.queue.pop(gid, None)
+            self.current.pop(gid, None)
+            self.repeat.pop(gid, None)
+            self.start_time.pop(gid, None)
+
+            await self.set_vc_status(guild, None)
 
 # ================= SETUP =================
 
