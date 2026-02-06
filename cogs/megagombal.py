@@ -23,6 +23,7 @@ class MegaGombal(commands.Cog):
             "Kalau senyummu bisa bikin aku kaya, aku rela jadi miliarder 😍💰",
             "Kamu kayak buku, tiap halaman bikin aku penasaran 📖💕",
             "Kalau kamu es krim, aku cone yang rela melekat terus 🍦💖"
+            "Kamu tau ga persamaan kamu sama ikan tuna? sama-sama luTunaaa oiiii 😍💖"
         ]
 
         # Warna embed acak

@@ -35,6 +35,7 @@ async def load_cogs():
         "cogs.rules",
         "cogs.tebakfakta_rounds",
         "cogs.afk",
+        "cogs.activity",
         "cogs.music",
         "cogs.warn",
         "cogs.moderation",
