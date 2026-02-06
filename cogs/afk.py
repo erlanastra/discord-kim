@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 
 class AFK(commands.Cog):
-    """Command AFK dengan multi-server dan nickname otomatis"""
+    """AFK multi-server dengan nickname otomatis & embed warna-warni"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -19,7 +19,11 @@ class AFK(commands.Cog):
             self.afk_users[guild_id] = {}
 
         if member.id in self.afk_users[guild_id]:
-            await ctx.send(f"❌ {member.mention}, kamu sudah AFK!")
+            await ctx.send(embed=discord.Embed(
+                title="❌ AFK Gagal",
+                description=f"{member.mention}, kamu sudah AFK sebelumnya! Jangan lupa istirahat dulu 😉",
+                color=discord.Color.red()
+            ))
             return
 
         # Simpan nickname asli
@@ -31,9 +35,20 @@ class AFK(commands.Cog):
             new_nick = f"[AFK] {original_nick}"
             await member.edit(nick=new_nick)
         except discord.Forbidden:
-            await ctx.send("⚠️ Aku tidak bisa ganti nickname-mu (cek permission)")
+            await ctx.send(embed=discord.Embed(
+                title="⚠️ Gagal Ubah Nickname",
+                description="Aku tidak bisa mengubah nickname-mu. Cek permission ya!",
+                color=discord.Color.orange()
+            ))
 
-        await ctx.send(f"✅ {member.mention} sekarang AFK: {reason}")
+        # Kirim embed AFK
+        embed = discord.Embed(
+            title="✅ Kamu sekarang AFK!",
+            description=f"**Alasan:** **{reason}**",
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text=f"{member.display_name} sedang offline sementara...")
+        await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -60,14 +75,25 @@ class AFK(commands.Cog):
                 await message.author.edit(nick=original_nick)
             except discord.Forbidden:
                 pass
-            await message.channel.send(f"👋 {message.author.mention} welcome back! AFK selesai.")
+            embed = discord.Embed(
+                title="👋 Welcome Back!",
+                description=f"{message.author.mention}, AFK-mu sudah selesai. Semangat lagi! ✨",
+                color=discord.Color.green()
+            )
+            embed.set_footer(text="Senang kamu kembali!")
+            await message.channel.send(embed=embed)
 
         # Cek mention user AFK
         for user_id, info in self.afk_users[guild_id].items():
             if user_id in [u.id for u in message.mentions]:
-                await message.channel.send(
-                    f"💤 {message.author.mention}, orang ini sedang AFK: {info['reason']}"
+                user_obj = self.bot.get_user(user_id)
+                embed = discord.Embed(
+                    title="💤 Sedang AFK",
+                    description=f"{message.author.mention}, **{user_obj.display_name}** sedang AFK 😴\n**Alasan:** **{info['reason']}**",
+                    color=discord.Color.purple()
                 )
+                embed.set_footer(text="Jangan diganggu dulu ya!")
+                await message.channel.send(embed=embed)
 
 # Setup cog untuk discord.py v2+
 async def setup(bot):
