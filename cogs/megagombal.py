@@ -8,7 +8,9 @@ class MegaGombal(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        # List gombalan panjang & bisa ditambah terus
+        # =========================
+        # GOMBALAN RANDOM (UMUM)
+        # =========================
         self.gombalan = [
             "Kalau kamu jadi matahari, aku rela jadi bumi yang muter biar selalu dekat kamu 🌞❤️",
             "Kamu itu kayak kopi, bikin aku ketagihan tiap pagi ☕🥰",
@@ -22,11 +24,22 @@ class MegaGombal(commands.Cog):
             "Kamu seperti matahari pagi, bikin hariku cerah setiap saat 🌄❤️",
             "Kalau senyummu bisa bikin aku kaya, aku rela jadi miliarder 😍💰",
             "Kamu kayak buku, tiap halaman bikin aku penasaran 📖💕",
-            "Kalau kamu es krim, aku cone yang rela melekat terus 🍦💖"
+            "Kalau kamu es krim, aku cone yang rela melekat terus 🍦💖",
             "Kamu tau ga persamaan kamu sama ikan tuna? sama-sama luTunaaa oiiii 😍💖"
         ]
 
-        # Warna embed acak
+        # =========================
+        # GOMBALAN KHUSUS (LOCK)
+        # =========================
+        self.lock_gombal = (
+            "Dari semua hal yang bisa aku pilih, "
+            "aku tetap milih kamu. "
+            "Bukan karena terbiasa, tapi karena kamu rumah 💖"
+        )
+
+        # =========================
+        # WARNA EMBED RANDOM
+        # =========================
         self.colors = [
             discord.Color.from_rgb(255, 182, 193),  # Pink
             discord.Color.from_rgb(255, 193, 92),   # Orange
@@ -36,28 +49,45 @@ class MegaGombal(commands.Cog):
             discord.Color.from_rgb(239, 83, 80)     # Merah
         ]
 
+        # =========================
+        # ID OWNER (GANTI INI)
+        # =========================
+        self.owner_id = 1169643619049799740  # ← GANTI DENGAN DISCORD ID KAMU
+
     @commands.command(name="gombal")
     async def gombal(self, ctx, member: discord.Member, jumlah: int = 1):
         """
-        Kirim gombalan random ke member yang ditag.
-        jumlah = banyak gombalan yang dikirim (default 3)
+        Kirim gombalan ke member yang ditag.
+        - Owner: gombalan dikunci (selalu sama)
+        - User lain: random
         """
-        # Batasi maksimal gombalan 10
+
+        # Batas maksimal
         if jumlah > 10:
             jumlah = 10
 
         embeds = []
-        for i in range(jumlah):
+
+        for _ in range(jumlah):
+            # Kalau kamu yang pakai command → LOCK
+            if ctx.author.id == self.owner_id:
+                deskripsi = self.lock_gombal
+            else:
+                deskripsi = random.choice(self.gombalan)
+
             embed = discord.Embed(
                 title=f"💌 Gombalan untuk {member.display_name}",
-                description=random.choice(self.gombalan),
+                description=deskripsi,
                 color=random.choice(self.colors)
             )
+
             embeds.append(embed)
 
         await ctx.send(embeds=embeds)
 
-# Versi setup untuk discord.py lama
-# Versi discord.py v2+
+
+# =========================
+# SETUP DISCORD.PY v2+
+# =========================
 async def setup(bot):
     await bot.add_cog(MegaGombal(bot))
