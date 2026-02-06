@@ -32,7 +32,7 @@ class Music(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.guild_queues = {}  # {guild_id: [{'title': str, 'url': str}]}
+        self.guild_queues = {}  # {guild_id: [{'title': str, 'url': str, 'ctx': ctx}]}
 
     async def ensure_voice(self, ctx):
         """Pastikan user di VC dan bot join VC"""
@@ -51,7 +51,7 @@ class Music(commands.Cog):
         await asyncio.sleep(0.5)
         return True
 
-    async def _play_next(self, guild):
+    async def _play_next(self, guild, ctx):
         """Main function untuk play lagu berikutnya"""
         guild_id = guild.id
         vc = guild.voice_client
@@ -63,12 +63,15 @@ class Music(commands.Cog):
 
         song = self.guild_queues[guild_id].pop(0)
         source = discord.FFmpegPCMAudio(song['url'], **ffmpeg_options)
-        vc.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self._play_next(guild), self.bot.loop))
+        vc.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(self._play_next(guild, ctx), self.bot.loop))
 
-        if guild.text_channels:
-            channel = guild.text_channels[0]
-            embed = Embed(title="▶️ Now Playing", description=song['title'], color=discord.Color.blurple())
-            await channel.send(embed=embed)
+        # Kirim notifikasi di channel yang sama dengan command
+        embed = Embed(
+            title="▶️ Now Playing",
+            description=f"**{song['title']}**",
+            color=discord.Color.blurple()
+        )
+        await ctx.channel.send(embed=embed)
 
     @commands.command(name="play")
     async def play(self, ctx, *, query: str):
@@ -84,18 +87,19 @@ class Music(commands.Cog):
             info = ytdl.extract_info(query, download=False)
             if 'entries' in info:
                 info = info['entries'][0]
-        except Exception as e:
+        except Exception:
             info = ytdl.extract_info(f"ytsearch:{query}", download=False)['entries'][0]
 
         url2 = info['url']
         title = info.get('title', 'Unknown')
 
-        self.guild_queues[guild_id].append({'title': title, 'url': url2})
-        await ctx.send(embed=Embed(title="🎵 Ditambahkan ke queue", description=title, color=discord.Color.green()))
+        # Simpan ctx supaya _play_next bisa pakai channel yang sama
+        self.guild_queues[guild_id].append({'title': title, 'url': url2, 'ctx': ctx})
+        await ctx.send(embed=Embed(title="🎵 Ditambahkan ke queue", description=f"**{title}**", color=discord.Color.green()))
 
         vc = ctx.guild.voice_client
         if not vc.is_playing():
-            await self._play_next(ctx.guild)
+            await self._play_next(ctx.guild, ctx)
 
     # ===================== CONTROL =====================
     @commands.command(name="pause")
