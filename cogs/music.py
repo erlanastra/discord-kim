@@ -5,21 +5,23 @@ import yt_dlp
 from discord import Embed
 import time
 
-FFMPEG_PATH = r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"
+# ================= CONFIG =================
 
-ytdl_opts = {
-    "format": "bestaudio/best",
-    "quiet": True,
-    "noplaylist": True
-}
-
-ffmpeg_opts = {
+FFMPEG_OPTS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
-    "executable": FFMPEG_PATH
 }
 
-ytdl = yt_dlp.YoutubeDL(ytdl_opts)
+YTDL_OPTS = {
+    "format": "bestaudio/best",
+    "quiet": True,
+    "noplaylist": True,
+    "default_search": "ytsearch",
+}
+
+ytdl = yt_dlp.YoutubeDL(YTDL_OPTS)
+
+# ================= COG =================
 
 class Music(commands.Cog):
     def __init__(self, bot):
@@ -32,26 +34,18 @@ class Music(commands.Cog):
 
     async def ensure_voice(self, ctx):
         if not ctx.author.voice:
-            await ctx.send("⚠️ Kamu harus di voice channel")
+            await ctx.send("⚠️ Kamu harus masuk voice channel dulu.")
             return False
 
         vc = ctx.guild.voice_client
-        ch = ctx.author.voice.channel
+        channel = ctx.author.voice.channel
 
         if not vc:
-            await ch.connect()
-        elif vc.channel != ch:
-            await vc.move_to(ch)
+            await channel.connect()
+        elif vc.channel != channel:
+            await vc.move_to(channel)
 
         return True
-
-    async def set_vc_status(self, guild, text=None):
-        vc = guild.voice_client
-        if vc and vc.channel:
-            try:
-                await vc.channel.edit(status=text)
-            except:
-                pass
 
     async def progress_loop(self, guild):
         gid = guild.id
@@ -65,9 +59,7 @@ class Music(commands.Cog):
             txt = f"⏱ {elapsed//60:02}:{elapsed%60:02} / {dur//60:02}:{dur%60:02}"
 
             try:
-                await self.msg[gid].edit(
-                    embed=self.build_embed(self.current[gid], txt)
-                )
+                await self.msg[gid].edit(embed=self.build_embed(self.current[gid], txt))
             except:
                 pass
 
@@ -89,7 +81,6 @@ class Music(commands.Cog):
         else:
             if not self.queue.get(gid):
                 self.current.pop(gid, None)
-                await self.set_vc_status(guild, None)
                 return
             song = self.queue[gid].pop(0)
             self.current[gid] = song
@@ -97,13 +88,11 @@ class Music(commands.Cog):
         self.start[gid] = time.time()
 
         vc.play(
-            discord.FFmpegPCMAudio(song["url"], **ffmpeg_opts),
+            discord.FFmpegPCMAudio(song["url"], **FFMPEG_OPTS),
             after=lambda e: asyncio.run_coroutine_threadsafe(
                 self.play_next(guild, ctx), self.bot.loop
             )
         )
-
-        await self.set_vc_status(guild, f"🎶 {song['title']}")
 
         embed = self.build_embed(song)
         if gid in self.msg:
@@ -115,7 +104,7 @@ class Music(commands.Cog):
 
     # ================= COMMANDS =================
 
-    @commands.hybrid_command()
+    @commands.command()
     async def play(self, ctx, *, query: str):
         if not await self.ensure_voice(ctx):
             return
@@ -123,9 +112,9 @@ class Music(commands.Cog):
         gid = ctx.guild.id
         self.queue.setdefault(gid, [])
 
-        info = yt_dlp.YoutubeDL(ytdl_opts).extract_info(
-            f"ytsearch:{query}", download=False
-        )["entries"][0]
+        info = ytdl.extract_info(query, download=False)
+        if "entries" in info:
+            info = info["entries"][0]
 
         song = {
             "title": info["title"],
@@ -134,34 +123,34 @@ class Music(commands.Cog):
         }
 
         self.queue[gid].append(song)
-        await ctx.send(f"🎵 **{song['title']}** ditambahkan")
+        await ctx.send(f"🎵 **{song['title']}** ditambahkan ke queue")
 
         vc = ctx.guild.voice_client
         if not vc.is_playing():
             await self.play_next(ctx.guild, ctx)
 
-    @commands.hybrid_command()
+    @commands.command()
     async def pause(self, ctx):
         vc = ctx.guild.voice_client
         if vc and vc.is_playing():
             vc.pause()
             await ctx.send("⏸ Paused")
 
-    @commands.hybrid_command()
+    @commands.command()
     async def resume(self, ctx):
         vc = ctx.guild.voice_client
         if vc and vc.is_paused():
             vc.resume()
             await ctx.send("▶️ Resumed")
 
-    @commands.hybrid_command()
+    @commands.command()
     async def skip(self, ctx):
         vc = ctx.guild.voice_client
         if vc:
             vc.stop()
             await ctx.send("⏭ Skipped")
 
-    @commands.hybrid_command()
+    @commands.command()
     async def queue(self, ctx):
         q = self.queue.get(ctx.guild.id)
         if not q:
@@ -171,21 +160,20 @@ class Music(commands.Cog):
         text = "\n".join(f"{i+1}. {s['title']}" for i, s in enumerate(q))
         await ctx.send(embed=Embed(title="📜 Queue", description=text))
 
-    @commands.hybrid_command()
+    @commands.command()
     async def repeat(self, ctx):
         gid = ctx.guild.id
         self.repeat[gid] = not self.repeat.get(gid, False)
-        await ctx.send(f"Repeat: {'🔁 ON' if self.repeat[gid] else '⏹ OFF'}")
+        await ctx.send(f"🔁 Repeat {'ON' if self.repeat[gid] else 'OFF'}")
 
-    @commands.hybrid_command()
+    @commands.command()
     async def stop(self, ctx):
         vc = ctx.guild.voice_client
         if vc:
             vc.stop()
-            await self.set_vc_status(ctx.guild, None)
             self.queue.pop(ctx.guild.id, None)
             self.current.pop(ctx.guild.id, None)
             await ctx.send("⏹ Stopped")
 
-async def setup(bot):
-    await bot.add_cog(Music(bot))
+def setup(bot):
+    bot.add_cog(Music(bot))
