@@ -32,9 +32,7 @@ class MegaGombal(commands.Cog):
         # GOMBALAN KHUSUS (LOCK)
         # =========================
         self.lock_gombal = (
-            "Dari semua hal yang bisa aku pilih, "
-            "aku tetap milih kamu. "
-            "Bukan karena terbiasa, tapi karena kamu rumah 💖"
+            "Kamu tau ga persamaan kamu sama ikan tuna? sama-sama luTunaaa oiiii 😍💖"
         )
 
         # =========================
