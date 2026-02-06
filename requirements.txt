@@ -1,5 +1,2 @@
-py-cord==2.7.0
-yt-dlp
+discord.py
 python-dotenv
-flask
-requests
