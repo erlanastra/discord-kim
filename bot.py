@@ -33,6 +33,8 @@ async def load_cogs():
         "cogs.megagombal",
         "cogs.rules",
         "cogs.tebakfakta_rounds",
+        "cogs.afk",
+        "cogs.music",
         "cogs.warn",
         "cogs.moderation",
         "cogs.modlog",
