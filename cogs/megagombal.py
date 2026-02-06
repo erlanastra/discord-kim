@@ -36,7 +36,7 @@ class MegaGombal(commands.Cog):
         ]
 
     @commands.command(name="gombal")
-    async def gombal(self, ctx, member: discord.Member, jumlah: int = 3):
+    async def gombal(self, ctx, member: discord.Member, jumlah: int = 1):
         """
         Kirim gombalan random ke member yang ditag.
         jumlah = banyak gombalan yang dikirim (default 3)
@@ -48,7 +48,7 @@ class MegaGombal(commands.Cog):
         embeds = []
         for i in range(jumlah):
             embed = discord.Embed(
-                title=f"💌 Gombal {i+1} untuk {member.display_name}",
+                title=f"💌 Gombalan untuk {member.display_name}",
                 description=random.choice(self.gombalan),
                 color=random.choice(self.colors)
             )
@@ -57,5 +57,6 @@ class MegaGombal(commands.Cog):
         await ctx.send(embeds=embeds)
 
 # Versi setup untuk discord.py lama
-def setup(bot):
-    bot.add_cog(MegaGombal(bot))
+# Versi discord.py v2+
+async def setup(bot):
+    await bot.add_cog(MegaGombal(bot))
