@@ -33,7 +33,7 @@ class Welcome(commands.Cog):
             return
 
         embed = discord.Embed(
-            title=f"Selamat datang, {member.name}! 🎉",
+            title=f"Selamat datang, {member.display_name}! 🎉",
             description=(
                 f"Halo {member.mention}, senang banget kamu gabung di **nanZ Server**! 🤍\n\n"
                 "Di sini semua member dianggap keluarga, jadi jangan ragu untuk ngobrol, "
