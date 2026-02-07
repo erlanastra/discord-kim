@@ -9,40 +9,48 @@ class Welcome(commands.Cog):
         with open("config.json") as f:
             self.config = json.load(f)
 
+    # Listener untuk member baru join
     @commands.Cog.listener()
     async def on_member_join(self, member):
+        await self.send_welcome(member)
+
+    # Command untuk tes welcome
+    @commands.command(name="testwelcome")
+    async def test_welcome(self, ctx, member: discord.Member = None):
+        member = member or ctx.author
+        await self.send_welcome(member)
+
+    # Fungsi kirim welcome
+    async def send_welcome(self, member):
         channel_id = self.config.get("welcome_channel")
         if not channel_id:
             print("Config welcome_channel tidak ditemukan!")
             return
 
         channel = self.bot.get_channel(channel_id)
-        if channel:
-            # Membuat embed welcome
-            embed = discord.Embed(
-                title=f"Selamat datang {member.mention}! 🎉",
-                description=(
-                    "Kami sangat senang kamu bergabung di **nanZ Server**. "
-                    "Di sini, setiap member dianggap bagian dari keluarga, jadi jangan ragu untuk bersantai, ngobrol, "
-                    "dan saling berbagi cerita dengan semua orang.\n\n"
-                    "Sebelum mulai, pastikan untuk membaca peraturan server di <#1406557882811682888> agar pengalamanmu "
-                    "di sini tetap nyaman dan aman untuk semua.\n\n"
-                    "Kalau ingin mengambil role, silakan kunjungi <#1408510751039291443>. "
-                    "Untuk member perempuan, ada proses verifikasi supaya semua tetap nyaman dan aman. "
-                    "Setelah verifikasi, kalian bisa dapat role **siswi** dengan mudah.\n\n"
-                    "Semoga kamu betah dan merasa diterima. "
-                    "Jangan sungkan untuk bertanya, ikut event, atau sekadar nongkrong bersama member lain.\n\n"
-                    "Selamat bersenang-senang dan menikmati waktu kamu di **nanZ Server! 🤍**"
-                ),
-                color=0x00ffcc  # Warna embed, bisa diganti sesuai selera
-            )
-            embed.set_footer(text="nanZ Server")
-            embed.set_thumbnail(url=member.display_avatar.url)  # Thumbnail pakai avatar member
-            embed.set_image(url="https://i.ibb.co/album/nanz-banner.png")  # Bisa diganti banner server kalau mau
-
-            await channel.send(embed=embed)
-        else:
+        if not channel:
             print(f"Channel dengan ID {channel_id} tidak ditemukan!")
+            return
+
+        embed = discord.Embed(
+            title=f"Selamat datang, {member.name}! 🎉",
+            description=(
+                f"Halo {member.mention}, senang banget kamu gabung di **nanZ Server**! 🤍\n\n"
+                "Di sini semua member dianggap keluarga, jadi jangan ragu untuk ngobrol, "
+                "bertanya, atau ikut event bareng.\n\n"
+                "Pastikan baca aturan di <#1406557882811682888> supaya pengalamanmu nyaman.\n"
+                "Ambil role kamu di <#1408510751039291443>. "
+                "Untuk member perempuan, ada proses verifikasi agar semua tetap aman. "
+                "Setelah itu, kalian bisa dapat role **siswi** dengan mudah.\n\n"
+                "Semoga betah ya! Jangan sungkan untuk aktif dan menikmati semua kegiatan di server."
+            ),
+            color=0x00ffcc
+        )
+        embed.set_footer(text="nanZ Server")
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_image(url="https://i.ibb.co/album/nanz-banner.png")  # Banner server
+
+        await channel.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Welcome(bot))

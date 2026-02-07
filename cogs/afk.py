@@ -82,6 +82,7 @@ class AFK(commands.Cog):
             )
             embed.set_footer(text="Senang kamu kembali!")
             await message.channel.send(embed=embed)
+            await self.bot.process_commands(message)
 
         # Cek mention user AFK
         for user_id, info in self.afk_users[guild_id].items():
