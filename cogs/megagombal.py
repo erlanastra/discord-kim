@@ -26,31 +26,22 @@ class MegaGombal(commands.Cog):
             "Kamu kayak buku, tiap halaman bikin aku penasaran 📖💕",
             "Kalau kamu es krim, aku cone yang rela melekat terus 🍦💖",
             "Kamu tau ga persamaan kamu sama ikan tuna? sama-sama luTunaaa oiiii 😍💖"
+            "Apa perbedaan kamu dengan jarum jam? kalau jarum jam muternya di angka, kalau kamu muternya dipikiranku ⌚❤️"
         ]
 
-        # =========================
-        # GOMBALAN KHUSUS (LOCK)
-        # =========================
         self.lock_gombal = (
             "Kamu tau ga persamaan kamu sama ikan tuna? sama-sama luTunaaa oiiii 😍💖"
         )
-
-        # =========================
-        # WARNA EMBED RANDOM
-        # =========================
         self.colors = [
-            discord.Color.from_rgb(255, 182, 193),  # Pink
-            discord.Color.from_rgb(255, 193, 92),   # Orange
-            discord.Color.from_rgb(186, 104, 200),  # Ungu
-            discord.Color.from_rgb(100, 181, 246),  # Biru
-            discord.Color.from_rgb(129, 199, 132),  # Hijau
-            discord.Color.from_rgb(239, 83, 80)     # Merah
+            discord.Color.from_rgb(255, 182, 193), 
+            discord.Color.from_rgb(255, 193, 92),   
+            discord.Color.from_rgb(186, 104, 200), 
+            discord.Color.from_rgb(100, 181, 246),  
+            discord.Color.from_rgb(129, 199, 132),  
+            discord.Color.from_rgb(239, 83, 80)     
         ]
 
-        # =========================
-        # ID OWNER (GANTI INI)
-        # =========================
-        self.owner_id = 1169643619049799740  # ← GANTI DENGAN DISCORD ID KAMU
+        self.owner_id = 1169643619049799740 
 
     @commands.command(name="gombal")
     async def gombal(self, ctx, member: discord.Member, jumlah: int = 1):
@@ -88,4 +79,5 @@ class MegaGombal(commands.Cog):
 # SETUP DISCORD.PY v2+
 # =========================
 async def setup(bot):
+    
     await bot.add_cog(MegaGombal(bot))

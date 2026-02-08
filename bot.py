@@ -33,6 +33,7 @@ async def load_cogs():
         "cogs.megagombal",
         "cogs.cantikganteng",
         "cogs.rules",
+        "cogs.streak",
         "cogs.tebakfakta_rounds",
         "cogs.afk",
         "cogs.activity",
