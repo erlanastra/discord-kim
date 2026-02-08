@@ -8,8 +8,8 @@ DATA_FILE = "data/streak.json"
 
 STREAK_ROLES = [1, 5, 10, 20, 30, 50, 100]
 
-NOTIF_CHANNEL = "notification-streak"
-REMINDER_CHANNEL = "reminder-streak"
+NOTIF_CHANNEL = "📈｜notification-streak"
+REMINDER_CHANNEL = "⏰｜reminder-streak"
 
 
 class Streak(commands.Cog):
