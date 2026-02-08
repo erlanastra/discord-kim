@@ -57,6 +57,14 @@ class Streak(commands.Cog):
     def get_channel(self, guild, name):
         return discord.utils.get(guild.text_channels, name=name)
 
+    def user_profile(self, embed: discord.Embed, member: discord.Member):
+        embed.set_author(
+            name=member.display_name,
+            icon_url=member.display_avatar.url
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        return embed
+
     # ================= CORE =================
     async def add_streak(self, member):
         gid, uid = str(member.guild.id), str(member.id)
@@ -84,7 +92,8 @@ class Streak(commands.Cog):
 
         level = max(passed)
         guild = member.guild
-        new_role = discord.utils.get(guild.roles, name=f"🔥 STREAK {level}")
+        role_name = f"🔥 STREAK {level}"
+        new_role = discord.utils.get(guild.roles, name=role_name)
 
         if not new_role:
             return
@@ -103,15 +112,17 @@ class Streak(commands.Cog):
             return
 
         embed = discord.Embed(
-            title="🔥 STREAK LEVEL UP!",
+            title="STREAK LEVEL UP",
             description=(
-                f"{member.mention} naik level konsistensi!\n\n"
-                f"🔥 **Streak:** `{streak} hari`\n"
-                f"🏆 **Role Baru:** {role.mention}"
+                f"{member.mention} naik level konsistensi.\n\n"
+                f"🔥 Streak: `{streak} hari`\n"
+                f"🏆 Role baru: {role.mention}"
             ),
             color=discord.Color.gold()
         )
-        embed.set_footer(text="Jangan putus, lanjutkan 🔥")
+        embed.set_footer(text="Tetap konsisten setiap hari")
+
+        embed = self.user_profile(embed, member)
         await channel.send(embed=embed)
 
     # ================= LISTENER =================
@@ -148,15 +159,48 @@ class Streak(commands.Cog):
                         continue
 
                     embed = discord.Embed(
-                        title="⏰ STREAK REMINDER",
+                        title="STREAK REMINDER",
                         description=(
-                            f"{member.mention}, streak kamu belum jalan hari ini!\n"
-                            f"🔥 **Streak:** `{info['streak']} hari`"
+                            f"{member.mention}, streak kamu belum aktif hari ini.\n"
+                            f"🔥 Streak sekarang: `{info['streak']} hari`"
                         ),
                         color=discord.Color.purple()
                     )
-                    embed.set_footer(text="Chat atau join VC biar aman 🔥")
+                    embed.set_footer(text="Chat atau join voice biar streak aman")
+
+                    embed = self.user_profile(embed, member)
                     await channel.send(embed=embed)
+
+    # ================= COMMAND =================
+    @commands.command(name="streak")
+    async def streak_info(self, ctx, member: discord.Member = None):
+        target = member or ctx.author
+        gid, uid = str(ctx.guild.id), str(target.id)
+
+        if gid not in self.data or uid not in self.data[gid]:
+            return await ctx.send(f"{target.mention} belum punya streak.")
+
+        info = self.data[gid][uid]
+        badge = self.get_badge(info["streak"])
+
+        desc = (
+            f"{badge} Streak: `{info['streak']} hari`\n"
+            f"📅 Terakhir aktif: `{info['last']}`"
+        )
+
+        if target == ctx.author:
+            status = "ON" if info.get("reminder", True) else "OFF"
+            desc += f"\n🔔 Reminder: `{status}`"
+
+        embed = discord.Embed(
+            title="STREAK INFO",
+            description=desc,
+            color=discord.Color.green() if target == ctx.author else discord.Color.blue()
+        )
+        embed.set_footer(text="Konsistensi kecil, dampak besar")
+
+        embed = self.user_profile(embed, target)
+        await ctx.send(embed=embed)
 
     @commands.command(name="streakreminder")
     async def toggle_reminder(self, ctx):
@@ -172,40 +216,14 @@ class Streak(commands.Cog):
         user["reminder"] = not user["reminder"]
         self.save_data()
 
-        status = "ON 🔔" if user["reminder"] else "OFF 🔕"
-        await ctx.send(embed=discord.Embed(
-            title="⚙️ Reminder Streak",
-            description=f"Reminder streak kamu sekarang **{status}**",
-            color=discord.Color.green()
-        ))
-
-    # ================= COMMAND =================
-    @commands.command(name="streak")
-    async def streak_info(self, ctx, member: discord.Member = None):
-        target = member or ctx.author
-        gid, uid = str(ctx.guild.id), str(target.id)
-
-        if gid not in self.data or uid not in self.data[gid]:
-            return await ctx.send(f"{target.mention} belum punya streak.")
-
-        info = self.data[gid][uid]
-        badge = self.get_badge(info["streak"])
-
-        desc = (
-            f"{badge} **Streak:** `{info['streak']} hari`\n"
-            f"📅 **Terakhir aktif:** `{info['last']}`"
-        )
-
-        if target == ctx.author:
-            status = "ON 🔔" if info.get("reminder", True) else "OFF 🔕"
-            desc += f"\n🔔 **Reminder:** {status}"
-
+        status = "AKTIF" if user["reminder"] else "NONAKTIF"
         embed = discord.Embed(
-            title="🔥 STREAK INFO",
-            description=desc,
-            color=discord.Color.green() if target == ctx.author else discord.Color.blue()
+            title="STREAK REMINDER",
+            description=f"Reminder streak kamu sekarang `{status}`",
+            color=discord.Color.green()
         )
-        embed.set_footer(text="Konsisten dikit, hasilnya besar 🔥")
+
+        embed = self.user_profile(embed, ctx.author)
         await ctx.send(embed=embed)
 
     @commands.command(name="streaklb")
@@ -214,7 +232,7 @@ class Streak(commands.Cog):
         users = self.data.get(gid, {})
 
         if not users:
-            return await ctx.send("Belum ada data streak 😴")
+            return await ctx.send("Belum ada data streak.")
 
         sorted_users = sorted(
             users.items(),
@@ -223,11 +241,15 @@ class Streak(commands.Cog):
         )[:10]
 
         desc = ""
+        top_member = None
+
         for i, (uid, info) in enumerate(sorted_users, 1):
             member = ctx.guild.get_member(int(uid))
             if not member:
                 continue
-            desc += f"**#{i}** {self.get_badge(info['streak'])} {member.mention} — `{info['streak']} hari`\n"
+            if i == 1:
+                top_member = member
+            desc += f"#{i} {self.get_badge(info['streak'])} {member.mention} — `{info['streak']} hari`\n"
 
         embed = discord.Embed(
             title="🏆 STREAK LEADERBOARD",
@@ -240,24 +262,23 @@ class Streak(commands.Cog):
     @commands.command(name="streakhelp")
     async def streak_help(self, ctx):
         embed = discord.Embed(
-            title="🔥 STREAK SYSTEM HELP",
+            title="STREAK SYSTEM",
             description=(
-                "**Cara naik streak:**\n"
-                "• Kirim chat\n"
-                "• atau join voice\n"
-                "_1x per hari_\n\n"
-                "**Command:**\n"
-                "• `!streak`\n"
-                "• `!streak @user`\n"
-                "• `!streaklb`\n"
-                "• `!streakreminder`\n\n"
-                "**Hadiah:**\n"
-                "🔥 Role otomatis\n"
-                "🏆 Badge leaderboard"
+                "Naikkan streak dengan:\n"
+                "• Chat\n"
+                "• Join voice\n"
+                "(1x per hari)\n\n"
+                "Command:\n"
+                "`!streak`\n"
+                "`!streak @user`\n"
+                "`!streaklb`\n"
+                "`!streakreminder`"
             ),
             color=discord.Color.purple()
         )
-        embed.set_footer(text="Tetap aktif tiap hari 🔥")
+        embed.set_footer(text="Tetap aktif setiap hari")
+
+        embed = self.user_profile(embed, ctx.author)
         await ctx.send(embed=embed)
 
 
