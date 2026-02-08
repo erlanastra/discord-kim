@@ -25,7 +25,7 @@ class MegaGombal(commands.Cog):
             "Kalau senyummu bisa bikin aku kaya, aku rela jadi miliarder 😍💰",
             "Kamu kayak buku, tiap halaman bikin aku penasaran 📖💕",
             "Kalau kamu es krim, aku cone yang rela melekat terus 🍦💖",
-            "Kamu tau ga persamaan kamu sama ikan tuna? sama-sama luTunaaa oiiii 😍💖"
+            "Kamu tau ga persamaan kamu sama ikan tuna? sama-sama luTunaaa oiiii 😍💖",
             "Apa perbedaan kamu dengan jarum jam? kalau jarum jam muternya di angka, kalau kamu muternya dipikiranku ⌚❤️"
         ]
 
