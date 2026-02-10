@@ -9,6 +9,7 @@ import random
 DATA_FILE = "data/confession.json"
 COOLDOWN = 600  # 10 menit
 
+# ================= DATA =================
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {
@@ -29,6 +30,16 @@ def random_color():
         random.randint(80,200)
     )
 
+# ================= TOXIC FILTER =================
+TOXIC_WORDS = [
+    "bodoh", "tolol", "anjing", "babi", "kontol", "memek", "anjg", "ajg", "njing", "jing", "4njing", "4nj1ng", "nj1ng", "4jg", "j1ng", "b4b1", "b4bi", "bab1", "m3m3k", "mmk", "m3mek", "mem3k", "m3k", "mek", "kntl", "kontl", "kintil", "kntol", "ntol", "tlol", "toll" # tambah sesuai kebutuhan
+]
+
+def contains_toxic(text):
+    text_lower = text.lower()
+    return any(word in text_lower for word in TOXIC_WORDS)
+
+# ================= COG =================
 class Confession(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -45,6 +56,7 @@ class Confession(commands.Cog):
         uid = str(interaction.user.id)
         now = time.time()
 
+        # COOLDOWN
         last = self.data["cooldown"].get(uid, 0)
         if now - last < COOLDOWN:
             await interaction.response.send_message(
@@ -53,6 +65,7 @@ class Confession(commands.Cog):
             )
             return
 
+        # PANJANG PESAN
         if len(pesan) > 700:
             await interaction.response.send_message(
                 "❌ Maksimal 700 karakter.",
@@ -60,6 +73,21 @@ class Confession(commands.Cog):
             )
             return
 
+        # FILTER TOXIC
+        if contains_toxic(pesan):
+            await interaction.response.send_message(
+                "❌ Pesan mengandung kata yang tidak diperbolehkan.",
+                ephemeral=True
+            )
+            # LOG KE STAFF
+            staff_channel = discord.utils.get(interaction.guild.text_channels, name="confession-log")
+            if staff_channel:
+                await staff_channel.send(
+                    f"⚠️ {interaction.user} mencoba mengirim pesan terlarang: {pesan}"
+                )
+            return
+
+        # CARI CHANNEL CONFESSION
         channel = discord.utils.get(interaction.guild.text_channels, name="💌︱confession")
         if not channel:
             await interaction.response.send_message(
@@ -68,10 +96,12 @@ class Confession(commands.Cog):
             )
             return
 
+        # UPDATE DATA
         self.data["count"] += 1
         self.data["cooldown"][uid] = now
         save_data(self.data)
 
+        # EMBED CONFESSION
         embed = discord.Embed(
             title=f"🕊️ Anonymous Confession #{self.data['count']}",
             description=pesan,
@@ -85,6 +115,17 @@ class Confession(commands.Cog):
         await msg.add_reaction("❤️")
         await msg.add_reaction("🤍")
         await msg.add_reaction("🫂")
+
+        # LOG KE STAFF (opsional, bisa log semua confession)
+        staff_channel = discord.utils.get(interaction.guild.text_channels, name="🔒︱confession-log")
+        if staff_channel:
+            await staff_channel.send(
+                embed=discord.Embed(
+                    title=f"Confession #{self.data['count']} terkirim",
+                    description=pesan,
+                    color=discord.Color.orange()
+                ).set_footer(text=f"User ID: {interaction.user.id} • Pesan aman")
+            )
 
         await interaction.response.send_message(
             "✅ Confession berhasil dikirim secara anonim.",
