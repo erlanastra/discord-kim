@@ -23,7 +23,16 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- Event ketika bot siap ---
 @bot.event
 async def on_ready():
+    GUILD_ID = 1406557880475320340  # GANTI dengan ID server kamu
+    guild = discord.Object(id=GUILD_ID)
+
+    bot.tree.copy_global_to(guild=guild)
+    await bot.tree.sync(guild=guild)
+
     print(f"Bot online sebagai {bot.user}")
+    print("Slash command GUILD sync berhasil")
+
+
 
 # --- Load semua cog ---
 async def load_cogs():
@@ -31,6 +40,8 @@ async def load_cogs():
         "cogs.announce",
         "cogs.greeting",
         "cogs.megagombal",
+        "cogs.birthday",
+        "cogs.confession",
         "cogs.cantikganteng",
         "cogs.rules",
         "cogs.streak",
