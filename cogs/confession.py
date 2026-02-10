@@ -116,7 +116,7 @@ class Confession(commands.Cog):
         await msg.add_reaction("🤍")
         await msg.add_reaction("🫂")
 
-        # LOG KE STAFF (opsional, bisa log semua confession)
+                # LOG KE STAFF (User ID, aman publik)
         staff_channel = discord.utils.get(interaction.guild.text_channels, name="🔒︱confession-log")
         if staff_channel:
             await staff_channel.send(
@@ -126,6 +126,18 @@ class Confession(commands.Cog):
                     color=discord.Color.orange()
                 ).set_footer(text=f"User ID: {interaction.user.id} • Pesan aman")
             )
+
+        # LOG PRIVATE UNTUK MOD (username + tag)
+        private_channel = discord.utils.get(interaction.guild.text_channels, name="🛡️︱private-confession-log")
+        if private_channel:
+            await private_channel.send(
+                embed=discord.Embed(
+                    title=f"Confession #{self.data['count']} (PRIVATE)",
+                    description=pesan,
+                    color=discord.Color.red()
+                ).set_footer(text=f"Pengirim: {interaction.user} • User ID: {interaction.user.id}")
+            )
+
 
         await interaction.response.send_message(
             "✅ Confession berhasil dikirim secara anonim.",
