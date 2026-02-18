@@ -65,9 +65,10 @@ class WarnConfirmView(discord.ui.View):
 
 # ================= COG =================
 class Warn(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    # ================= SLASH COMMAND =================
     @app_commands.command(
         name="warn",
         description="⚠️ Kirim peringatan resmi ke member"
@@ -110,5 +111,5 @@ class Warn(commands.Cog):
         )
 
 # ================= SETUP =================
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(Warn(bot))
