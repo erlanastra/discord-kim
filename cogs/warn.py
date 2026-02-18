@@ -1,102 +1,114 @@
 import discord
 from discord.ext import commands
-import json
-import os
-from datetime import datetime
+from discord import app_commands
 
-WARN_FILE = "data/warns.json"
+# ================= CONFIRM VIEW =================
+class WarnConfirmView(discord.ui.View):
+    def __init__(self, member, pesan, target_channel):
+        super().__init__(timeout=60)
+        self.member = member
+        self.pesan = pesan
+        self.target_channel = target_channel
 
-def load_warns():
-    if not os.path.exists(WARN_FILE):
-        return {}
-    with open(WARN_FILE, "r") as f:
-        return json.load(f)
+    @discord.ui.button(label="✅ Kirim Warning", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "❌ Kamu tidak punya izin.",
+                ephemeral=True
+            )
+            return
 
-def save_warns(data):
-    with open(WARN_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+        embed = discord.Embed(
+            title="⚠️ PERINGATAN RESMI SERVER",
+            description=self.pesan,
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(
+            name="👤 Ditujukan kepada",
+            value=self.member.mention,
+            inline=False
+        )
+        embed.set_footer(text="Pesan ini dikirim oleh sistem server")
+        embed.set_thumbnail(url=self.member.display_avatar.url)
 
+        # DM MEMBER
+        if self.target_channel == "dm":
+            try:
+                await self.member.send(embed=embed)
+                result = "📩 Warning dikirim ke DM member"
+            except:
+                result = "❌ DM member tertutup"
+        else:
+            await self.target_channel.send(
+                content=self.member.mention,
+                embed=embed
+            )
+            result = f"📢 Warning dikirim ke {self.target_channel.mention}"
+
+        await interaction.response.edit_message(
+            content=f"✅ **Warning berhasil dikirim**\n{result}",
+            embed=None,
+            view=None
+        )
+        self.stop()
+
+    @discord.ui.button(label="❌ Batalkan", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(
+            content="❌ Pengiriman warning dibatalkan.",
+            embed=None,
+            view=None
+        )
+        self.stop()
+
+# ================= COG =================
 class Warn(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
-    @commands.has_permissions(moderate_members=True)
-    async def warn(self, ctx, member: discord.Member, *, reason="Tidak disebutkan"):
-        data = load_warns()
-        gid = str(ctx.guild.id)
-        uid = str(member.id)
+    @app_commands.command(
+        name="warn",
+        description="⚠️ Kirim peringatan resmi ke member"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def warn(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        pesan: str,
+        channel: discord.TextChannel | None = None
+    ):
+        target = channel if channel else "dm"
 
-        if gid not in data:
-            data[gid] = {}
-        if uid not in data[gid]:
-            data[gid][uid] = []
-
-        data[gid][uid].append({
-            "reason": reason,
-            "by": ctx.author.name,
-            "time": datetime.now().strftime("%d/%m/%Y %H:%M")
-        })
-
-        save_warns(data)
-
-        total = len(data[gid][uid])
-
-        embed = discord.Embed(
-            title="⚠️ Warning Diberikan",
-            color=discord.Color.orange()
+        preview = discord.Embed(
+            title="🛑 PREVIEW PERINGATAN",
+            description=pesan,
+            color=discord.Color.orange(),
+            timestamp=discord.utils.utcnow()
         )
-        embed.add_field(name="Member", value=member.mention)
-        embed.add_field(name="Alasan", value=reason, inline=False)
-        embed.add_field(name="Total Warn", value=total)
+        preview.add_field(
+            name="👤 Target Member",
+            value=member.mention,
+            inline=True
+        )
+        preview.add_field(
+            name="📨 Tujuan Pengiriman",
+            value="DM Member" if target == "dm" else channel.mention,
+            inline=True
+        )
+        preview.set_footer(text="Klik tombol di bawah untuk mengonfirmasi")
+        preview.set_thumbnail(url=member.display_avatar.url)
 
-        await ctx.send(embed=embed)
+        view = WarnConfirmView(member, pesan, target)
 
-    @commands.command()
-    async def warns(self, ctx, member: discord.Member):
-        data = load_warns()
-        gid = str(ctx.guild.id)
-        uid = str(member.id)
-
-        if gid not in data or uid not in data[gid]:
-            await ctx.send("✅ Member ini bersih, tidak ada warn.")
-            return
-
-        embed = discord.Embed(
-            title=f"📋 Warn List — {member}",
-            color=discord.Color.red()
+        await interaction.response.send_message(
+            embed=preview,
+            view=view,
+            ephemeral=True
         )
 
-        for i, warn in enumerate(data[gid][uid], start=1):
-            embed.add_field(
-                name=f"#{i}",
-                value=f"📝 {warn['reason']}\n👮 {warn['by']} | ⏰ {warn['time']}",
-                inline=False
-            )
-
-        await ctx.send(embed=embed)
-
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def delwarn(self, ctx, member: discord.Member, index: int):
-        data = load_warns()
-        gid = str(ctx.guild.id)
-        uid = str(member.id)
-
-        if gid not in data or uid not in data[gid]:
-            await ctx.send("❌ Tidak ada warn.")
-            return
-
-        if index < 1 or index > len(data[gid][uid]):
-            await ctx.send("❌ Index warn tidak valid.")
-            return
-
-        removed = data[gid][uid].pop(index - 1)
-        save_warns(data)
-
-        await ctx.send(
-            f"🗑️ Warn dihapus:\n**{removed['reason']}**"
-        )
-
-def setup(bot):
-    bot.add_cog(Warn(bot))
+# ================= SETUP =================
+async def setup(bot):
+    await bot.add_cog(Warn(bot))

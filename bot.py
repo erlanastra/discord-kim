@@ -47,6 +47,7 @@ async def load_cogs():
         "cogs.modlog",
         "cogs.utility",
         "cogs.about",
+        "cogs.warn",
         "cogs.welcome"
     ]
     for cog in cogs:
