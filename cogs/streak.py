@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 STREAK_ROLES = [1, 5, 10, 20, 30, 50, 100]
 
@@ -13,14 +13,21 @@ DB_FILE = "data/streak.db"
 class Streak(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.conn = sqlite3.connect(DB_FILE)
+        self.conn.row_factory = sqlite3.Row
+        self.cursor = self.conn.cursor()
         self.init_db()
-        self.data = self.load_data()
-        self.reminder_loop.start()
+
+        if not self.reminder_loop.is_running():
+            self.reminder_loop.start()
+
+    # ================= CLEANUP =================
+    def cog_unload(self):
+        self.reminder_loop.cancel()
+        self.conn.close()
 
     # ================= DATABASE =================
     def init_db(self):
-        self.conn = sqlite3.connect(DB_FILE)
-        self.cursor = self.conn.cursor()
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS streaks (
                 guild_id TEXT,
@@ -33,33 +40,10 @@ class Streak(commands.Cog):
         """)
         self.conn.commit()
 
-    def load_data(self):
-        self.cursor.execute("SELECT guild_id, user_id, streak, last, reminder FROM streaks")
-        data = {}
-        for gid, uid, streak, last, reminder in self.cursor.fetchall():
-            data.setdefault(gid, {})[uid] = {
-                "streak": streak,
-                "last": last,
-                "reminder": bool(reminder)
-            }
-        return data
-
-    def save_data(self):
-        for gid, users in self.data.items():
-            for uid, info in users.items():
-                self.cursor.execute("""
-                    INSERT INTO streaks (guild_id, user_id, streak, last, reminder)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(guild_id, user_id) DO UPDATE SET
-                        streak=excluded.streak,
-                        last=excluded.last,
-                        reminder=excluded.reminder
-                """, (gid, uid, info["streak"], info["last"], int(info["reminder"])))
-        self.conn.commit()
-
     # ================= UTIL =================
     def today(self):
-        return datetime.utcnow().strftime("%Y-%m-%d")
+        wib = timezone(timedelta(hours=7))
+        return datetime.now(wib).strftime("%Y-%m-%d")
 
     def get_badge(self, streak):
         if streak >= 100: return "👑"
@@ -74,7 +58,7 @@ class Streak(commands.Cog):
     def get_channel(self, guild, name):
         return discord.utils.get(guild.text_channels, name=name)
 
-    def user_profile(self, embed: discord.Embed, member: discord.Member):
+    def user_profile(self, embed, member):
         embed.set_author(
             name=member.display_name,
             icon_url=member.display_avatar.url
@@ -85,22 +69,33 @@ class Streak(commands.Cog):
     # ================= CORE =================
     async def add_streak(self, member):
         gid, uid = str(member.guild.id), str(member.id)
+        today = self.today()
 
-        self.data.setdefault(gid, {})
-        user = self.data[gid].setdefault(uid, {
-            "streak": 0,
-            "last": "",
-            "reminder": True
-        })
+        self.cursor.execute("""
+            SELECT streak, last FROM streaks
+            WHERE guild_id=? AND user_id=?
+        """, (gid, uid))
+        row = self.cursor.fetchone()
 
-        if user["last"] == self.today():
+        if row and row["last"] == today:
             return
 
-        user["streak"] += 1
-        user["last"] = self.today()
-        self.save_data()
+        if row:
+            streak = row["streak"] + 1
+            self.cursor.execute("""
+                UPDATE streaks
+                SET streak=?, last=?
+                WHERE guild_id=? AND user_id=?
+            """, (streak, today, gid, uid))
+        else:
+            streak = 1
+            self.cursor.execute("""
+                INSERT INTO streaks (guild_id, user_id, streak, last, reminder)
+                VALUES (?, ?, ?, ?, 1)
+            """, (gid, uid, streak, today))
 
-        await self.handle_roles(member, user["streak"])
+        self.conn.commit()
+        await self.handle_roles(member, streak)
 
     async def handle_roles(self, member, streak):
         passed = [s for s in STREAK_ROLES if streak >= s]
@@ -108,10 +103,8 @@ class Streak(commands.Cog):
             return
 
         level = max(passed)
-        guild = member.guild
         role_name = f"🔥 STREAK {level}"
-        new_role = discord.utils.get(guild.roles, name=role_name)
-
+        new_role = discord.utils.get(member.guild.roles, name=role_name)
         if not new_role:
             return
 
@@ -154,8 +147,16 @@ class Streak(commands.Cog):
     # ================= REMINDER =================
     @tasks.loop(hours=24)
     async def reminder_loop(self):
-        for gid, users in self.data.items():
-            guild = self.bot.get_guild(int(gid))
+        today = self.today()
+
+        self.cursor.execute("""
+            SELECT * FROM streaks
+            WHERE reminder=1 AND last!=?
+        """, (today,))
+        rows = self.cursor.fetchall()
+
+        for row in rows:
+            guild = self.bot.get_guild(int(row["guild_id"]))
             if not guild:
                 continue
 
@@ -163,24 +164,19 @@ class Streak(commands.Cog):
             if not channel:
                 continue
 
-            for uid, info in users.items():
-                if not info.get("reminder", True):
-                    continue
+            member = guild.get_member(int(row["user_id"]))
+            if not member:
+                continue
 
-                if info["last"] != self.today():
-                    member = guild.get_member(int(uid))
-                    if not member:
-                        continue
-
-                    embed = discord.Embed(
-                        title="STREAK REMINDER",
-                        description=(f"{member.mention}, streak kamu belum aktif hari ini.\n"
-                                     f"🔥 Streak sekarang: `{info['streak']} hari`"),
-                        color=discord.Color.purple()
-                    )
-                    embed.set_footer(text="Chat atau join voice biar streak aman")
-                    embed = self.user_profile(embed, member)
-                    await channel.send(embed=embed)
+            embed = discord.Embed(
+                title="STREAK REMINDER",
+                description=(f"{member.mention}, streak kamu belum aktif hari ini.\n"
+                             f"🔥 Streak sekarang: `{row['streak']} hari`"),
+                color=discord.Color.purple()
+            )
+            embed.set_footer(text="Chat atau join voice biar streak aman")
+            embed = self.user_profile(embed, member)
+            await channel.send(embed=embed)
 
     # ================= COMMAND =================
     @commands.command(name="streak")
@@ -188,15 +184,20 @@ class Streak(commands.Cog):
         target = member or ctx.author
         gid, uid = str(ctx.guild.id), str(target.id)
 
-        if gid not in self.data or uid not in self.data[gid]:
+        self.cursor.execute("""
+            SELECT * FROM streaks
+            WHERE guild_id=? AND user_id=?
+        """, (gid, uid))
+        row = self.cursor.fetchone()
+
+        if not row:
             return await ctx.send(f"{target.mention} belum punya streak.")
 
-        info = self.data[gid][uid]
-        badge = self.get_badge(info["streak"])
-        desc = f"{badge} Streak: `{info['streak']} hari`\n📅 Terakhir aktif: `{info['last']}`"
+        badge = self.get_badge(row["streak"])
+        desc = f"{badge} Streak: `{row['streak']} hari`\n📅 Terakhir aktif: `{row['last']}`"
 
         if target == ctx.author:
-            status = "ON" if info.get("reminder", True) else "OFF"
+            status = "ON" if row["reminder"] else "OFF"
             desc += f"\n🔔 Reminder: `{status}`"
 
         embed = discord.Embed(
@@ -212,17 +213,20 @@ class Streak(commands.Cog):
     async def toggle_reminder(self, ctx):
         gid, uid = str(ctx.guild.id), str(ctx.author.id)
 
-        self.data.setdefault(gid, {}).setdefault(uid, {
-            "streak": 0,
-            "last": "",
-            "reminder": True
-        })
+        self.cursor.execute("""
+            INSERT INTO streaks (guild_id, user_id, streak, last, reminder)
+            VALUES (?, ?, 0, '', 1)
+            ON CONFLICT(guild_id, user_id)
+            DO UPDATE SET reminder = NOT reminder
+        """, (gid, uid))
+        self.conn.commit()
 
-        user = self.data[gid][uid]
-        user["reminder"] = not user["reminder"]
-        self.save_data()
+        self.cursor.execute("""
+            SELECT reminder FROM streaks
+            WHERE guild_id=? AND user_id=?
+        """, (gid, uid))
+        status = "AKTIF" if self.cursor.fetchone()["reminder"] else "NONAKTIF"
 
-        status = "AKTIF" if user["reminder"] else "NONAKTIF"
         embed = discord.Embed(
             title="STREAK REMINDER",
             description=f"Reminder streak kamu sekarang `{status}`",
@@ -234,21 +238,24 @@ class Streak(commands.Cog):
     @commands.command(name="streaklb")
     async def leaderboard(self, ctx):
         gid = str(ctx.guild.id)
-        if gid not in self.data or not self.data[gid]:
+
+        self.cursor.execute("""
+            SELECT * FROM streaks
+            WHERE guild_id=?
+            ORDER BY streak DESC
+            LIMIT 10
+        """, (gid,))
+        rows = self.cursor.fetchall()
+
+        if not rows:
             return await ctx.send("Belum ada data streak.")
 
-        sorted_users = sorted(
-            self.data[gid].items(),
-            key=lambda x: x[1]["streak"],
-            reverse=True
-        )[:10]
-
         desc = ""
-        for i, (uid, info) in enumerate(sorted_users, 1):
-            member = ctx.guild.get_member(int(uid))
+        for i, row in enumerate(rows, 1):
+            member = ctx.guild.get_member(int(row["user_id"]))
             if not member:
                 continue
-            desc += f"#{i} {self.get_badge(info['streak'])} {member.mention} — `{info['streak']} hari`\n"
+            desc += f"#{i} {self.get_badge(row['streak'])} {member.mention} — `{row['streak']} hari`\n"
 
         embed = discord.Embed(
             title="🏆 STREAK LEADERBOARD",
