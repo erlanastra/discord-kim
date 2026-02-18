@@ -8,7 +8,7 @@ class Announcement(commands.Cog):
         self.bot = bot
 
     @commands.command()
-    @commands.has_any_role("🛡️ | Mod DC", "🎖️ | Mod YT", "🧭 | Pembina OSIS", "📝| OSIS")
+    @commands.has_any_role("🛡️| Mod DC", "🎖️ | Mod YT", "🧭 | Pembina OSIS", "📝| OSIS")
     async def announce(self, ctx, *, pesan):
         """Kirim announcement dengan embed menarik"""
         embed = discord.Embed(
