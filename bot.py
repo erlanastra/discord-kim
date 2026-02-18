@@ -32,6 +32,7 @@ async def load_cogs():
     cogs = [
         "cogs.announce",
         "cogs.greeting",
+        "cogs.ramadhan_greeting",
         "cogs.megagombal",
         "cogs.birthday",
         "cogs.confession",
