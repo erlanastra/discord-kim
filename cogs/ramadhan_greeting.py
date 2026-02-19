@@ -101,6 +101,39 @@ class RamadhanGreeting(commands.Cog):
         30: ("04:42", "18:16"),
     }
 
+    RAMADHAN_WIT = {
+        1:  ("04:21", "18:01"),
+        2:  ("04:21", "18:00"),
+        3:  ("04:21", "18:00"),
+        4:  ("04:21", "18:00"),
+        5:  ("04:21", "18:00"),
+        6:  ("04:21", "18:00"),
+        7:  ("04:21", "17:59"),
+        8:  ("04:21", "17:59"),
+        9:  ("04:21", "17:59"),
+        10: ("04:21", "17:59"),
+        11: ("04:21", "17:58"),
+        12: ("04:21", "17:58"),
+        13: ("04:21", "17:58"),
+        14: ("04:21", "17:58"),
+        15: ("04:21", "17:57"),
+        16: ("04:20", "17:57"),
+        17: ("04:20", "17:57"),
+        18: ("04:20", "17:56"),
+        19: ("04:20", "17:56"),
+        20: ("04:20", "17:56"),
+        21: ("04:20", "17:55"),
+        22: ("04:20", "17:55"),
+        23: ("04:19", "17:55"),
+        24: ("04:19", "17:54"),
+        25: ("04:19", "17:54"),
+        26: ("04:19", "17:54"),
+        27: ("04:19", "17:53"),
+        28: ("04:19", "17:53"),
+        29: ("04:18", "17:53"),
+        30: ("04:18", "17:52"),
+    }
+
 
     # ================= UTIL =================
     @staticmethod
@@ -186,15 +219,13 @@ class RamadhanGreeting(commands.Cog):
                 ))
 
         # ================= WIT =================
-        if hari in self.RAMADHAN_WITA:
-            imsak_wita, buka_wita = self.RAMADHAN_WITA[hari]
-            imsak_wit = f"{int(imsak_wita[:2]) + 1:02d}{imsak_wita[2:]}"
-            buka_wit = f"{int(buka_wita[:2]) + 1:02d}{buka_wita[2:]}"
+        if hari in self.RAMADHAN_WIT:
+            imsak, buka = self.RAMADHAN_WIT[hari]
 
-            if t_wit == imsak_wit:
+            if t_wit == imsak:
                 await channel.send(embed=self.build_embed(
                     "⏰ Waktu Imsak Telah Tiba",
-                    imsak_wit,
+                    imsak,
                     "Wilayah Jayapura dan sekitarnya",
                     motivasi,
                     discord.Color.gold(),
@@ -202,10 +233,10 @@ class RamadhanGreeting(commands.Cog):
                     hari
                 ))
 
-            if t_wit == buka_wit:
+            if t_wit == buka:
                 await channel.send(embed=self.build_embed(
                     "🌙 Saatnya Berbuka Puasa",
-                    buka_wit,
+                    buka,
                     "Wilayah Jayapura dan sekitarnya",
                     motivasi,
                     discord.Color.green(),
@@ -218,8 +249,8 @@ class RamadhanGreeting(commands.Cog):
         embed = discord.Embed(
             title=title,
             description=(
-                f"📅 **Hari ke-{hari} Ramadhan**\n\n"
-                f"🕰️ **{time}**\n"
+                f"**Hari ke-{hari} Ramadhan**\n\n"
+                f"Jam: **{time}**\n"
                 f"📍 *{wilayah}*"
             ),
             color=color
