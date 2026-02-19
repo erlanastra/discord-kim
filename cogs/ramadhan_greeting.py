@@ -26,8 +26,8 @@ class RamadhanGreeting(commands.Cog):
     ]
 
     # ================= GAMBAR =================
-    IMAGE_IMSAK = "https://images.unsplash.com/photo-1605538368277-2f4e09a3e237"
-    IMAGE_SHOLAT = "https://images.unsplash.com/photo-1584881864238-bcdb0f5b7c62"
+    IMAGE_IMSAK = "https://images.unsplash.com/photo-1542816417-0983c9c9ad53"
+    IMAGE_SHOLAT = "https://images.unsplash.com/photo-1542816417-0983c9c9ad53"
     IMAGE_BUKA  = "https://images.unsplash.com/photo-1542816417-0983c9c9ad53"
 
     # ================= JADWAL =================
