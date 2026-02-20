@@ -44,6 +44,7 @@ async def load_cogs():
         "cogs.afk",
         "cogs.activity",
         "cogs.gpt",
+        "cogs.jagapos",
         "cogs.verif_reminder",
         "cogs.moderation",
         "cogs.modlog",
