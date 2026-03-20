@@ -1,22 +1,19 @@
 import discord
 from discord.ext import commands, tasks
-import sqlite3
+import aiomysql
 from datetime import datetime, timedelta, timezone
 
 STREAK_ROLES = [1, 5, 10, 20, 30, 50, 100]
 
-NOTIF_CHANNEL = "📈｜notification-streak"
-REMINDER_CHANNEL = "⏰｜reminder-streak"
+NOTIF_CHANNEL = 1469914626614493349
+REMINDER_CHANNEL = 1469909631441699010
 
-DB_FILE = "data/streak.db"
 
 class Streak(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.conn = sqlite3.connect(DB_FILE)
-        self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
-        self.init_db()
+        self.pool = None
+        bot.loop.create_task(self.init_db())
 
         if not self.reminder_loop.is_running():
             self.reminder_loop.start()
@@ -24,21 +21,32 @@ class Streak(commands.Cog):
     # ================= CLEANUP =================
     def cog_unload(self):
         self.reminder_loop.cancel()
-        self.conn.close()
+        if self.pool:
+            self.pool.close()
 
     # ================= DATABASE =================
-    def init_db(self):
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS streaks (
-                guild_id TEXT,
-                user_id TEXT,
-                streak INTEGER,
-                last TEXT,
-                reminder INTEGER,
-                PRIMARY KEY (guild_id, user_id)
-            )
-        """)
-        self.conn.commit()
+    async def init_db(self):
+        self.pool = await aiomysql.create_pool(
+            host="sql5.freesqldatabase.com",
+            port=3306,
+            user="sql5820722",
+            password="m6GjypbQk3",
+            db="sql5820722",  # ⬅️ WAJIB sesuai database kamu
+            autocommit=True
+        )
+
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS streaks (
+                        guild_id VARCHAR(50),
+                        user_id VARCHAR(50),
+                        streak INT,
+                        last VARCHAR(20),
+                        reminder TINYINT(1),
+                        PRIMARY KEY (guild_id, user_id)
+                    )
+                """)
 
     # ================= UTIL =================
     def today(self):
@@ -55,8 +63,8 @@ class Streak(commands.Cog):
         if streak >= 1: return "⭐"
         return ""
 
-    def get_channel(self, guild, name):
-        return discord.utils.get(guild.text_channels, name=name)
+    def get_channel(self, guild, channel_id):
+        return guild.get_channel(channel_id)
 
     def user_profile(self, embed, member):
         embed.set_author(
@@ -68,33 +76,38 @@ class Streak(commands.Cog):
 
     # ================= CORE =================
     async def add_streak(self, member):
+        if not self.pool:
+            return
+
         gid, uid = str(member.guild.id), str(member.id)
         today = self.today()
 
-        self.cursor.execute("""
-            SELECT streak, last FROM streaks
-            WHERE guild_id=? AND user_id=?
-        """, (gid, uid))
-        row = self.cursor.fetchone()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
 
-        if row and row["last"] == today:
-            return
+                await cursor.execute("""
+                    SELECT streak, last FROM streaks
+                    WHERE guild_id=%s AND user_id=%s
+                """, (gid, uid))
+                row = await cursor.fetchone()
 
-        if row:
-            streak = row["streak"] + 1
-            self.cursor.execute("""
-                UPDATE streaks
-                SET streak=?, last=?
-                WHERE guild_id=? AND user_id=?
-            """, (streak, today, gid, uid))
-        else:
-            streak = 1
-            self.cursor.execute("""
-                INSERT INTO streaks (guild_id, user_id, streak, last, reminder)
-                VALUES (?, ?, ?, ?, 1)
-            """, (gid, uid, streak, today))
+                if row and row["last"] == today:
+                    return
 
-        self.conn.commit()
+                if row:
+                    streak = row["streak"] + 1
+                    await cursor.execute("""
+                        UPDATE streaks
+                        SET streak=%s, last=%s
+                        WHERE guild_id=%s AND user_id=%s
+                    """, (streak, today, gid, uid))
+                else:
+                    streak = 1
+                    await cursor.execute("""
+                        INSERT INTO streaks (guild_id, user_id, streak, last, reminder)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (gid, uid, streak, today, 1))
+
         await self.handle_roles(member, streak)
 
     async def handle_roles(self, member, streak):
@@ -147,13 +160,18 @@ class Streak(commands.Cog):
     # ================= REMINDER =================
     @tasks.loop(hours=24)
     async def reminder_loop(self):
+        if not self.pool:
+            return
+
         today = self.today()
 
-        self.cursor.execute("""
-            SELECT * FROM streaks
-            WHERE reminder=1 AND last!=?
-        """, (today,))
-        rows = self.cursor.fetchall()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("""
+                    SELECT * FROM streaks
+                    WHERE reminder=1 AND last!=%s
+                """, (today,))
+                rows = await cursor.fetchall()
 
         for row in rows:
             guild = self.bot.get_guild(int(row["guild_id"]))
@@ -181,14 +199,19 @@ class Streak(commands.Cog):
     # ================= COMMAND =================
     @commands.command(name="streak")
     async def streak_info(self, ctx, member: discord.Member = None):
+        if not self.pool:
+            return await ctx.send("Database belum siap.")
+
         target = member or ctx.author
         gid, uid = str(ctx.guild.id), str(target.id)
 
-        self.cursor.execute("""
-            SELECT * FROM streaks
-            WHERE guild_id=? AND user_id=?
-        """, (gid, uid))
-        row = self.cursor.fetchone()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("""
+                    SELECT * FROM streaks
+                    WHERE guild_id=%s AND user_id=%s
+                """, (gid, uid))
+                row = await cursor.fetchone()
 
         if not row:
             return await ctx.send(f"{target.mention} belum punya streak.")
@@ -211,21 +234,26 @@ class Streak(commands.Cog):
 
     @commands.command(name="streakreminder")
     async def toggle_reminder(self, ctx):
+        if not self.pool:
+            return await ctx.send("Database belum siap.")
+
         gid, uid = str(ctx.guild.id), str(ctx.author.id)
 
-        self.cursor.execute("""
-            INSERT INTO streaks (guild_id, user_id, streak, last, reminder)
-            VALUES (?, ?, 0, '', 1)
-            ON CONFLICT(guild_id, user_id)
-            DO UPDATE SET reminder = NOT reminder
-        """, (gid, uid))
-        self.conn.commit()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("""
+                    INSERT INTO streaks (guild_id, user_id, streak, last, reminder)
+                    VALUES (%s, %s, 0, '', 1)
+                    ON DUPLICATE KEY UPDATE reminder = NOT reminder
+                """, (gid, uid))
 
-        self.cursor.execute("""
-            SELECT reminder FROM streaks
-            WHERE guild_id=? AND user_id=?
-        """, (gid, uid))
-        status = "AKTIF" if self.cursor.fetchone()["reminder"] else "NONAKTIF"
+                await cursor.execute("""
+                    SELECT reminder FROM streaks
+                    WHERE guild_id=%s AND user_id=%s
+                """, (gid, uid))
+                row = await cursor.fetchone()
+
+        status = "AKTIF" if row[0] else "NONAKTIF"
 
         embed = discord.Embed(
             title="STREAK REMINDER",
@@ -237,15 +265,20 @@ class Streak(commands.Cog):
 
     @commands.command(name="streaklb")
     async def leaderboard(self, ctx):
+        if not self.pool:
+            return await ctx.send("Database belum siap.")
+
         gid = str(ctx.guild.id)
 
-        self.cursor.execute("""
-            SELECT * FROM streaks
-            WHERE guild_id=?
-            ORDER BY streak DESC
-            LIMIT 10
-        """, (gid,))
-        rows = self.cursor.fetchall()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("""
+                    SELECT * FROM streaks
+                    WHERE guild_id=%s
+                    ORDER BY streak DESC
+                    LIMIT 10
+                """, (gid,))
+                rows = await cursor.fetchall()
 
         if not rows:
             return await ctx.send("Belum ada data streak.")
