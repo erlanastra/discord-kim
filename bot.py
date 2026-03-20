@@ -32,7 +32,6 @@ async def load_cogs():
     cogs = [
         "cogs.announce",
         "cogs.greeting",
-        "cogs.ramadhan_greeting",
         "cogs.megagombal",
         "cogs.birthday",
         "cogs.confession",
@@ -42,15 +41,11 @@ async def load_cogs():
         "cogs.streak",
         "cogs.tebakfakta_rounds",
         "cogs.afk",
-        "cogs.activity",
-        "cogs.gpt",
-        "cogs.jagapos",
         "cogs.verif_reminder",
         "cogs.moderation",
         "cogs.modlog",
         "cogs.utility",
         "cogs.about",
-        "cogs.warn",
         "cogs.welcome"
     ]
     for cog in cogs:

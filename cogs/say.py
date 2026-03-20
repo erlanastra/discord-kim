@@ -1,6 +1,14 @@
 import discord
 from discord.ext import commands
 
+# ✅ GANTI DENGAN ID ROLE KAMU
+ALLOWED_ROLE_IDS = [
+    1453103644244316343,  # 🛡️ Mod DC
+    1408509547601203252,  # 🎖️ Mod YT
+    1467360501745844446,  # 🧭 Pembina OSIS
+    1427276194876751902,   # 📝 OSIS
+]
+
 class BotSay(commands.Cog):
     """Bot pengirim pesan atas nama server (tanpa judul & footer)"""
 
@@ -8,16 +16,18 @@ class BotSay(commands.Cog):
         self.bot = bot
 
     @commands.command(name="nsays")
-    @commands.has_any_role(
-        "🛡️| Mod DC",
-        "🎖️ | Mod YT",
-        "🧭 | Pembina OSIS",
-        "📝| OSIS"
-    )
     async def nsays(self, ctx, channel: discord.TextChannel, *, pesan: str):
+
+        # 🔒 Cek apakah user punya salah satu role ID
+        user_role_ids = [role.id for role in ctx.author.roles]
+
+        if not any(role_id in user_role_ids for role_id in ALLOWED_ROLE_IDS):
+            await ctx.send("❌ Kamu tidak punya izin untuk menggunakan command ini.")
+            return
+
         embed = discord.Embed(
             description=pesan,
-            color=discord.Color.random()  # 🎨 random warna
+            color=discord.Color.random()
         )
 
         embed.set_author(
