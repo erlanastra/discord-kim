@@ -3,8 +3,10 @@ from discord.ext import commands, tasks
 import aiomysql
 import random
 import asyncio
+import pytz
+from datetime import datetime
 from collections import deque
-from datetime import datetime, timedelta
+WIB = pytz.timezone("Asia/Jakarta")
 
 # ====================== CONFIG ======================
 EVENT_ROLE = 1453103644244316343  # ganti dengan ID role event
@@ -311,6 +313,9 @@ class SchoolEvent(commands.Cog):
                         PRIMARY KEY (guild_id, user_id, event_type)
                     )
                 """)
+
+        now = datetime.now(WIB)
+
     async def startup(self):
         await self.bot.wait_until_ready()
         await self.init_db()
@@ -559,7 +564,7 @@ class SchoolEvent(commands.Cog):
     # ====================== MVP LOOP ======================
     @tasks.loop(hours=24)
     async def mvp_loop(self):
-        now = datetime.utcnow()
+        now = datetime.now(WIB)
         if now.weekday()%3==2:  # Hari ke-3
             for guild in self.bot.guilds:
                 channel = self.bot.get_channel(CHANNEL_EVENT)
@@ -605,10 +610,10 @@ class SchoolEvent(commands.Cog):
                 continue
 
 
-            now = datetime.now()
+            now = datetime.now(WIB)
 
             # reset harian
-            if now.hour == 0 and now.minute == 0:
+            if now.hour == 0 and now.minute <= 1:
                 await self.init_auto_events()
                 self.triggered_events.clear()
                 self.sent_reminders.clear()
