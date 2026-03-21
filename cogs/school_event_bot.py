@@ -323,17 +323,21 @@ class SchoolEvent(commands.Cog):
 
     # ====================== EVENT COMMAND ======================
     @commands.command()
-    @commands.cooldown(1, 300, commands.BucketType.guild)  # anti spam 5 menit
+    @commands.cooldown(1, 300, commands.BucketType.guild)  # 1x / 5 menit
     async def event(self, ctx_or_channel):
 
-        # 🔒 CHECK ROLE (hanya untuk user, bukan auto event)
+        # 🔒 CHECK ROLE (hanya untuk manual command)
         if not isinstance(ctx_or_channel, discord.TextChannel):
-            if not any(role.id == EVENT_ROLE for role in ctx_or_channel.author.roles):
-                return await ctx_or_channel.send("❌ Kamu tidak punya akses untuk menjalankan event!")
+            ctx = ctx_or_channel
+
+            if not any(role.id == EVENT_ROLE for role in ctx.author.roles):
+                return await ctx.send("❌ Kamu tidak punya akses untuk menjalankan event!")
 
         async with self.event_lock:
             if self.event_active:
-                return
+                return await (ctx_or_channel.send("⚠️ Event sedang berjalan!") 
+                            if not isinstance(ctx_or_channel, discord.TextChannel) 
+                            else ctx_or_channel.send("⚠️ Event sedang berjalan!"))
 
             self.event_active = True
 
@@ -347,22 +351,28 @@ class SchoolEvent(commands.Cog):
                 "quiz", "math", "riddle", "fast", "spam", "reaction"
             ])
 
-            if event_type == "quiz":
-                await self.quiz_event(channel)
-            elif event_type == "math":
-                await self.math_event(channel)
-            elif event_type == "riddle":
-                await self.riddle_event(channel)
-            elif event_type == "fast":
-                await self.fast_type_event(channel)
-            elif event_type == "spam":
-                await self.spam_event(channel)
-            elif event_type == "reaction":
-                await self.reaction_event(channel)
+            try:
+                if event_type == "quiz":
+                    await self.quiz_event(channel)
+                elif event_type == "math":
+                    await self.math_event(channel)
+                elif event_type == "riddle":
+                    await self.riddle_event(channel)
+                elif event_type == "fast":
+                    await self.fast_type_event(channel)
+                elif event_type == "spam":
+                    await self.spam_event(channel)
+                elif event_type == "reaction":
+                    await self.reaction_event(channel)
 
-            await self.show_leaderboard(channel)
-            asyncio.create_task(self.cleanup_channel(channel))
-            self.event_active = False
+                await self.show_leaderboard(channel)
+                asyncio.create_task(self.cleanup_channel(channel))
+
+            except Exception as e:
+                print(f"Event error: {e}")
+
+            finally:
+                self.event_active = False
 
     # ====================== EVENT TYPES ======================
     async def quiz_event(self, channel):
