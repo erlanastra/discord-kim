@@ -37,6 +37,7 @@ async def load_cogs():
         "cogs.confession",
         "cogs.say",
         "cogs.cantikganteng",
+        "cogs.school_event_bot",
         "cogs.rules",
         "cogs.streak",
         "cogs.tebakfakta_rounds",
