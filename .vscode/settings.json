@@ -1,0 +1,7 @@
+{
+  "discordRichPresence.details": "Visual Studio Code",
+  "discordRichPresence.state": "",
+  "discordRichPresence.showWorkspace": false,
+  "discordRichPresence.showDetails": false,
+  "vscord.enable": true
+}
