@@ -2,4 +2,5 @@ discord.py
 python-dotenv
 requests
 aiomysql
-pytz
+pytz==2024.1
+# force rebuild
