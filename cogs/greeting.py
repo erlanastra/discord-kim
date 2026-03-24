@@ -94,7 +94,7 @@ class Greeting(commands.Cog):
             embed.add_field(name="Tips", value="Tetap semangat, tersenyum, dan nikmati harimu! 😄", inline=True)
             embed.add_field(name="Waktu Saat Ini", value=f"{hour:02d}:00 WIB", inline=True)
 
-            embed.set_footer(text=f"Dikirim otomatis oleh Greeting Bot • NanZ Server")
+            embed.set_footer(text=f"Dikirim otomatis oleh Greeting Bot • nanZ Server")
             embed.set_thumbnail(url=greet["thumbnail"])
 
             await channel.send(embed=embed)

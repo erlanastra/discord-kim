@@ -632,11 +632,20 @@ class SchoolEvent(commands.Cog):
                     continue
 
                 # 🔔 REMINDER ANTI SPAM
-                if 0 < delta <= 600:
-                    rkey = f"{key}-10"
-                    if rkey not in self.sent_reminders:
-                        await channel.send("⚡ Dalam 10 menit lagi akan ada event dadakan!")
-                        self.sent_reminders.add(rkey)
+                if -10 <= delta <= 60:
+                    if self.event_active:
+                        continue
+
+                    event_type = random.choice([
+                        "Quiz", "Math", "Riddle", "Fast Typing", "Spam", "Reaction"
+                    ])
+                    await channel.send(f"🎯 Event sebentar lagi! Jenis event: **{event_type}**")
+
+                    try:
+                        await self.event(channel)
+                        self.triggered_events.add(key)
+                    except Exception as e:
+                        print(f"Auto event error: {e}")
 
                 elif 0 < delta <= 180:
                     rkey = f"{key}-3"
@@ -644,22 +653,13 @@ class SchoolEvent(commands.Cog):
                         await channel.send("⏳ Tinggal 3 menit lagi event akan segera dimulai!")
                         self.sent_reminders.add(rkey)
 
-                elif 0 < delta <= 60:
-                    if self.event_active:
-                        continue
-                    event_type = random.choice([
-                        "Quiz", "Math", "Riddle", "Fast Typing", "Spam", "Reaction"
-                    ])
-                    await channel.send(f"🎯 Event sebentar lagi! Jenis event: **{event_type}**")
+                elif 0 < delta <= 600:
+                    rkey = f"{key}-10"
+                    if rkey not in self.sent_reminders:
+                        await channel.send("⚡ Dalam 10 menit lagi akan ada event dadakan!")
+                        self.sent_reminders.add(rkey)
 
-                    self.triggered_events.add(key)
-
-                    try:
-                        await self.event(channel)
-                    except Exception as e:
-                        print(f"Auto event error: {e}")
-
-            await asyncio.sleep(20)
+            await asyncio.sleep(5)
 
 # ====================== SETUP ======================
 async def setup(bot):
