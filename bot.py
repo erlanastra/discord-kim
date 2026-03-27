@@ -36,8 +36,8 @@ async def load_cogs():
         "cogs.birthday",
         "cogs.confession",
         "cogs.say",
-        "cogs.cantikganteng",
         "cogs.school_event_bot",
+        "cogs.cantikganteng",
         "cogs.rules",
         "cogs.streak",
         "cogs.tebakfakta_rounds",
@@ -46,6 +46,7 @@ async def load_cogs():
         "cogs.moderation",
         "cogs.modlog",
         "cogs.utility",
+        "cogs.profile",
         "cogs.about",
         "cogs.welcome"
     ]

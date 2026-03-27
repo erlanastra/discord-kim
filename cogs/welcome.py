@@ -5,16 +5,33 @@ import json
 class Welcome(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Load config
+
         with open("config.json") as f:
             self.config = json.load(f)
 
-    # Listener untuk member baru join
-    @commands.Cog.listener()
-    async def on_member_join(self, member):
-        await self.send_welcome(member)
+        # ✅ TARUH ID ROLE DI SINI
+        self.MEMBER_ROLE_ID = 1453095603008442510  # ganti dengan ID role kamu
 
-    # Command untuk tes welcome
+    # ✅ Welcome setelah dapat role
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+
+        channel_id = self.config.get("welcome_channel")
+        if not channel_id:
+            return
+
+        channel = after.guild.get_channel(channel_id)
+        if not channel:
+            return
+
+        before_roles = set(role.id for role in before.roles)
+        after_roles = set(role.id for role in after.roles)
+
+        # ✅ Trigger kalau role baru ditambahkan
+        if self.MEMBER_ROLE_ID not in before_roles and self.MEMBER_ROLE_ID in after_roles:
+            await self.send_welcome(after)
+
+    # Command test
     @commands.command(name="testwelcome")
     async def test_welcome(self, ctx, member: discord.Member = None):
         member = member or ctx.author
@@ -39,16 +56,15 @@ class Welcome(commands.Cog):
                 "Di sini semua member dianggap keluarga, jadi jangan ragu untuk ngobrol, "
                 "bertanya, atau ikut event bareng.\n\n"
                 "Pastikan baca aturan di <#1406557882811682888> supaya pengalamanmu nyaman.\n"
-                "Ambil role kamu di <#1408510751039291443>. "
-                "Untuk member perempuan, ada proses verifikasi agar semua tetap aman. "
-                "Setelah itu, kalian bisa dapat role **siswi** dengan mudah.\n\n"
-                "Semoga betah ya! Jangan sungkan untuk aktif dan menikmati semua kegiatan di server."
+                "Ambil role kamu di <#1408510751039291443>.\n\n"
+                "✨ Sekarang kamu sudah **terverifikasi** dan bisa menikmati semua channel!"
             ),
             color=0x00ffcc
         )
+
         embed.set_footer(text="nanZ Server")
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_image(url="https://i.ibb.co/album/nanz-banner.png")  # Banner server
+        embed.set_image(url="https://i.ibb.co/album/nanz-banner.png") 
 
         await channel.send(embed=embed)
 
