@@ -48,6 +48,7 @@ async def load_cogs():
         "cogs.verifygreeting",
         "cogs.utility",
         "cogs.profile",
+        "cogs.verifysystem",
         "cogs.about",
         "cogs.welcome"
     ]
