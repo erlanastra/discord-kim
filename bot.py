@@ -45,6 +45,7 @@ async def load_cogs():
         "cogs.verif_reminder",
         "cogs.moderation",
         "cogs.modlog",
+        "cogs.verifygreeting",
         "cogs.utility",
         "cogs.profile",
         "cogs.about",
