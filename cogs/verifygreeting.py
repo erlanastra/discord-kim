@@ -46,7 +46,6 @@ class VerifyGreeting(commands.Cog):
         # 🔔 mention role staff
         staff_mention = (
             f"<@&{self.MOD_DC_ROLE_ID}> "
-            f"<@&{self.MOD_YT_ROLE_ID}> "
             f"<@&{self.PEMBINA_OSIS_ROLE_ID}> "
             f"<@&{self.OSIS_ROLE_ID}>"
         )
