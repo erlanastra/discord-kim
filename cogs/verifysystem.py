@@ -5,15 +5,26 @@ import re
 
 # ================= CONFIG =================
 VERIF_CHANNEL_ID = 1486913580161962054
-STAFF_CHANNEL_ID = 1486981828798709930
-DATA_MEMBER_CHANNEL_ID = 123456789012345678  # GANTI
+STAFF_CHANNEL_ID = 1508683781698224241
+DATA_MEMBER_CHANNEL_ID = 1486981828798709930
+
+# ROLE MEMBER
 MEMBER_ROLE_ID = 1453095603008442510
+
+# ROLE SISWA / SISWI
+SISWA_ROLE_ID = 1453246082405503036
+SISWI_ROLE_ID = 1453246187636396032
+
 
 # ================= FOLLOWER CHECK =================
 def get_instagram_followers(username):
+
     try:
         url = f"https://www.instagram.com/{username}/"
-        headers = {"User-Agent": "Mozilla/5.0"}
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
         res = requests.get(url, headers=headers)
 
@@ -35,9 +46,13 @@ def get_instagram_followers(username):
 
 
 def get_tiktok_followers(username):
+
     try:
         url = f"https://www.tiktok.com/@{username}"
-        headers = {"User-Agent": "Mozilla/5.0"}
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
         res = requests.get(url, headers=headers)
 
@@ -57,20 +72,24 @@ def get_tiktok_followers(username):
     except:
         return "Error"
 
+
 # ================= PLATFORM SELECT =================
 class PlatformSelect(discord.ui.Select):
 
     def __init__(self):
 
         options = [
+
             discord.SelectOption(
                 label="Instagram",
-                value="IG"
+                value="IG",
+                emoji="📸"
             ),
 
             discord.SelectOption(
                 label="TikTok",
-                value="TikTok"
+                value="TikTok",
+                emoji="🎵"
             )
         ]
 
@@ -79,17 +98,29 @@ class PlatformSelect(discord.ui.Select):
             options=options
         )
 
-    async def callback(self, interaction: discord.Interaction):
+    async def callback(
+        self,
+        interaction: discord.Interaction
+    ):
 
         self.view.platform = self.values[0]
 
         await interaction.response.defer()
 
-# ================= VERIFY MODAL =================
-class VerifyModal(discord.ui.Modal, title="Form Verifikasi"):
 
-    nama = discord.ui.TextInput(label="Nama")
-    asal = discord.ui.TextInput(label="Asal")
+# ================= VERIFY MODAL =================
+class VerifyModal(
+    discord.ui.Modal,
+    title="Form Verifikasi"
+):
+
+    nama = discord.ui.TextInput(
+        label="Nama"
+    )
+
+    asal = discord.ui.TextInput(
+        label="Asal"
+    )
 
     umur = discord.ui.TextInput(
         label="Umur (opsional)",
@@ -114,7 +145,10 @@ class VerifyModal(discord.ui.Modal, title="Form Verifikasi"):
         self.bot = bot
         self.platform = platform
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(
+        self,
+        interaction: discord.Interaction
+    ):
 
         # ================= VALIDASI =================
         if "@" not in self.username.value:
@@ -161,77 +195,6 @@ class VerifyModal(discord.ui.Modal, title="Form Verifikasi"):
                 f"https://tiktok.com/@{username_clean}"
             )
 
-        # ================= DATA MEMBER CHANNEL =================
-        data_channel = interaction.client.get_channel(
-            DATA_MEMBER_CHANNEL_ID
-        )
-
-        if data_channel:
-
-            data_embed = discord.Embed(
-                title="📦 Data Member Baru",
-                color=0x00ffaa
-            )
-
-            data_embed.add_field(
-                name="User",
-                value=(
-                    f"{interaction.user} "
-                    f"({interaction.user.id})"
-                ),
-                inline=False
-            )
-
-            data_embed.add_field(
-                name="Nama",
-                value=self.nama.value,
-                inline=True
-            )
-
-            data_embed.add_field(
-                name="Asal",
-                value=self.asal.value,
-                inline=True
-            )
-
-            data_embed.add_field(
-                name="Umur",
-                value=self.umur.value or "Tidak diisi",
-                inline=True
-            )
-
-            data_embed.add_field(
-                name="Gender",
-                value=self.gender.value.upper(),
-                inline=True
-            )
-
-            data_embed.add_field(
-                name="Medsos",
-                value=medsos_final,
-                inline=False
-            )
-
-            data_embed.add_field(
-                name="Followers",
-                value=followers,
-                inline=True
-            )
-
-            data_embed.add_field(
-                name="Profile",
-                value=link,
-                inline=False
-            )
-
-            data_embed.set_thumbnail(
-                url=interaction.user.display_avatar.url
-            )
-
-            await data_channel.send(
-                embed=data_embed
-            )
-
         # ================= STAFF CHANNEL =================
         staff_channel = interaction.client.get_channel(
             STAFF_CHANNEL_ID
@@ -263,6 +226,18 @@ class VerifyModal(discord.ui.Modal, title="Form Verifikasi"):
             )
 
             embed.add_field(
+                name="Umur",
+                value=self.umur.value or "Tidak diisi",
+                inline=True
+            )
+
+            embed.add_field(
+                name="Gender",
+                value=self.gender.value.upper(),
+                inline=True
+            )
+
+            embed.add_field(
                 name="Medsos",
                 value=medsos_final,
                 inline=False
@@ -274,13 +249,26 @@ class VerifyModal(discord.ui.Modal, title="Form Verifikasi"):
                 inline=True
             )
 
+            embed.add_field(
+                name="Profile",
+                value=link,
+                inline=False
+            )
+
             embed.set_thumbnail(
                 url=interaction.user.display_avatar.url
             )
 
             view = VerifyView(
                 self.bot,
-                interaction.user.id
+                interaction.user.id,
+                self.nama.value,
+                self.asal.value,
+                self.umur.value,
+                self.gender.value.upper(),
+                medsos_final,
+                followers,
+                link
             )
 
             await staff_channel.send(
@@ -293,6 +281,7 @@ class VerifyModal(discord.ui.Modal, title="Form Verifikasi"):
             ephemeral=True
         )
 
+
 # ================= VERIFY BUTTON =================
 class VerifyButton(discord.ui.View):
 
@@ -303,11 +292,14 @@ class VerifyButton(discord.ui.View):
         self.bot = bot
         self.platform = None
 
-        self.add_item(PlatformSelect())
+        self.add_item(
+            PlatformSelect()
+        )
 
     @discord.ui.button(
         label="Lanjut Isi Data",
-        style=discord.ButtonStyle.primary
+        style=discord.ButtonStyle.primary,
+        emoji="📋"
     )
 
     async def lanjut(
@@ -330,19 +322,40 @@ class VerifyButton(discord.ui.View):
             )
         )
 
+
 # ================= APPROVE / DENY =================
 class VerifyView(discord.ui.View):
 
-    def __init__(self, bot, user_id):
+    def __init__(
+        self,
+        bot,
+        user_id,
+        nama,
+        asal,
+        umur,
+        gender,
+        medsos,
+        followers,
+        link
+    ):
 
         super().__init__(timeout=None)
 
         self.bot = bot
         self.user_id = user_id
 
+        self.nama = nama
+        self.asal = asal
+        self.umur = umur
+        self.gender = gender
+        self.medsos = medsos
+        self.followers = followers
+        self.link = link
+
     @discord.ui.button(
         label="Approve",
-        style=discord.ButtonStyle.success
+        style=discord.ButtonStyle.success,
+        emoji="✅"
     )
 
     async def approve(
@@ -355,13 +368,36 @@ class VerifyView(discord.ui.View):
             int(self.user_id)
         )
 
-        role = interaction.guild.get_role(
+        member_role = interaction.guild.get_role(
             MEMBER_ROLE_ID
         )
 
-        if member and role:
+        siswa_role = interaction.guild.get_role(
+            SISWA_ROLE_ID
+        )
 
-            await member.add_roles(role)
+        siswi_role = interaction.guild.get_role(
+            SISWI_ROLE_ID
+        )
+
+        # ================= ROLE =================
+        if member:
+
+            roles_to_add = []
+
+            # Role utama
+            if member_role:
+                roles_to_add.append(member_role)
+
+            # Gender role
+            if self.gender == "L" and siswa_role:
+                roles_to_add.append(siswa_role)
+
+            elif self.gender == "P" and siswi_role:
+                roles_to_add.append(siswi_role)
+
+            if roles_to_add:
+                await member.add_roles(*roles_to_add)
 
             try:
                 await member.send(
@@ -370,20 +406,115 @@ class VerifyView(discord.ui.View):
             except:
                 pass
 
-        await interaction.response.send_message(
-            "✅ Approved",
-            ephemeral=True
+        # ================= DATA MEMBER =================
+        data_channel = interaction.client.get_channel(
+            DATA_MEMBER_CHANNEL_ID
         )
 
-        self.disable_all_items()
+        if data_channel:
+
+            data_embed = discord.Embed(
+                title="📦 Data Member Baru",
+                color=0x57F287
+            )
+
+            data_embed.add_field(
+                name="User",
+                value=(
+                    f"{member} "
+                    f"({self.user_id})"
+                ),
+                inline=False
+            )
+
+            data_embed.add_field(
+                name="Nama",
+                value=self.nama,
+                inline=True
+            )
+
+            data_embed.add_field(
+                name="Asal",
+                value=self.asal,
+                inline=True
+            )
+
+            data_embed.add_field(
+                name="Umur",
+                value=self.umur or "Tidak diisi",
+                inline=True
+            )
+
+            data_embed.add_field(
+                name="Gender",
+                value=self.gender,
+                inline=True
+            )
+
+            data_embed.add_field(
+                name="Medsos",
+                value=self.medsos,
+                inline=False
+            )
+
+            data_embed.add_field(
+                name="Followers",
+                value=self.followers,
+                inline=True
+            )
+
+            data_embed.add_field(
+                name="Profile",
+                value=self.link,
+                inline=False
+            )
+
+            data_embed.add_field(
+                name="Approved By",
+                value=interaction.user.mention,
+                inline=False
+            )
+
+            data_embed.set_thumbnail(
+                url=member.display_avatar.url
+            )
+
+            await data_channel.send(
+                content=(
+                    f"**Username:** "
+                    f"{member.name}"
+                ),
+                embed=data_embed
+            )
+
+        # ================= EDIT STAFF EMBED =================
+        embed = interaction.message.embeds[0]
+
+        embed.color = 0x57F287
+
+        embed.add_field(
+            name="Status",
+            value=(
+                f"✅ Approved by "
+                f"{interaction.user.mention}"
+            ),
+            inline=False
+        )
 
         await interaction.message.edit(
-            view=self
+            embed=embed,
+            view=None
+        )
+
+        await interaction.response.send_message(
+            "✅ Verifikasi berhasil diapprove",
+            ephemeral=True
         )
 
     @discord.ui.button(
         label="Deny",
-        style=discord.ButtonStyle.danger
+        style=discord.ButtonStyle.danger,
+        emoji="❌"
     )
 
     async def deny(
@@ -405,16 +536,29 @@ class VerifyView(discord.ui.View):
             except:
                 pass
 
+        embed = interaction.message.embeds[0]
+
+        embed.color = 0xED4245
+
+        embed.add_field(
+            name="Status",
+            value=(
+                f"❌ Denied by "
+                f"{interaction.user.mention}"
+            ),
+            inline=False
+        )
+
+        await interaction.message.edit(
+            embed=embed,
+            view=None
+        )
+
         await interaction.response.send_message(
-            "❌ Denied",
+            "❌ Verifikasi berhasil dideny",
             ephemeral=True
         )
 
-        self.disable_all_items()
-
-        await interaction.message.edit(
-            view=self
-        )
 
 # ================= MAIN COG =================
 class VerifySystem(commands.Cog):
@@ -423,7 +567,7 @@ class VerifySystem(commands.Cog):
 
         self.bot = bot
 
-    @commands.command(name="verifikasi")
+    @commands.command(name="dataverif")
     async def verifikasi(self, ctx):
 
         if ctx.channel.id != VERIF_CHANNEL_ID:
@@ -433,15 +577,26 @@ class VerifySystem(commands.Cog):
             title="📋 Verifikasi",
             description=(
                 "Pilih platform lalu klik tombol "
-                "untuk isi data"
+                "untuk isi data."
             ),
             color=0x00ffcc
+        )
+
+        embed.add_field(
+            name="Informasi",
+            value=(
+                "• Data hanya dilihat staff\n"
+                "• Gender otomatis dapat role\n"
+                "• Verifikasi untuk keamanan server"
+            ),
+            inline=False
         )
 
         await ctx.send(
             embed=embed,
             view=VerifyButton(self.bot)
         )
+
 
 # ================= SETUP =================
 async def setup(bot):
