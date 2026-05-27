@@ -1,53 +1,88 @@
 import discord
 from discord.ext import commands
+from datetime import datetime
+import random
 
 class AFK(commands.Cog):
-    """AFK multi-server dengan nickname otomatis & embed warna-warni"""
+    """AFK multi-server dengan durasi + nickname otomatis"""
 
     def __init__(self, bot):
         self.bot = bot
-        # Struktur: {guild_id: {user_id: {"nick": original_nick, "reason": str}}}
+
+        # Format:
+        # {
+        #   guild_id: {
+        #       user_id: {
+        #           "reason": str,
+        #           "since": datetime,
+        #           "nick": original_nick
+        #       }
+        #   }
+        # }
         self.afk_users = {}
 
+    def random_color(self):
+        return discord.Color(random.randint(0, 0xFFFFFF))
+
+    def format_time(self, seconds):
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        days, hours = divmod(hours, 24)
+
+        if days > 0:
+            return f"{days} hari {hours} jam"
+        elif hours > 0:
+            return f"{hours} jam {minutes} menit"
+        elif minutes > 0:
+            return f"{minutes} menit {seconds} detik"
+        else:
+            return f"{seconds} detik"
+
     @commands.command(name="afk")
-    async def set_afk(self, ctx, *, reason: str = "Sedang AFK"):
-        """Set user AFK dengan nickname otomatis"""
-        member = ctx.author
+    async def afk(self, ctx, *, reason: str = "AFK"):
+        user = ctx.author
         guild_id = ctx.guild.id
 
         if guild_id not in self.afk_users:
             self.afk_users[guild_id] = {}
 
-        if member.id in self.afk_users[guild_id]:
-            await ctx.send(embed=discord.Embed(
+        # Kalau udah AFK
+        if user.id in self.afk_users[guild_id]:
+            embed = discord.Embed(
                 title="❌ AFK Gagal",
-                description=f"{member.mention}, kamu sudah AFK sebelumnya! Jangan lupa istirahat dulu 😉",
+                description=f"{user.mention}, kamu sudah AFK sebelumnya!",
                 color=discord.Color.red()
-            ))
-            return
+            )
+            return await ctx.send(embed=embed)
 
-        # Simpan nickname asli
-        original_nick = member.display_name
-        self.afk_users[guild_id][member.id] = {"nick": original_nick, "reason": reason}
+        # Simpan data AFK
+        original_nick = user.display_name
 
-        # Coba ganti nickname
+        self.afk_users[guild_id][user.id] = {
+            "reason": reason,
+            "since": datetime.utcnow(),
+            "nick": original_nick
+        }
+
+        # Tambah [AFK]
         try:
-            new_nick = f"[AFK] {original_nick}"
-            await member.edit(nick=new_nick)
+            await user.edit(nick=f"[AFK] {original_nick}")
         except discord.Forbidden:
-            await ctx.send(embed=discord.Embed(
-                title="⚠️ Gagal Ubah Nickname",
-                description="Aku tidak bisa mengubah nickname-mu. Cek permission ya!",
-                color=discord.Color.orange()
-            ))
+            pass
+        except:
+            pass
 
-        # Kirim embed AFK
         embed = discord.Embed(
-            title="✅ Kamu sekarang AFK!",
-            description=f"**Alasan:** **{reason}**",
-            color=discord.Color.blue()
+            title="🌙 AFK Status Aktif",
+            description=(
+                f"{user.mention} telah mengaktifkan status AFK.\n"
+                f"**Alasan**: {reason}"
+            ),
+            color=self.random_color()
         )
-        embed.set_footer(text=f"{member.display_name} sedang offline sementara...")
+
+        embed.set_footer(text="Status akan otomatis nonaktif saat kamu kembali")
+
         await ctx.send(embed=embed)
 
     @commands.Cog.listener()
@@ -55,47 +90,79 @@ class AFK(commands.Cog):
         if message.author.bot:
             return
 
-        guild = message.guild
-        if not guild:
-            return  # DM, skip
+        if not message.guild:
+            return
 
-        guild_id = guild.id
+        guild_id = message.guild.id
+
         if guild_id not in self.afk_users:
             return
 
-        # Jangan trigger AFK balik saat command afk dipakai
+        # Biar command !afk gak langsung remove
         if message.content.startswith("!afk"):
             return
 
-        # User yang AFK ngetik lagi → restore nickname
+        # =========================
+        # BALIK DARI AFK
+        # =========================
         if message.author.id in self.afk_users[guild_id]:
-            info = self.afk_users[guild_id].pop(message.author.id)
-            original_nick = info["nick"]
+
+            data = self.afk_users[guild_id].pop(message.author.id)
+
+            afk_time = (
+                datetime.utcnow() - data["since"]
+            ).total_seconds()
+
+            waktu = self.format_time(int(afk_time))
+
+            # Balikin nickname
             try:
-                await message.author.edit(nick=original_nick)
+                await message.author.edit(nick=data["nick"])
             except discord.Forbidden:
                 pass
-            embed = discord.Embed(
-                title="👋 Welcome Back!",
-                description=f"{message.author.mention}, AFK-mu sudah selesai. Semangat lagi! ✨",
-                color=discord.Color.green()
-            )
-            embed.set_footer(text="Senang kamu kembali!")
-            await message.channel.send(embed=embed)
-            await self.bot.process_commands(message)
+            except:
+                pass
 
-        # Cek mention user AFK
-        for user_id, info in self.afk_users[guild_id].items():
-            if user_id in [u.id for u in message.mentions]:
-                user_obj = self.bot.get_user(user_id)
+            embed = discord.Embed(
+                title="👋 Welcome Back",
+                description=(
+                    f"{message.author.mention} telah kembali.\n"
+                    f"**Durasi AFK**: {waktu}"
+                ),
+                color=self.random_color()
+            )
+
+            await message.channel.send(embed=embed)
+
+        # =========================
+        # CEK USER AFK YANG DI MENTION
+        # =========================
+        for user in message.mentions:
+
+            if user.id in self.afk_users[guild_id]:
+
+                data = self.afk_users[guild_id][user.id]
+
+                afk_time = (
+                    datetime.utcnow() - data["since"]
+                ).total_seconds()
+
+                waktu = self.format_time(int(afk_time))
+
                 embed = discord.Embed(
-                    title="💤 Sedang AFK",
-                    description=f"{message.author.mention}, **{user_obj.display_name}** sedang AFK 😴\n**Alasan:** **{info['reason']}**",
-                    color=discord.Color.purple()
+                    title="⚠️ Pengguna Sedang AFK",
+                    description=(
+                        f"{user.mention} saat ini sedang sibuk.\n"
+                        f"**Alasan**: {data['reason']}\n"
+                        f"**Sejak**: {waktu} yang lalu"
+                    ),
+                    color=self.random_color()
                 )
-                embed.set_footer(text="Jangan diganggu dulu ya!")
+
                 await message.channel.send(embed=embed)
 
-# Setup cog untuk discord.py v2+
+        await self.bot.process_commands(message)
+
+# Setup cog
 async def setup(bot):
     await bot.add_cog(AFK(bot))
