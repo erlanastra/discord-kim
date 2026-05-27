@@ -15,6 +15,9 @@ MEMBER_ROLE_ID = 1453095603008442510
 SISWA_ROLE_ID = 1453246082405503036
 SISWI_ROLE_ID = 1453246187636396032
 
+# ROLE NON VERIF
+NONVERIF_ROLE_ID = 1504467138440597604
+
 
 # ================= FOLLOWER CHECK =================
 def get_instagram_followers(username):
@@ -380,6 +383,7 @@ class VerifyView(discord.ui.View):
             SISWI_ROLE_ID
         )
 
+        # ================= ROLE ================
         # ================= ROLE =================
         if member:
 
@@ -396,8 +400,17 @@ class VerifyView(discord.ui.View):
             elif self.gender == "P" and siswi_role:
                 roles_to_add.append(siswi_role)
 
+            # Tambahkan role baru
             if roles_to_add:
                 await member.add_roles(*roles_to_add)
+
+            # ================= REMOVE NONVERIF =================
+            nonverif_role = interaction.guild.get_role(
+                NONVERIF_ROLE_ID
+            )
+
+            if nonverif_role and nonverif_role in member.roles:
+                await member.remove_roles(nonverif_role)
 
             try:
                 await member.send(
