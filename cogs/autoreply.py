@@ -2,14 +2,69 @@ import discord
 from discord.ext import commands
 import random
 import asyncio
-import time
 
 class AutoReply(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
 
-        self.cooldown = {}
+        # =============================================
+        # EMOJI SERVER — format: <:nama:ID> atau <a:nama:ID> kalau animated
+        # Ganti nama dan ID sesuai emoji di server kamu
+        # Cara dapat ID: Developer Mode → klik kanan emoji → Copy Emoji ID
+        # =============================================
+        self.sticker_ids = [
+            "<:22cathink:1493158293940473856>",
+            "<:1joseph_kenned:1493144793956618240>",
+            "<:kimthinking:1507084030288465960>",
+            "<:jkyujibruh:1493137332906360923>",
+            "<:kimpose:1507082661976604833>",
+            "<:22starecatto:1493145059636543518>",
+        ]
+
+        # =============================================
+        # KATA-KATA TERLARANG
+        # =============================================
+        self.badwords = [
+            # anjing variants
+            "anjim", "anjink", "anjing", "anj", "anjng", "ajg", "ajng", "ajang",
+            "anjinh", "anding", "andeng", "4nj1n9", "anjin9", "4njing", "anj1ng",
+            "anj1n9",
+            # kontol variants
+            "kontol", "kntl", "kntol", "kontil", "kintil",
+            # babi variants
+            "babi", "bbi", "b4b1",
+            # alat kelamin variants
+            "momok", "memek", "mmek", "mmok", "meki", "puki", "cukimay", "kimak",
+            "pukimak", "mmk", "titid", "titit",
+            # setan/biadab
+            "setan", "setang", "biadab", "firaun",
+            # goblok/bodoh variants
+            "goblok", "gblok", "govlok", "goblock", "goblog", "gblog", "goblough",
+            "blog", "blough", "bego", "bgo", "bodo", "bdo", "bdoh", "bodoh",
+            "t0l0l", "b0d0h", "gblk",
+            # monyet variants
+            "monyet", "monket", "monkey", "mnyet", "nyet",
+            # sinting
+            "sinting",
+            # english swear
+            "shit", "fuck", "bitch", "stupid", "damn", "fak", "syit",
+            # ngentot variants
+            "ngentot", "ngentod", "ngntot", "ngntod", "ngentoy", "nentoy", "nentot",
+            # tolol variants
+            "tll", "yatim",
+        ]
+
+        # Pesan warning yang akan dipilih secara random
+        self.warning_messages = [
+            " **Hei, jaga kata-katanya ya!** Kita semua di sini untuk saling menghargai 🙏",
+            " **Ups! Kata itu kurang pantas.** Yuk gunakan bahasa yang lebih baik 😊",
+            " **Bahasa dulu ya!** Server ini punya aturan untuk saling menghormati 🤍",
+            " **Kata-katanya dijaga ya!** Kita jaga suasana server tetap nyaman untuk semua 😊",
+            " **Hei!** Tolong gunakan bahasa yang sopan di server ini ya 🙏",
+            " **Ingat ya**, setiap kata yang kita ucapkan mencerminkan diri kita. Yuk lebih baik 🌟",
+            " **Bahasa kamu kurang oke tuh!** Kita sepakat untuk saling menghargai di sini 💬",
+        ]
 
         self.responses = {
 
@@ -241,6 +296,11 @@ class AutoReply(commands.Cog):
                 "Bot kurangin keponya deh 😅"
             ],
 
+            "siap bot": [
+                "ingat yaa, bot selalu mantau 😎",
+                "aman ajaa 😅"
+            ],
+
             # =========================
             # SAPAAN
             # =========================
@@ -313,7 +373,7 @@ class AutoReply(commands.Cog):
                 "Selamat malam 🤍",
                 "Malam, istirahat yang cukup ya 🌙"
             ],
-             "pagi oll": [
+            "pagi oll": [
                 "Pagi juga ☀️",
                 "Semangat pagi ✨",
                 "Pagi! 🍳"
@@ -377,6 +437,14 @@ class AutoReply(commands.Cog):
             ],
         }
 
+    def contains_badword(self, content: str) -> bool:
+        words = content.lower().split()
+        content_lower = content.lower()
+        for bw in self.badwords:
+            if bw in words or bw == content_lower:
+                return True
+        return False
+
     @commands.Cog.listener()
     async def on_message(self, message):
 
@@ -384,14 +452,45 @@ class AutoReply(commands.Cog):
             return
 
         content = message.content.lower().strip()
+        # =============================================
+        # FITUR 1: WARNING KATA KASAR
+        # =============================================
+        if self.contains_badword(content):
+            warning_text = random.choice(self.warning_messages)
+            embed = discord.Embed(
+                description=f"{message.author.mention} {warning_text}",
+                color=discord.Color.red()
+            )
 
-        now = time.time()
+            async with message.channel.typing():
+                await asyncio.sleep(random.uniform(0.5, 1))
 
-        if message.author.id in self.cooldown:
-            if now - self.cooldown[message.author.id] < 5:
-                return
+            await message.channel.send(embed=embed)
+            await self.bot.process_commands(message)
+            return
 
+        # =============================================
+        # FITUR 2: AUTO REPLY RESPONSES
+        # FITUR 2: AUTO REPLY RESPONSES
+        # Cek keyword dulu — kalau cocok, balas teks seperti biasa.
+        # Kalau ini adalah reply ke bot tapi tidak ada keyword → kirim stiker.
+        # =============================================
         words = content.split()
+
+        # FIX: fetch manual kalau resolved belum ke-cache Discord
+        is_reply_to_bot = False
+        if message.reference and message.reference.message_id:
+            try:
+                ref_msg = (
+                    message.reference.resolved
+                    or await message.channel.fetch_message(message.reference.message_id)
+                )
+                if isinstance(ref_msg, discord.Message) and ref_msg.author.id == self.bot.user.id:
+                    is_reply_to_bot = True
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+        keyword_matched = False
 
         for trigger, replies in self.responses.items():
 
@@ -400,9 +499,7 @@ class AutoReply(commands.Cog):
                 or trigger in words
                 or content.startswith(trigger + " ")
             ):
-
-                self.cooldown[message.author.id] = now
-
+                keyword_matched = True
                 async with message.channel.typing():
                     await asyncio.sleep(random.uniform(1, 2))
 
@@ -418,7 +515,18 @@ class AutoReply(commands.Cog):
 
                 break
 
+        # =============================================
+        # FITUR 3: STIKER RANDOM — hanya kalau reply bot
+        #          dan tidak ada keyword yang cocok
+        # =============================================
+        if is_reply_to_bot and not keyword_matched and self.sticker_ids:
+            emoji = random.choice(self.sticker_ids)
+            async with message.channel.typing():
+                await asyncio.sleep(random.uniform(0.5, 1.5))
+            await message.channel.send(emoji)
+
         await self.bot.process_commands(message)
+
 
 async def setup(bot):
     await bot.add_cog(AutoReply(bot))
