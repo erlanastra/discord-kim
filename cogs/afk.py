@@ -1,51 +1,54 @@
 import discord
 from discord.ext import commands
-import json
-import os
-import time
+from datetime import datetime
+import random
 
-AFK_FILE = "afk_data.json"
-
-
-# ================= LOAD DATA =================
-def load_afk():
-
-    if not os.path.exists(AFK_FILE):
-        return {}
-
-    with open(AFK_FILE, "r") as f:
-        return json.load(f)
-
-
-def save_afk(data):
-
-    with open(AFK_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-
-afk_users = load_afk()
-
-
-# ================= COG =================
 class AFK(commands.Cog):
 
     def __init__(self, bot):
 
         self.bot = bot
+        self.afk_users = {}
+
+    # ================= RANDOM COLOR =================
+    def random_color(self):
+
+        return discord.Color(
+            random.randint(0, 0xFFFFFF)
+        )
+
+    # ================= FORMAT WAKTU =================
+    def format_time(self, seconds):
+
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        days, hours = divmod(hours, 24)
+
+        if days > 0:
+            return f"{days} hari {hours} jam"
+
+        elif hours > 0:
+            return f"{hours} jam {minutes} menit"
+
+        elif minutes > 0:
+            return f"{minutes} menit {seconds} detik"
+
+        else:
+            return f"{seconds} detik"
 
     # ================= COMMAND AFK =================
-    @commands.command()
+    @commands.command(name="afk")
     async def afk(self, ctx, *, reason="AFK"):
 
-        user_id = str(ctx.author.id)
+        user = ctx.author
 
-        # Kalau sudah AFK
-        if user_id in afk_users:
+        # Sudah AFK
+        if user.id in self.afk_users:
 
             embed = discord.Embed(
                 title="❌ AFK Gagal",
                 description=(
-                    f"{ctx.author.mention}, "
+                    f"{user.mention}, "
                     f"kamu sudah AFK sebelumnya!"
                 ),
                 color=0xED4245
@@ -53,24 +56,39 @@ class AFK(commands.Cog):
 
             return await ctx.send(embed=embed)
 
-        # Simpan AFK
-        afk_users[user_id] = {
+        # Simpan data AFK
+        self.afk_users[user.id] = {
             "reason": reason,
-            "time": time.time()
+            "since": datetime.utcnow()
         }
 
-        save_afk(afk_users)
+        # Ubah nickname
+        try:
+
+            if ctx.guild:
+
+                await user.edit(
+                    nick=f"[AFK] {user.display_name}"
+                )
+
+        except:
+            pass
 
         embed = discord.Embed(
             title="🌙 AFK Status Aktif",
             description=(
-                f"{ctx.author.mention} "
+                f"{user.mention} "
                 f"telah mengaktifkan status AFK.\n\n"
-                f"**Alasan:** {reason}\n\n"
-                f"Status akan otomatis nonaktif "
-                f"saat kamu kembali."
+                f"**Alasan:** {reason}"
             ),
-            color=0x9B59B6
+            color=self.random_color()
+        )
+
+        embed.set_footer(
+            text=(
+                "Status akan otomatis "
+                "nonaktif saat kamu kembali"
+            )
         )
 
         await ctx.send(embed=embed)
@@ -79,40 +97,55 @@ class AFK(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
 
-        # Ignore bot
         if message.author.bot:
             return
 
-        # Ignore command
-        ctx = await self.bot.get_context(message)
+        # ================= IGNORE COMMAND =================
+        prefix = "!"
 
-        if ctx.valid:
+        if message.content.startswith(prefix):
             return
 
-        user_id = str(message.author.id)
+        user_id = message.author.id
 
         # ================= REMOVE AFK =================
-        if user_id in afk_users:
+        if user_id in self.afk_users:
 
-            data = afk_users[user_id]
+            data = self.afk_users.pop(user_id)
 
-            afk_time = int(
-                time.time() - data["time"]
+            afk_time = (
+                datetime.utcnow() - data["since"]
+            ).total_seconds()
+
+            waktu = self.format_time(
+                int(afk_time)
             )
 
-            del afk_users[user_id]
+            # Balikin nickname
+            try:
 
-            save_afk(afk_users)
+                if message.guild:
+
+                    original_name = (
+                        message.author.display_name
+                        .replace("[AFK] ", "")
+                    )
+
+                    await message.author.edit(
+                        nick=original_name
+                    )
+
+            except:
+                pass
 
             embed = discord.Embed(
                 title="👋 Welcome Back",
                 description=(
                     f"{message.author.mention} "
-                    f"telah kembali dari AFK.\n"
-                    f"**Durasi AFK:** "
-                    f"{afk_time} detik"
+                    f"telah kembali dari AFK.\n\n"
+                    f"**Durasi AFK:** {waktu}"
                 ),
-                color=0xE67E22
+                color=self.random_color()
             )
 
             await message.channel.send(
@@ -122,20 +155,29 @@ class AFK(commands.Cog):
         # ================= CEK USER AFK =================
         for user in message.mentions:
 
-            target_id = str(user.id)
+            if user.id in self.afk_users:
 
-            if target_id in afk_users:
+                data = self.afk_users[user.id]
 
-                data = afk_users[target_id]
+                afk_time = (
+                    datetime.utcnow() - data["since"]
+                ).total_seconds()
+
+                waktu = self.format_time(
+                    int(afk_time)
+                )
 
                 embed = discord.Embed(
-                    title="💤 User Sedang AFK",
+                    title="⚠️ Pengguna Sedang AFK",
                     description=(
-                        f"{user.mention} sedang AFK.\n\n"
+                        f"{user.mention} "
+                        f"saat ini sedang AFK.\n\n"
                         f"**Alasan:** "
-                        f"{data['reason']}"
+                        f"{data['reason']}\n"
+                        f"**Sejak:** "
+                        f"{waktu} yang lalu"
                     ),
-                    color=0x5865F2
+                    color=self.random_color()
                 )
 
                 await message.channel.send(

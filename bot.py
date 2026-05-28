@@ -4,30 +4,22 @@ from discord.ext import commands
 import discord
 from dotenv import load_dotenv
 
-# --- Load .env ---
-load_dotenv()  # Pastikan file .env di folder yang sama dengan bot.py
+load_dotenv() 
 
-# --- Ambil token ---
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Debug sementara untuk cek token terbaca
 print("DEBUG: TOKEN =", TOKEN if TOKEN else "TOKEN TIDAK DITEMUKAN")
 
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN tidak ditemukan di environment variable")
 
-# --- Setup bot ---
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- Event ketika bot siap ---
 @bot.event
 async def on_ready():
     print(f"Bot online sebagai {bot.user}")
 
-
-
-# --- Load semua cog ---
 async def load_cogs():
     cogs = [
         "cogs.announce",
@@ -35,7 +27,6 @@ async def load_cogs():
         "cogs.megagombal",
         "cogs.say",
         "cogs.cantikganteng",
-        "cogs.rules",
         "cogs.tebakfakta_rounds",
         "cogs.afk",
         "cogs.setup_game",
@@ -44,10 +35,8 @@ async def load_cogs():
         "cogs.autoreply",
         "cogs.verif_reminder",
         "cogs.moderation",
-        "cogs.modlog",
         "cogs.verifygreeting",
         "cogs.ticket",
-        "cogs.utility",
         "cogs.verifysystem",
         "cogs.about",
         "cogs.welcome"

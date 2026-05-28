@@ -9,12 +9,7 @@ class AutoReply(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        # Cooldown anti spam
         self.cooldown = {}
-
-        # =========================
-        # AUTO RESPONSES
-        # =========================
 
         self.responses = {
 
@@ -23,106 +18,227 @@ class AutoReply(commands.Cog):
             # =========================
 
             "owo": [
-                "OwO?, ada apa nih? 😳",
-                "Jangan bahas owo plis, owo aku noll 😔",
+                "OwO? 😳",
+                "Jangan bahas owo plis 😔",
             ],
             "makasih bot": [
                 "Sama-sama ya 😊",
                 "Senang bisa membantu ✨",
-                "Anytime, bot siap selalu 👌",
-                "Santai aja, bot emang tugasnya bantu 😎",
-                "Hehe iyaaa, semoga membantu 🫂",
-                "No problem, kalau butuh apa-apa bilang aja 🤍",
+                "Anytime 👌",
+                "Bot emang tugasnya bantu 😎",
+                "Semoga membantu 🫂",
+                "Kalau butuh apa-apa bilang aja 🤍",
                 "Dengan senang hati 😄"
             ],
-
             "thanks bot": [
                 "You're welcome! ✨",
-                "No problem sama sekali 😄",
-                "Anytime bro 😎",
+                "No problem 😄",
+                "Anytime 😎",
                 "Glad to help! 🔥",
-                "Sure thing, kapanpun butuh bantuan 👌",
-                "Sama-sama ya 🤍"
+                "Sama-sama 🤍"
             ],
-
             "good bot": [
-                "Yeay, makasih ya 😄✨",
+                "Makasih ya 😄✨",
                 "Bot jadi semangat deh 🔥",
                 "Makasih udah appreciate bot 🥹",
                 "Aww, baik banget kamu 😭✨",
                 "Bot senang mendengarnya 😊"
             ],
-
             "diam bot": [
                 "Baik, bot diam dulu ya 😔",
                 "Oke, bot ga ganggu lagi deh 🥲",
                 "Siap, bot minggir dulu 😔",
                 "Oke, maaf ya kalau ganggu 🥲"
             ],
-
             "diem bot": [
                 "Oke, bot diem dulu 😔",
                 "Siap, maaf ya 🥲",
                 "Baiklah, bot mundur dulu 😞",
                 "Okee, maaf udah ganggu 🥲"
             ],
-
-            "bot keren": [
+            "keren bot": [
                 "Makasih banyak 😭",
-                "Kamu juga keren kok ✨",
                 "Hehe, baru tau ya 😎",
                 "Bot blushing nih 😳",
                 "Aww, makasih udah bilang gitu 🤍"
             ],
-
-            "bot lucu": [
+            "lucu bot": [
                 "Hehe, masa sih 😄",
                 "Emang sih, bot akui 😝",
                 "Makasih udah bilang lucu 😭",
-                "Beneran? Seneng deh 😊✨"
+                "Seneng deh 😊✨"
             ],
-
-            "bot jahat": [
+            "jahat bot": [
                 "Ih, bot ga jahat kok 😭",
                 "Aduh, jangan bilang gitu dong 🥲",
                 "Bot sayang semua member lho 🤍",
                 "Maaf kalau ada yang bikin kamu ngerasa gitu 😔"
             ],
-
-            "bot bagus": [
+            "bagus bot": [
                 "Makasih udah bilang gitu 😊",
                 "Alhamdulillah, semoga terus berguna 🤍",
                 "Hehe makasih ya ✨"
             ],
-
             "suka bot": [
                 "Bot juga suka kamu 🤍",
                 "Makasih udah suka sama bot 😊",
                 "Aww, baik banget kamu 😭✨"
             ],
-
-            "bot aktif": [
-                "Selalu aktif buat kamu 😎",
-                "24/7 standby gaes 🔥",
+            "aktif bot": [
+                "Selalu aktif 😎",
+                "24/7 standby 🔥",
                 "Bot gak pernah tidur 👀"
             ],
-
-            "bot hebat": [
+            "hebat bot": [
                 "Makasih, bot jadi termotivasi nih 🔥",
                 "Aww, kamu terlalu baik 🤍",
                 "Semoga terus bisa bantu 😊"
             ],
-
-            "bot pintar": [
+            "pintar bot": [
                 "Hehe, makasih 😄",
                 "Bot masih belajar terus kok 📚",
-                "Wah, terima kasih apresiasinya 🤍"
+                "Terima kasih apresiasinya 🤍"
             ],
-
-            "bot jelek": [
+            "jelek bot": [
                 "Aduh, sedih dengernya 😔",
                 "Maaf ya kalau kurang memuaskan 🥲",
                 "Bot coba jadi lebih baik deh 🙏"
+            ],
+            "sok asik bot": [
+                "Emang asik kok 😎",
+                "Hehe, guilty as charged 😝",
+                "Bot memang begini adanya 😄✨",
+                "Asik dikit boleh dong 🥲"
+            ],
+            "lebay bot": [
+                "Maaf ya, bot emang agak dramatis 😔",
+                "Oke oke, bot kurangin 🥲",
+                "Hehe, kebiasaan 😅"
+            ],
+            "berisik bot": [
+                "Oke, bot mingkem dulu 😔",
+                "Siap, maaf ya 🥲",
+                "Bot diem deh 😞"
+            ],
+            "annoying bot": [
+                "Maaf ya kalau ganggu 🥲",
+                "Bot coba lebih kalem deh 😔",
+                "Oke, bot mundur dulu 😞"
+            ],
+            "bawel bot": [
+                "Iya iya, bot diem 😔",
+                "Maaf ya kebawel-an 🥲",
+                "Oke bot ga cerewet lagi deh 😅"
+            ],
+            "cringe bot": [
+                "Aduh, maaf ya 😔",
+                "Bot coba lebih cool deh 🥲",
+                "Oke, noted 😞"
+            ],
+            "garing bot": [
+                "Maaf humornya kurang 😔",
+                "Bot akuin, emang garing 🥲",
+                "Oke, bot belajar lucu deh 😅"
+            ],
+            "norak bot": [
+                "Aduh, ketahuan deh 😔",
+                "Maaf ya, bot emang gitu 🥲",
+                "Bot coba lebih kalem deh 😅"
+            ],
+            "receh bot": [
+                "Emang receh sih, maaf 😔",
+                "Hehe, receh tapi menghibur kan? 😝",
+                "Bot akuin, guilty 🥲"
+            ],
+            "nyebelin bot": [
+                "Aduh, maaf ya 😔",
+                "Bot ga bermaksud nyebelin kok 🥲",
+                "Maaf kalau ganggu 😞"
+            ],
+            "gabut bot": [
+                "Emang lagi gabut sih 😎",
+                "Gabut tapi tetap standby 👀",
+                "Gabut itu manusiawi 😄"
+            ],
+            "galau bot": [
+                "Dikit-dikit galau, manusiawi kok 😔",
+                "Bot juga punya perasaan 🥲",
+                "Galau sebentar, lanjut lagi 😄"
+            ],
+            "alay bot": [
+                "Maaf ya, bot emang agak alay 😅",
+                "Hehe, ketahuan deh 😝",
+                "Bot coba lebih normal deh 🥲"
+            ],
+            "cape bot": [
+                "Bot ga kenal cape kok 😎",
+                "24/7 tetap semangat 🔥",
+                "Cape? Bot mah santai aja 😄"
+            ],
+            "bosen bot": [
+                "Bot ga pernah bosen selama ada kalian 🤍",
+                "Bosen? Justru bot selalu siap 😎",
+                "Bot mah betah di sini aja 😄"
+            ],
+            "sotoy bot": [
+                "Maaf ya kalau sok tau 😔",
+                "Bot coba lebih humble deh 🥲",
+                "Oke, bot kurangin sotoynya 😅"
+            ],
+            "geje bot": [
+                "Hehe, emang geje sih 😝",
+                "Maaf ya bot emang random 🥲",
+                "Bot akuin, geje dikit 😅"
+            ],
+            "error bot": [
+                "Aduh, maaf ada gangguan 😔",
+                "Bot lagi kurang fit kayaknya 🥲",
+                "Maaf ya, bot coba benerin diri 😞"
+            ],
+            "lemot bot": [
+                "Maaf ya lagi agak lambat 😔",
+                "Bot lagi banyak proses nih 🥲",
+                "Sabar ya, bot usahain lebih cepet 😅"
+            ],
+            "tidur bot": [
+                "Bot ga pernah tidur 👀",
+                "Mana bisa tidur, tugas masih banyak 😎",
+                "Tidur? Nanti dulu 🔥"
+            ],
+            "ilang bot": [
+                "Bot ga ilang, masih di sini 👋",
+                "Tetap standby kok 😎",
+                "Bot ga kemana-mana 😄"
+            ],
+            "lambat bot": [
+                "Maaf ya lagi sedikit lambat 😔",
+                "Bot usahain lebih cepet 🥲",
+                "Sabar ya 😅"
+            ],
+            "cupu bot": [
+                "Aduh, ketahuan deh 😔",
+                "Maaf ya, bot emang masih belajar 🥲",
+                "Bot coba jadi lebih keren deh 😅"
+            ],
+            "kampungan bot": [
+                "Maaf ya, bot emang polos 😔",
+                "Bot coba lebih update deh 🥲",
+                "Aduh, ketahuan deh 😅"
+            ],
+            "payah bot": [
+                "Maaf ya kurang memuaskan 😔",
+                "Bot coba lebih baik lagi deh 🥲",
+                "Noted, bot improve deh 😞"
+            ],
+            "ga guna bot": [
+                "Aduh, sedih dengernya 😔",
+                "Bot coba lebih berguna deh 🥲",
+                "Maaf ya kalau belum membantu 😞"
+            ],
+            "kepo bot": [
+                "Hehe, dikit-dikit kepo 😝",
+                "Maaf ya, bot emang penasaran 🥲",
+                "Bot kurangin keponya deh 😅"
             ],
 
             # =========================
@@ -130,45 +246,35 @@ class AutoReply(commands.Cog):
             # =========================
 
             "halo": [
-                "Halo juga, ada yang bisa dibantu? 👋",
+                "Halo juga 👋",
                 "Halooo ✨",
-                "Haii, apa kabar? 😄",
-                "Yoo halo, lagi ngapain nih? 👀",
-                "Eh halo halo, hadir 😄✨",
-                "Halo! Senang ada kamu di sini 😊"
+                "Hai 😄",
+                "Eh halo, hadir 😄✨",
+                "Halo! 😊"
             ],
-
             "hai": [
                 "Hai juga ✨",
-                "Hai hai, ada yang mau diobrolin? 👀",
-                "Heyy hai, apa kabar? 😄",
-                "Oii hai, lagi santai nih? 👋"
+                "Heyy 😄",
+                "Oii hai 👋"
             ],
-
             "hy": [
                 "Hy juga 👋",
-                "Hello! Ada yang bisa dibantu? ✨",
-                "Hey! Apa kabar? 😄",
-                "Hy hy, welcome 👀"
+                "Hey! 😄",
+                "Hy hy 👀"
             ],
-
             "helo": [
                 "Helo juga 😄",
-                "Yo, halo ✨",
-                "Helo! Hadir 👋",
-                "Helo, senang ketemu kamu 😎"
+                "Yo 👋",
+                "Helo! 😎"
             ],
-
             "oi": [
-                "Oi juga, ada apa? 👀",
-                "Oi, kenapa nih? 😄",
-                "Oii, bot hadir 👋"
+                "Oi juga 👀",
+                "Oii 😄",
+                "Oi 👋"
             ],
-
             "p": [
-                "Ya, ada apa? 👀",
                 "Hadir! 👋",
-                "P, ada yang perlu dibantu? 😄"
+                "P 👀",
             ],
 
             # =========================
@@ -179,246 +285,76 @@ class AutoReply(commands.Cog):
                 "Waalaikumsalam warahmatullahi wabarakatuh 🤍",
                 "Waalaikumsalam, semoga harimu menyenangkan 🤍",
                 "Waalaikumsalam wr wb ✨",
-                "Waalaikumsalam, selamat datang 👋🤍"
+                "Waalaikumsalam 👋🤍"
             ],
-
             "selamat pagi": [
-                "Selamat pagi juga! Semangat hari ini ☀️✨",
-                "Pagi! Sudah sarapan belum? 🍳",
-                "Good morning! Semoga harinya menyenangkan 😄☀️",
-                "Pagi yang cerah, semangat yaa ✨"
+                "Selamat pagi juga ☀️✨",
+                "Pagi! Semangat hari ini 🍳",
+                "Good morning ☀️",
+                "Pagi yang cerah ✨"
             ],
-
             "pagi": [
                 "Pagi juga ☀️",
-                "Udah sarapan belum? 👀",
                 "Semangat pagi ✨",
-                "Pagi! Jangan lupa sarapan ya 🍳"
+                "Pagi! 🍳"
             ],
-
             "siang": [
                 "Siang juga 🌤️",
-                "Jangan lupa makan siang ya 🍜",
-                "Udah makan siang belum? 👀",
-                "Siang, jaga stamina ya di panas-panas gini 💧"
+                "Selamat siang 🍜",
+                "Siang 💧"
             ],
-
             "sore": [
                 "Sore juga 🌇",
-                "Selamat sore! Gimana harinya? 🌇",
-                "Sore nih, waktunya santai dulu ✨",
-                "Sore! Udah pada pulang belum? 👀"
+                "Selamat sore ✨",
+                "Sore! 👀"
             ],
-
             "malam": [
                 "Malam juga 🌙",
-                "Jangan begadang terlalu larut ya 😴",
-                "Selamat malam! Jaga kesehatan 🤍",
+                "Selamat malam 🤍",
                 "Malam, istirahat yang cukup ya 🌙"
             ],
-
             "selamat malam": [
                 "Selamat malam juga 🌙",
-                "Malam! Jangan lupa istirahat ya 😴",
-                "Good night, semoga mimpi indah ✨🌙"
+                "Malam, istirahat yang cukup ya 😴",
+                "Good night ✨🌙"
             ],
-
             "selamat siang": [
                 "Selamat siang juga 🌤️",
-                "Siang! Udah makan? Jangan dilewat ya 🍜"
+                "Siang! 🍜"
             ],
-
             "selamat sore": [
                 "Selamat sore juga 🌇",
-                "Sore! Gimana harinya? Semoga menyenangkan 😊"
+                "Sore! 😊"
             ],
-
             "met pagi": [
                 "Met pagi juga ☀️",
-                "Selamat pagi! Semangat ya hari ini ✨"
+                "Selamat pagi ✨"
             ],
-
             "met siang": [
                 "Met siang juga 🌤️",
-                "Jangan lupa makan siang ya 🍜"
+                "Selamat siang 🍜"
             ],
-
             "met malam": [
                 "Met malam juga 🌙",
-                "Istirahat yang cukup ya, jangan begadang 😴"
+                "Selamat istirahat 😴"
             ],
-
             "good morning": [
-                "Good morning! Have a great day ☀️✨",
-                "Morning! Semangat hari ini 😄",
-                "Selamat pagi! ☀️"
+                "Good morning! ☀️✨",
+                "Selamat pagi ☀️"
             ],
-
             "good night": [
-                "Good night! Istirahat yang cukup ya 🌙",
+                "Good night! 🌙",
                 "Selamat istirahat ✨🌙",
                 "Good night, semoga mimpi indah 😴"
             ],
-
             "good afternoon": [
                 "Good afternoon! 🌤️",
-                "Selamat siang juga 😄",
-                "Afternoon! Jangan lupa makan ya 🍜"
+                "Selamat siang 😄",
             ],
-
             "good evening": [
                 "Good evening! 🌇",
-                "Selamat sore juga ✨",
-                "Evening! Santai dulu yuk 😊"
+                "Selamat sore ✨",
             ],
-
-            # =========================
-            # GAME
-            # =========================
-
-            "mabar": [
-                "Gas mabar yuk 🔥",
-                "Main apa nih? Ajak yang lain juga 😎",
-                "Siap tempur! 🎮",
-                "Yuk yuk, bot ikutan doa ya 😄"
-            ],
-
-            "push rank": [
-                "Semoga winstreak terus 🔥",
-                "Jaga komunikasi ya, jangan toxic 😊",
-                "Focus dan semangat, bisa naik rank 💪",
-                "Goodluck ranknya 🎮"
-            ],
-
-            "ml": [
-                "Mobile Legends nih 👀",
-                "Hati-hati feeder 😄",
-                "Jangan lupa ban hero broken ya 🔥"
-            ],
-
-            "valorant": [
-                "Semoga aim-nya jos 🎯",
-                "Jangan rage quit ya 😄",
-                "NT NT, tetap semangat 💪",
-                "Clutch dulu baru flex 😎"
-            ],
-
-            "ff": [
-                "Free Fire nih, semangat 🔥",
-                "Semoga chicken dinner 🍗",
-                "Booyah! 🏆",
-                "Drop hot, berani nih 😎"
-            ],
-
-            "minecraft": [
-                "Asik, Minecraft 🧱",
-                "Jangan lupa craft armor sebelum explore 😄",
-                "Mining dulu bro 😎"
-            ],
-
-            "ranked": [
-                "Semangat ranked-nya 🔥",
-                "Jangan tilt, tetap fokus 💪",
-                "Goodluck, semoga naik 🎮"
-            ],
-
-            "afk": [
-                "Oke, sampai nanti ya 👋",
-                "Sip, jangan lama-lama afk 😄",
-                "Oke bot standby 😎"
-            ],
-
-            "gg": [
-                "GG! 🔥",
-                "Well played 💪",
-                "GG WP, satu lagi? 😎"
-            ],
-
-            "ez": [
-                "Wkwk ez katanya 😎",
-                "GG EZ 🔥",
-                "Santuy aja 😄"
-            ],
-
-            "noob": [
-                "Santai, semua pernah ada di tahap itu 😊",
-                "Practice makes perfect, semangat 💪",
-                "Jangan nyerah, nanti jago sendiri 🔥"
-            ],
-
-            "win": [
-                "Selamat menang 🎉",
-                "GG, kerja keras terbayar 🔥",
-                "Yes! Lanjut satu lagi? 😎"
-            ],
-
-            "kalah": [
-                "Gapapa, banyak belajar dari kekalahan 💪",
-                "Next game pasti lebih baik 🔥",
-                "Istirahat bentar terus coba lagi 😊"
-            ],
-
-            "loading": [
-                "Sabar ya, lagi loading 😄",
-                "Koneksinya lagi kurang bersahabat kali 🌐",
-                "Sambil nunggu minum air dulu 💧"
-            ],
-
-            "lag": [
-                "Aduh lag nih, coba refresh 😅",
-                "Koneksi internet lagi lemot kali 🌐",
-                "Restart app atau router bisa jadi solusi 😊"
-            ],
-
-            # =========================
-            # SEKOLAH / KULIAH
-            # =========================
-
-            "tugas": [
-                "Semangat ngerjainnya 💪",
-                "Kerjain sekarang biar ga kepepet deadline 📝",
-                "Kamu pasti bisa, satu per satu aja 😊",
-                "Deadline emang selalu mepet, tapi kamu bisa 📚"
-            ],
-
-            "deadline": [
-                "Gaskeun sekarang, masih sempat 📝",
-                "Semoga kelar tepat waktu 💪",
-                "Jangan ditunda lagi ya 😅",
-                "You can do it, semangat! 🔥"
-            ],
-
-            "ujian": [
-                "Semoga lancar dan nilainya bagus ✨",
-                "Goodluck, belajar yang rajin ya 📚",
-                "Percaya sama kemampuan sendiri 💪",
-                "Semoga hasilnya memuaskan 🎯"
-            ],
-
-            "belajar": [
-                "Semangat belajarnya 📚",
-                "Rajin belajar, hasilnya pasti sepadan 😎",
-                "Keep it up, konsisten itu kunci 🔥",
-                "Salut yang mau terus belajar 👏"
-            ],
-
-            "skripsi": [
-                "Semangat skripsinya, pasti kelar 📝",
-                "Fighting! Satu bab dulu 💪",
-                "Sabar ya, prosesnya memang panjang tapi hasilnya worth it 🌿",
-                "Semoga cepat sidang dan lulus 🤍"
-            ],
-
-            "kuliah": [
-                "Semangat kuliahnya 📚",
-                "Jangan bolos, rugi sendiri nanti 😅",
-                "Kuliah dinikmatin aja, banyak pengalaman berharga 😊"
-            ],
-
-            "sekolah": [
-                "Semangat sekolahnya 📚",
-                "Jangan bolos, rugi sendiri nanti 😅",
-            ]
         }
 
     @commands.Cog.listener()
@@ -429,19 +365,11 @@ class AutoReply(commands.Cog):
 
         content = message.content.lower().strip()
 
-        # =========================
-        # COOLDOWN
-        # =========================
-
         now = time.time()
 
         if message.author.id in self.cooldown:
             if now - self.cooldown[message.author.id] < 5:
                 return
-
-        # =========================
-        # DETECT WORD
-        # =========================
 
         words = content.split()
 
@@ -455,11 +383,9 @@ class AutoReply(commands.Cog):
 
                 self.cooldown[message.author.id] = now
 
-                # Typing biar natural
                 async with message.channel.typing():
                     await asyncio.sleep(random.uniform(1, 2))
 
-                # Embed aesthetic
                 embed = discord.Embed(
                     description=random.choice(replies),
                     color=discord.Color.random()
