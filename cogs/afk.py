@@ -53,7 +53,7 @@ class AFK(commands.Cog):
 
             return await ctx.send(embed=embed)
 
-        # Simpan data AFK
+        # Simpan AFK
         afk_users[user_id] = {
             "reason": reason,
             "time": time.time()
@@ -61,7 +61,6 @@ class AFK(commands.Cog):
 
         save_afk(afk_users)
 
-        # Embed sukses
         embed = discord.Embed(
             title="🌙 AFK Status Aktif",
             description=(
@@ -84,13 +83,10 @@ class AFK(commands.Cog):
         if message.author.bot:
             return
 
-        # ================= CEK COMMAND =================
+        # Ignore command
         ctx = await self.bot.get_context(message)
 
-        # Kalau message adalah command
-        # jangan jalankan logic AFK
         if ctx.valid:
-            await self.bot.process_commands(message)
             return
 
         user_id = str(message.author.id)
@@ -123,7 +119,7 @@ class AFK(commands.Cog):
                 embed=embed
             )
 
-        # ================= CEK MENTION AFK =================
+        # ================= CEK USER AFK =================
         for user in message.mentions:
 
             target_id = str(user.id)
