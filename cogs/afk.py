@@ -4,7 +4,7 @@ from datetime import datetime
 import random
 
 class AFK(commands.Cog):
-    """AFK multi-server dengan durasi + nickname otomatis"""
+    """AFK System Multi Server"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -21,9 +21,15 @@ class AFK(commands.Cog):
         # }
         self.afk_users = {}
 
+    # =========================
+    # RANDOM COLOR
+    # =========================
     def random_color(self):
         return discord.Color(random.randint(0, 0xFFFFFF))
 
+    # =========================
+    # FORMAT DURASI
+    # =========================
     def format_time(self, seconds):
         minutes, seconds = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
@@ -38,21 +44,27 @@ class AFK(commands.Cog):
         else:
             return f"{seconds} detik"
 
+    # =========================
+    # COMMAND AFK
+    # =========================
     @commands.command(name="afk")
     async def afk(self, ctx, *, reason: str = "AFK"):
+
         user = ctx.author
         guild_id = ctx.guild.id
 
         if guild_id not in self.afk_users:
             self.afk_users[guild_id] = {}
 
-        # Kalau udah AFK
+        # Kalau sudah AFK
         if user.id in self.afk_users[guild_id]:
+
             embed = discord.Embed(
                 title="❌ AFK Gagal",
                 description=f"{user.mention}, kamu sudah AFK sebelumnya!",
                 color=discord.Color.red()
             )
+
             return await ctx.send(embed=embed)
 
         # Simpan data AFK
@@ -64,7 +76,7 @@ class AFK(commands.Cog):
             "nick": original_nick
         }
 
-        # Tambah [AFK]
+        # Tambah nickname [AFK]
         try:
             await user.edit(nick=f"[AFK] {original_nick}")
         except discord.Forbidden:
@@ -76,48 +88,64 @@ class AFK(commands.Cog):
             title="🌙 AFK Status Aktif",
             description=(
                 f"{user.mention} telah mengaktifkan status AFK.\n"
-                f"**Alasan**: {reason}"
+                f"**Alasan:** {reason}"
             ),
             color=self.random_color()
         )
 
-        embed.set_footer(text="Status akan otomatis nonaktif saat kamu kembali")
+        embed.set_footer(
+            text="Status akan otomatis nonaktif saat kamu kembali"
+        )
 
         await ctx.send(embed=embed)
 
+    # =========================
+    # EVENT MESSAGE
+    # =========================
     @commands.Cog.listener()
     async def on_message(self, message):
+
+        # Abaikan bot
         if message.author.bot:
             return
 
+        # Abaikan DM
         if not message.guild:
             return
 
         guild_id = message.guild.id
 
         if guild_id not in self.afk_users:
-            return
+            self.afk_users[guild_id] = {}
 
-        # Biar command !afk gak langsung remove
-        if message.content.startswith("!afk"):
-            return
+        # Cek apakah command AFK
+        is_afk_command = message.content.lower().startswith("!afk")
 
         # =========================
-        # BALIK DARI AFK
+        # USER BALIK DARI AFK
         # =========================
-        if message.author.id in self.afk_users[guild_id]:
+        if (
+            not is_afk_command and
+            message.author.id in self.afk_users[guild_id]
+        ):
 
-            data = self.afk_users[guild_id].pop(message.author.id)
+            data = self.afk_users[guild_id].pop(
+                message.author.id
+            )
 
-            afk_time = (
+            afk_duration = (
                 datetime.utcnow() - data["since"]
             ).total_seconds()
 
-            waktu = self.format_time(int(afk_time))
+            waktu = self.format_time(
+                int(afk_duration)
+            )
 
             # Balikin nickname
             try:
-                await message.author.edit(nick=data["nick"])
+                await message.author.edit(
+                    nick=data["nick"]
+                )
             except discord.Forbidden:
                 pass
             except:
@@ -126,8 +154,8 @@ class AFK(commands.Cog):
             embed = discord.Embed(
                 title="👋 Welcome Back",
                 description=(
-                    f"{message.author.mention} telah kembali.\n"
-                    f"**Durasi AFK**: {waktu}"
+                    f"{message.author.mention} telah kembali dari AFK.\n"
+                    f"**Durasi AFK:** {waktu}"
                 ),
                 color=self.random_color()
             )
@@ -139,30 +167,38 @@ class AFK(commands.Cog):
         # =========================
         for user in message.mentions:
 
+            if user.bot:
+                continue
+
             if user.id in self.afk_users[guild_id]:
 
                 data = self.afk_users[guild_id][user.id]
 
-                afk_time = (
+                afk_duration = (
                     datetime.utcnow() - data["since"]
                 ).total_seconds()
 
-                waktu = self.format_time(int(afk_time))
+                waktu = self.format_time(
+                    int(afk_duration)
+                )
 
                 embed = discord.Embed(
                     title="⚠️ Pengguna Sedang AFK",
                     description=(
-                        f"{user.mention} saat ini sedang sibuk.\n"
-                        f"**Alasan**: {data['reason']}\n"
-                        f"**Sejak**: {waktu} yang lalu"
+                        f"{user.mention} sedang AFK.\n"
+                        f"**Alasan:** {data['reason']}\n"
+                        f"**Sejak:** {waktu} yang lalu"
                     ),
                     color=self.random_color()
                 )
 
                 await message.channel.send(embed=embed)
 
+        # Penting!
         await self.bot.process_commands(message)
 
-# Setup cog
+# =========================
+# SETUP COG
+# =========================
 async def setup(bot):
     await bot.add_cog(AFK(bot))
