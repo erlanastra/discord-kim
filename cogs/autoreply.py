@@ -293,22 +293,42 @@ class AutoReply(commands.Cog):
                 "Good morning ☀️",
                 "Pagi yang cerah ✨"
             ],
-            "pagi": [
+            "pagi all": [
                 "Pagi juga ☀️",
                 "Semangat pagi ✨",
                 "Pagi! 🍳"
             ],
-            "siang": [
+            "siang all": [
                 "Siang juga 🌤️",
                 "Selamat siang 🍜",
                 "Siang 💧"
             ],
-            "sore": [
+            "sore all": [
                 "Sore juga 🌇",
                 "Selamat sore ✨",
                 "Sore! 👀"
             ],
-            "malam": [
+            "malam all": [
+                "Malam juga 🌙",
+                "Selamat malam 🤍",
+                "Malam, istirahat yang cukup ya 🌙"
+            ],
+             "pagi oll": [
+                "Pagi juga ☀️",
+                "Semangat pagi ✨",
+                "Pagi! 🍳"
+            ],
+            "siang oll": [
+                "Siang juga 🌤️",
+                "Selamat siang 🍜",
+                "Siang 💧"
+            ],
+            "sore oll": [
+                "Sore juga 🌇",
+                "Selamat sore ✨",
+                "Sore! 👀"
+            ],
+            "malam oll": [
                 "Malam juga 🌙",
                 "Selamat malam 🤍",
                 "Malam, istirahat yang cukup ya 🌙"
