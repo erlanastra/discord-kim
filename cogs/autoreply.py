@@ -414,6 +414,10 @@ class AutoReply(commands.Cog):
                 "Met siang juga 🌤️",
                 "Selamat siang 🍜"
             ],
+            "met sore": [
+                "Met sore juga 🌇",
+                "Selamat sore ✨"
+            ],
             "met malam": [
                 "Met malam juga 🌙",
                 "Selamat istirahat 😴"

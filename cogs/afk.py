@@ -107,7 +107,7 @@ class AFK(commands.Cog):
             description=(
                 f"{user.mention} "
                 f"telah mengaktifkan status AFK.\n"
-                f"**Alasan:** {reason}"
+                f">>> **Alasan:** {reason}"
             ),
             color=self.random_color()
         )
@@ -195,9 +195,9 @@ class AFK(commands.Cog):
             embed = discord.Embed(
                 title="👋 Welcome Back",
                 description=(
-                    f"{message.author.mention} "
-                    f"telah kembali dari AFK.\n\n"
-                    f"**Durasi AFK:** {waktu}"
+                    f"{message.author.mention}, "
+                    f"AFK-mu sudah selesai\n"
+                    f">>> **Durasi AFK:** {waktu}`"
                 ),
                 color=self.random_color()
             )
@@ -225,11 +225,9 @@ class AFK(commands.Cog):
                     title="⚠️ Pengguna Sedang AFK",
                     description=(
                         f"{user.mention} "
-                        f"saat ini sedang AFK.\n\n"
-                        f"**Alasan:** "
-                        f"{data['reason']}\n"
-                        f"**Sejak:** "
-                        f"{waktu} yang lalu"
+                        f"saat ini sedang AFK.\n"
+                        f">>> **Alasan:** {data['reason']} \n"
+                        f"**Sejak:** {waktu} yang lalu"
                     ),
                     color=self.random_color()
                 )

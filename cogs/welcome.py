@@ -13,8 +13,6 @@ WELCOME_STICKERS = [
     749054660769218631,
 
     # Tambahkan sticker lain di sini
-    # Ambil ID sticker Discord bawaan/server kamu
-
     819128604311027752,
     749044136589393960,
     816086581509095424,
@@ -34,11 +32,11 @@ class WaveView(discord.ui.View):
 
         super().__init__(timeout=None)
 
-        # COOLDDOWN STORAGE
+        # COOLDOWN STORAGE
         self.cooldowns = {}
 
     @discord.ui.button(
-        label="Wave to say hi!",
+        label="Sapa murid baru!",
         emoji="👋",
         style=discord.ButtonStyle.secondary
     )
@@ -54,7 +52,7 @@ class WaveView(discord.ui.View):
             user_id = interaction.user.id
             now = time.time()
 
-            cooldown_time = 10  # detik
+            cooldown_time = 10
 
             if user_id in self.cooldowns:
 
@@ -86,46 +84,66 @@ class WaveView(discord.ui.View):
             messages = [
 
                 (
-                    f"👋 {interaction.user.mention} "
-                    f"menyapa {self.member.mention}!"
+                    f"👋 Welcome {self.member.mention} "
+                    f"dari {interaction.user.mention}!"
                 ),
 
                 (
-                    f"✨ {interaction.user.mention} "
-                    f"ikut menyambut "
-                    f"{self.member.mention}!"
-                ),
-
-                (
-                    f"🎉 Halo {self.member.mention}, "
-                    f"{interaction.user.mention} "
-                    "bilang selamat datang!"
-                ),
-
-                (
-                    f"🌸 {interaction.user.mention} "
-                    f"senang kamu join di sini "
-                    f"{self.member.mention}!"
-                ),
-
-                (
-                    f"🫶 Welcome "
-                    f"{self.member.mention}! "
-                    f"{interaction.user.mention} "
-                    "ikut meramaikan welcome!"
-                ),
-
-                (
-                    f"💫 {interaction.user.mention} "
-                    f"menyambut "
+                    f"✨ Selamat datang "
                     f"{self.member.mention} "
-                    "ke nanZ Server!"
+                    f"di nanZ Server dari "
+                    f"{interaction.user.mention}!"
                 ),
 
                 (
-                    f"🤍 Selamat datang "
+                    f"🎉 Welcome aboard "
                     f"{self.member.mention}! "
                     f"Dari {interaction.user.mention}"
+                ),
+
+                (
+                    f"🌸 Haii {self.member.mention}, "
+                    f"selamat bergabung yaa! "
+                    f"- {interaction.user.mention}"
+                ),
+
+                (
+                    f"🫶 {interaction.user.mention} "
+                    f"mengucapkan welcome untuk "
+                    f"{self.member.mention}!"
+                ),
+
+                (
+                    f"💫 Welcome to nanZ "
+                    f"{self.member.mention}! "
+                    f"Dari {interaction.user.mention}"
+                ),
+
+                (
+                    f"🤍 Senang kamu join di sini "
+                    f"{self.member.mention}! "
+                    f"- {interaction.user.mention}"
+                ),
+
+                (
+                    f"🎀 Welcomee "
+                    f"{self.member.mention} "
+                    f"semoga betah yaa! "
+                    f"Dari {interaction.user.mention}"
+                ),
+
+                (
+                    f"🌟 {interaction.user.mention} "
+                    f"ikut menyambut "
+                    f"{self.member.mention} "
+                    f"ke nanZ Server!"
+                ),
+
+                (
+                    f"🥳 Selamat datang "
+                    f"{self.member.mention}! "
+                    f"Welcome dari "
+                    f"{interaction.user.mention} 💖"
                 )
             ]
 
@@ -255,6 +273,14 @@ class Welcome(commands.Cog):
             return
 
         # ==========================================
+        # GIF LOCAL
+        # ==========================================
+        gif_file = discord.File(
+            "assets/verifikasinanz.gif",
+            filename="verifikasinanz.gif"
+        )
+
+        # ==========================================
         # EMBED
         # ==========================================
         embed = discord.Embed(
@@ -270,10 +296,7 @@ class Welcome(commands.Cog):
                 "senang banget kamu gabung di "
                 "**nanZ Server**! 🤍\n\n"
 
-                "Di sini semua member dianggap "
-                "keluarga, jadi jangan ragu "
-                "untuk ngobrol, bertanya, "
-                "atau ikut event bareng.\n\n"
+                ">>> Di sini semua member dianggap keluarga, jadi jangan ragu untuk ngobrol, bertanya, atau ikut event bareng.\n\n"
 
                 "Pastikan baca aturan di "
                 "<#1406557882811682888> "
@@ -282,9 +305,7 @@ class Welcome(commands.Cog):
                 "Ambil role kamu di "
                 "<#1408510751039291443>.\n\n"
 
-                "✨ Sekarang kamu sudah "
-                "**terverifikasi** dan bisa "
-                "menikmati semua channel!"
+                "`Sekarang kamu sudah terverifikasi dan bisa menikmati semua channel!`"
             ),
 
             color=0x00ffcc
@@ -298,8 +319,9 @@ class Welcome(commands.Cog):
             url=member.display_avatar.url
         )
 
+        # GIF bawah embed
         embed.set_image(
-            url="https://i.ibb.co/album/nanz-banner.png"
+            url="attachment://verifikasinanz.gif"
         )
 
         # ==========================================
@@ -316,7 +338,9 @@ class Welcome(commands.Cog):
 
             embed=embed,
 
-            view=view
+            view=view,
+
+            file=gif_file
         )
 
 # ==========================================
