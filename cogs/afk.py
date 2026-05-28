@@ -4,7 +4,7 @@ from datetime import datetime
 import random
 
 class AFK(commands.Cog):
-    """AFK System Multi Server"""
+    """AFK System"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -15,7 +15,7 @@ class AFK(commands.Cog):
         #       user_id: {
         #           "reason": str,
         #           "since": datetime,
-        #           "nick": original_nick
+        #           "nick": str
         #       }
         #   }
         # }
@@ -31,16 +31,20 @@ class AFK(commands.Cog):
     # FORMAT DURASI
     # =========================
     def format_time(self, seconds):
+
         minutes, seconds = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
         days, hours = divmod(hours, 24)
 
         if days > 0:
             return f"{days} hari {hours} jam"
+
         elif hours > 0:
             return f"{hours} jam {minutes} menit"
+
         elif minutes > 0:
             return f"{minutes} menit {seconds} detik"
+
         else:
             return f"{seconds} detik"
 
@@ -48,7 +52,7 @@ class AFK(commands.Cog):
     # COMMAND AFK
     # =========================
     @commands.command(name="afk")
-    async def afk(self, ctx, *, reason: str = "AFK"):
+    async def afk(self, ctx, *, reason="AFK"):
 
         user = ctx.author
         guild_id = ctx.guild.id
@@ -56,12 +60,14 @@ class AFK(commands.Cog):
         if guild_id not in self.afk_users:
             self.afk_users[guild_id] = {}
 
-        # Kalau sudah AFK
+        # Kalau user sudah AFK
         if user.id in self.afk_users[guild_id]:
 
             embed = discord.Embed(
                 title="❌ AFK Gagal",
-                description=f"{user.mention}, kamu sudah AFK sebelumnya!",
+                description=(
+                    f"{user.mention}, kamu sudah AFK sebelumnya!"
+                ),
                 color=discord.Color.red()
             )
 
@@ -76,11 +82,15 @@ class AFK(commands.Cog):
             "nick": original_nick
         }
 
-        # Tambah nickname [AFK]
+        # Ubah nickname jadi [AFK]
         try:
-            await user.edit(nick=f"[AFK] {original_nick}")
+            await user.edit(
+                nick=f"[AFK] {original_nick}"
+            )
+
         except discord.Forbidden:
             pass
+
         except:
             pass
 
@@ -105,11 +115,11 @@ class AFK(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
 
-        # Abaikan bot
+        # Ignore bot
         if message.author.bot:
             return
 
-        # Abaikan DM
+        # Ignore DM
         if not message.guild:
             return
 
@@ -118,8 +128,10 @@ class AFK(commands.Cog):
         if guild_id not in self.afk_users:
             self.afk_users[guild_id] = {}
 
-        # Cek apakah command AFK
-        is_afk_command = message.content.lower().startswith("!afk")
+        # Jangan remove AFK pas command .afk
+        is_afk_command = (
+            message.content.lower().startswith(".afk")
+        )
 
         # =========================
         # USER BALIK DARI AFK
@@ -146,8 +158,10 @@ class AFK(commands.Cog):
                 await message.author.edit(
                     nick=data["nick"]
                 )
+
             except discord.Forbidden:
                 pass
+
             except:
                 pass
 
@@ -192,10 +206,9 @@ class AFK(commands.Cog):
                     color=self.random_color()
                 )
 
-                await message.channel.send(embed=embed)
-
-        # Penting!
-        await self.bot.process_commands(message)
+                await message.channel.send(
+                    embed=embed
+                )
 
 # =========================
 # SETUP COG
