@@ -41,25 +41,50 @@ class AFK(commands.Cog):
     @commands.command(name="afk")
     @commands.cooldown(
         1,
-        3,
+        2,
         commands.BucketType.user
     )
 
     async def afk(self, ctx, *, reason="AFK"):
 
         user = ctx.author
+        now = datetime.utcnow()
 
-        # Kalau sudah AFK
+        # ================= CEK SUDAH AFK =================
         if user.id in self.afk_users:
+
+            old_data = self.afk_users[user.id]
+
+            diff = (
+                now - old_data["since"]
+            ).total_seconds()
+
+            # Kalau benar-benar masih AFK
+            if diff > 3:
+
+                embed = discord.Embed(
+                    title="❌ AFK Gagal",
+                    description=(
+                        f"{user.mention}, "
+                        f"kamu sudah AFK sebelumnya!"
+                    ),
+                    color=0xED4245
+                )
+
+                return await ctx.send(
+                    embed=embed
+                )
+
+            # Kalau duplicate execute
             return
 
-        # Simpan AFK
+        # ================= SIMPAN AFK =================
         self.afk_users[user.id] = {
             "reason": reason,
-            "since": datetime.utcnow()
+            "since": now
         }
 
-        # Ubah nickname
+        # ================= UBAH NICKNAME =================
         try:
 
             if ctx.guild:
@@ -76,12 +101,12 @@ class AFK(commands.Cog):
         except:
             pass
 
-        # Embed AFK
+        # ================= EMBED AFK =================
         embed = discord.Embed(
             title="🌙 AFK Status Aktif",
             description=(
                 f"{user.mention} "
-                f"telah mengaktifkan status AFK.\n\n"
+                f"telah mengaktifkan status AFK.\n"
                 f"**Alasan:** {reason}"
             ),
             color=self.random_color()
@@ -96,7 +121,7 @@ class AFK(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    # ================= HIDE COOLDOWN ERROR =================
+    # ================= HIDE COOLDOWN =================
     @afk.error
     async def afk_error(self, ctx, error):
 
@@ -149,7 +174,7 @@ class AFK(commands.Cog):
                 int(afk_time)
             )
 
-            # Balikin nickname
+            # ================= BALIKIN NICKNAME =================
             try:
 
                 if message.guild:
@@ -166,6 +191,7 @@ class AFK(commands.Cog):
             except:
                 pass
 
+            # ================= EMBED WELCOME BACK =================
             embed = discord.Embed(
                 title="👋 Welcome Back",
                 description=(
