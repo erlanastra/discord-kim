@@ -32,6 +32,8 @@ async def load_cogs():
         "cogs.setup_game",
         "cogs.setup_murid",
         "cogs.setup_minat",
+        "cogs.setupquote",
+        "cogs.nanzquiz",
         "cogs.autoreply",
         "cogs.verif_reminder",
         "cogs.moderation",

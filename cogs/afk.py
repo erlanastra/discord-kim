@@ -197,7 +197,7 @@ class AFK(commands.Cog):
                 description=(
                     f"{message.author.mention}, "
                     f"AFK-mu sudah selesai\n"
-                    f">>> **Durasi AFK:** {waktu}`"
+                    f">>> **Durasi AFK:** {waktu}"
                 ),
                 color=self.random_color()
             )
