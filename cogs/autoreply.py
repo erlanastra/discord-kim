@@ -378,6 +378,11 @@ class AutoReply(commands.Cog):
                 "Semangat pagi ✨",
                 "Pagi! 🍳"
             ],
+            "morning oll": [
+                "Pagi juga ☀️",
+                "Semangat pagi ✨",
+                "Pagi! 🍳"
+            ],
             "siang oll": [
                 "Siang juga 🌤️",
                 "Selamat siang 🍜",
