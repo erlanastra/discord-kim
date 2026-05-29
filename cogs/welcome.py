@@ -332,7 +332,7 @@ class Welcome(commands.Cog):
 
         await channel.send(
             content=(
-                f"➡️ Yay you made it, "
+                f"➡️ Verifikasi berhasil! "
                 f"{member.display_name}!"
             ),
 

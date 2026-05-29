@@ -4,16 +4,93 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
 import random
+import io
+import aiohttp
+
+# Import generator gambar kita
+from cogs.greeting_gif import generate_greeting_gif
+
 
 class Greeting(commands.Cog):
-    """Greeting Bot interaktif dengan kalimat panjang, GIF thumbnail, emoji bergerak, dan random quote"""
+    """Greeting Bot NanZ — dengan gambar dinamis dan cuaca real-time"""
 
     def __init__(self, bot):
         self.bot = bot
         with open("config.json") as f:
             self.config = json.load(f)
+        self._weather_cache = None
+        self._weather_cache_hour = -1
         self.greet.start()
 
+    # ──────────────────────────────────────────
+    # WEATHER FETCH (OpenWeatherMap)
+    # ──────────────────────────────────────────
+    async def fetch_weather(self) -> str:
+        """
+        Ambil cuaca real-time dari OpenWeatherMap.
+        Butuh config.json berisi:
+            "weather_api_key": "YOUR_API_KEY",
+            "weather_city": "Jakarta,ID"   <- sesuaikan kota server kalian
+
+        Daftar gratis di: https://openweathermap.org/api
+        """
+        now_hour = datetime.now(ZoneInfo("Asia/Jakarta")).hour
+
+        # Cache per jam agar tidak spam API
+        if self._weather_cache and self._weather_cache_hour == now_hour:
+            return self._weather_cache
+
+        api_key = self.config.get("weather_api_key", "")
+        city    = "Jakarta,ID"  # hardcoded, tidak ditampilkan ke user
+
+        if not api_key:
+            return "N/A (set weather_api_key di config.json)"
+
+        url = (
+            f"https://api.openweathermap.org/data/2.5/weather"
+            f"?q={city}&appid={api_key}&units=metric&lang=id"
+        )
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                    if resp.status != 200:
+                        return "Cuaca tidak tersedia"
+                    data = await resp.json()
+                    temp   = round(data["main"]["temp"])
+                    desc   = data["weather"][0]["description"].title()
+                    result = f"{temp}°C, {desc}"
+                    self._weather_cache = result
+                    self._weather_cache_hour = now_hour
+                    return result
+        except Exception as e:
+            print(f"[Greeting] Weather error: {e}")
+            return "Cuaca tidak tersedia"
+
+    # ──────────────────────────────────────────
+    # SESSION HELPER
+    # ──────────────────────────────────────────
+    @staticmethod
+    def get_session(hour: int) -> str | None:
+        """Return session name atau None jika bukan jam greeting"""
+        mapping = {6: "pagi", 12: "siang", 18: "sore", 22: "malam"}
+        return mapping.get(hour)
+
+    # ──────────────────────────────────────────
+    # QUOTES
+    # ──────────────────────────────────────────
+    QUOTES = [
+        "Jangan berhenti sampai kamu bangga! ✨",
+        "Senyum itu gratis, tapi pengaruhnya mahal 😄",
+        "Semangatmu hari ini menentukan harimu!",
+        "Setiap hari adalah kesempatan baru 🌟",
+        "Kecil atau besar, setiap langkah maju berharga!",
+        "Percaya prosesnya — hasil indah butuh waktu 🌱",
+        "Lakukan yang terbaik hari ini, sisanya biarlah 🙌",
+    ]
+
+    # ──────────────────────────────────────────
+    # MAIN GREETING LOOP
+    # ──────────────────────────────────────────
     @tasks.loop(minutes=1)
     async def greet(self):
         await self.bot.wait_until_ready()
@@ -21,113 +98,111 @@ class Greeting(commands.Cog):
         channel_id = self.config.get("welcome_channel")
         channel = self.bot.get_channel(channel_id)
         if not channel:
-            print(f"[Greeting] Channel Welcome ID {channel_id} tidak ditemukan!")
+            print(f"[Greeting] Channel ID {channel_id} tidak ditemukan!")
             return
 
-        now = datetime.now(ZoneInfo("Asia/Jakarta"))  # WIB
-        hour = now.hour
+        now    = datetime.now(ZoneInfo("Asia/Jakarta"))
+        hour   = now.hour
         minute = now.minute
 
         if minute != 0:
-            return  # hanya tiap jam tepat
+            return  # hanya kirim tiap jam tepat
 
-        # Greeting panjang & GIF thumbnail
-        greetings = {
-            6: {
-                "title": "Selamat Pagi!",
-                "emoji": "🌞",
-                "description": (
-                    "Selamat pagi teman-teman! 🌅 Pukul **06:00 WIB** telah tiba, saatnya memulai hari dengan penuh semangat, senyum lebar, "
-                    "dan energi positif. Jangan lupa sarapan sehat, secangkir kopi hangat ☕, dan peregangan ringan untuk menyiapkan tubuh "
-                    "dan pikiran menghadapi hari yang penuh peluang dan kebahagiaan. Semoga pagi ini membawa inspirasi dan kegembiraan bagi kalian semua!"
-                ),
-                "thumbnail": "https://i.ibb.co/0jqHpnp/morning.gif"
-            },
-            12: {
-                "title": "Selamat Siang!",
-                "emoji": "☀️",
-                "description": (
-                    "Selamat siang semuanya! 🌤️ Pukul **12:00 WIB** telah tiba, waktunya untuk sejenak beristirahat dan menikmati makan siang yang lezat 🍴. "
-                    "Biarkan energi kalian terisi kembali, dan jangan lupa untuk tetap tersenyum, berbagi kebaikan, serta menghargai momen-momen indah di tengah kesibukan hari ini. "
-                    "Semoga sisa hari kalian produktif, menyenangkan, dan penuh berkah!"
-                ),
-                "thumbnail": "https://i.ibb.co/Phv8Fqq/noon.gif"
-            },
-            18: {
-                "title": "Selamat Sore!",
-                "emoji": "🌆",
-                "description": (
-                    "Selamat sore teman-teman! 🌇 Pukul **18:00 WIB** telah tiba, saatnya melonggarkan pikiran, menikmati teh atau camilan sore 🍵, "
-                    "dan melepas lelah setelah seharian beraktivitas. Semoga sore ini membawa ketenangan, kebahagiaan, dan momen hangat bersama keluarga, teman, atau orang-orang tercinta."
-                ),
-                "thumbnail": "https://i.ibb.co/xFqNxR7/evening.gif"
-            },
-            22: {
-                "title": "Selamat Malam!",
-                "emoji": "🌙",
-                "description": (
-                    "Selamat malam semua! 🌌 Pukul **22:00 WIB** telah tiba, saatnya beristirahat, recharge energi, dan bersiap menghadapi hari esok. "
-                    "Semoga tidur kalian nyenyak, mimpi indah, dan hati tetap damai. Terima kasih telah menjadi bagian dari hari yang menyenangkan ini, "
-                    "dan jangan lupa bersyukur atas semua hal kecil maupun besar yang terjadi hari ini!"
-                ),
-                "thumbnail": "https://i.ibb.co/ZV2j2kR/night.gif"
-            }
-        }
+        session = self.get_session(hour)
+        if not session:
+            return  # bukan jam greeting
 
-        quotes = [
-            "💡 Jangan berhenti sampai kamu bangga!",
-            "💡 Senyum itu gratis, tapi pengaruhnya mahal 😄",
-            "💡 Semangatmu hari ini akan menentukan harimu!",
-            "💡 Setiap hari adalah kesempatan baru 🌟",
-            "💡 Kecil atau besar, setiap langkah maju berharga!"
+        await self._send_greeting(channel, session, now)
+
+    async def _send_greeting(self, channel, session: str, now: datetime):
+        """Generate dan kirim greeting image ke channel"""
+        # Data waktu
+        HARI_ID = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+        BULAN_ID = [
+            "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+            "Juli", "Agustus", "September", "Oktober", "November", "Desember"
         ]
+        jam_str  = f"{now.hour:02d}:00 WIB"
+        hari     = HARI_ID[now.weekday()]
+        tanggal  = f"{now.day} {BULAN_ID[now.month]} {now.year}"
+        cuaca    = await self.fetch_weather()
+        quote    = random.choice(self.QUOTES)
+        srv_name = self.config.get("server_name", "nanZ Server")
 
-        if hour in greetings:
-            greet = greetings[hour]
-            embed = discord.Embed(
-                title=f"{greet['emoji']} {greet['title']}",
-                description=greet['description'],
-                color=random.choice([discord.Color.green(), discord.Color.blue(), discord.Color.purple(), discord.Color.orange()])
-            )
+        # Generate image bytes
+        img_bytes = generate_greeting_gif(
+            session=session,
+            jam_str=jam_str,
+            hari=hari,
+            tanggal=tanggal,
+            cuaca=cuaca,
+            quote=quote,
+            server_name=srv_name,
+        )
 
-            embed.add_field(name="Motivasi Hari Ini", value=random.choice(quotes), inline=False)
-            embed.add_field(name="Tips", value="Tetap semangat, tersenyum, dan nikmati harimu! 😄", inline=True)
-            embed.add_field(name="Waktu Saat Ini", value=f"{hour:02d}:00 WIB", inline=True)
+        # Kirim sebagai Discord attachment
+        file = discord.File(io.BytesIO(img_bytes), filename=f"greeting_{session}.gif")
 
-            embed.set_footer(text=f"Dikirim otomatis oleh Greeting Bot • nanZ Server")
-            embed.set_thumbnail(url=greet["thumbnail"])
+        # Opsional: embed minimalis sebagai teks pendamping
+        session_labels = {
+            "pagi":  ("🌅", "Selamat Pagi!"),
+            "siang": ("☀️", "Selamat Siang!"),
+            "sore":  ("🌇", "Selamat Sore!"),
+            "malam": ("🌙", "Selamat Malam!"),
+        }
+        emoji, label = session_labels[session]
 
-            await channel.send(embed=embed)
-            print(f"[Greeting] Pesan dikirim ke channel: {channel.name} ({channel.id})")
+        embed = discord.Embed(
+            description=f"{emoji} **{label}** — {hari}, {tanggal}\n> {quote}",
+            color=discord.Color.from_rgb(130, 80, 255)
+        )
+        embed.set_image(url=f"attachment://greeting_{session}.gif")
+        embed.set_footer(text=f"{srv_name} Server •  nanZ Greeting")
 
+        await channel.send(embed=embed, file=file)
+        print(f"[Greeting] Gambar {session} dikirim ke #{channel.name}")
+
+    # ──────────────────────────────────────────
+    # COMMAND: !testgreet
+    # ──────────────────────────────────────────
     @commands.command(name="testgreet")
-    async def test_greet(self, ctx):
+    async def test_greet(self, ctx, session: str = "pagi"):
+        """
+        Tes greeting image.
+        Usage: !testgreet [pagi|siang|sore|malam]
+        """
+        valid = ["pagi", "siang", "sore", "malam"]
+        if session not in valid:
+            await ctx.send(f"⚠️ Session tidak valid. Pilih: {', '.join(valid)}")
+            return
+
         channel_id = self.config.get("welcome_channel")
-        channel = self.bot.get_channel(channel_id)
+        channel    = self.bot.get_channel(channel_id)
+        if not channel:
+            await ctx.send("⚠️ Channel Welcome tidak ditemukan di config.json!")
+            return
+
+        now = datetime.now(ZoneInfo("Asia/Jakarta"))
+        await ctx.send(f"⏳ Generating greeting **{session}**...")
+        await self._send_greeting(channel, session, now)
+        await ctx.send(f"✅ Test greeting **{session}** berhasil dikirim ke **#{channel.name}**!")
+
+    @commands.command(name="greetall")
+    @commands.has_permissions(administrator=True)
+    async def greet_all(self, ctx):
+        """Admin only: kirim semua 4 greeting sekaligus untuk preview"""
+        channel_id = self.config.get("welcome_channel")
+        channel    = self.bot.get_channel(channel_id)
         if not channel:
             await ctx.send("⚠️ Channel Welcome tidak ditemukan!")
             return
 
-        greet = {
-            "title": "Test Greeting Bot",
-            "emoji": "✨",
-            "description": "Halo semua! 🎉 Ini adalah test greeting yang hangat dan panjang untuk memastikan bot bekerja dengan sempurna."
-        }
-        embed = discord.Embed(
-            title=f"{greet['emoji']} {greet['title']}",
-            description=greet['description'],
-            color=random.choice([discord.Color.green(), discord.Color.blue(), discord.Color.purple(), discord.Color.orange()])
-        )
+        now = datetime.now(ZoneInfo("Asia/Jakarta"))
+        await ctx.send("⏳ Generating semua greeting...")
+        for session in ["pagi", "siang", "sore", "malam"]:
+            await self._send_greeting(channel, session, now)
+        await ctx.send("✅ Semua greeting berhasil dikirim!")
 
-        embed.add_field(name="Motivasi Hari Ini", value=random.choice([
-            "💡 Jangan berhenti sampai kamu bangga!",
-            "💡 Semangatmu hari ini akan menentukan harimu!",
-            "💡 Senyum itu gratis 😄"
-        ]), inline=False)
-        embed.set_footer(text=f"NanZ Server")
-        embed.set_thumbnail(url="https://i.ibb.co/0jqHpnp/morning.gif")
-        await channel.send(embed=embed)
-        await ctx.send(f"✅ Test greeting berhasil dikirim ke channel **{channel.name}**")
 
 async def setup(bot):
     await bot.add_cog(Greeting(bot))
