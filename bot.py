@@ -2,6 +2,10 @@ import os
 import asyncio
 from discord.ext import commands
 import discord
+from cogs.setupquote import QuoteView
+from cogs.ticket import TicketView
+from cogs.ticket import DecisionView
+from cogs.setup_murid import MuridView
 from cogs.setup_minat import MinatView
 from cogs.setup_game import GameView
 from dotenv import load_dotenv
@@ -19,7 +23,10 @@ intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
-async def on_ready():
+async def on_ready(): 
+    bot.add_view(QuoteView(bot)) 
+    bot.add_view(TicketView())
+    bot.add_view(MuridView())
     bot.add_view(MinatView())
     bot.add_view(GameView())
     print(f"Bot online sebagai {bot.user}")
