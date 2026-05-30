@@ -30,6 +30,7 @@ async def load_cogs():
         "cogs.tebakfakta_rounds",
         "cogs.afk",
         "cogs.setup_game",
+        "cogs.nanzteamevent",
         "cogs.setup_murid",
         "cogs.setup_minat",
         "cogs.setupquote",
