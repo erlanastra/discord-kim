@@ -59,10 +59,7 @@ class PostSystem(commands.Cog):
             ),
             color=discord.Color.from_rgb(35, 35, 35)
         )
-
-        # Kasih timestamp
-        embed.timestamp = discord.utils.utcnow()
-
+        
         # ==========================================
         # 📸 ATTACHMENT
         # ==========================================
