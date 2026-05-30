@@ -229,7 +229,8 @@ class UploadView(discord.ui.View):
     # ==========================================
     @discord.ui.button(
         label="📤 Upload Media",
-        style=discord.ButtonStyle.blurple
+        style=discord.ButtonStyle.blurple,
+        custom_id="quote_upload_media"
     )
     async def upload_media(
         self,
@@ -305,7 +306,8 @@ class UploadView(discord.ui.View):
     # ==========================================
     @discord.ui.button(
         label="⏭️ Skip",
-        style=discord.ButtonStyle.gray
+        style=discord.ButtonStyle.gray,
+        custom_id="quote_skip_media"
     )
     async def skip_media(
         self,
@@ -337,7 +339,8 @@ class QuoteView(discord.ui.View):
 
     @discord.ui.button(
         label="📝 Buat Quote",
-        style=discord.ButtonStyle.blurple
+        style=discord.ButtonStyle.blurple,
+        custom_id="quote_make_button"
     )
     async def make_quote(
         self,

@@ -2,6 +2,8 @@ import os
 import asyncio
 from discord.ext import commands
 import discord
+from cogs.setup_minat import MinatView
+from cogs.setup_game import GameView
 from dotenv import load_dotenv
 
 load_dotenv() 
@@ -18,6 +20,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
+    bot.add_view(MinatView())
+    bot.add_view(GameView())
     print(f"Bot online sebagai {bot.user}")
 
 async def load_cogs():

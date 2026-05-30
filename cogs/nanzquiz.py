@@ -218,7 +218,8 @@ class StaffQuizView(View):
 
     @discord.ui.button(
         label="✅ Approve",
-        style=discord.ButtonStyle.green
+        style=discord.ButtonStyle.green,
+        custom_id="quiz_approve_button"
     )
     async def approve(
         self,
@@ -316,7 +317,8 @@ class StaffQuizView(View):
 
     @discord.ui.button(
         label="🎁 Edit Reward",
-        style=discord.ButtonStyle.blurple
+        style=discord.ButtonStyle.blurple,
+        custom_id="quiz_reward_button"
     )
     async def edit_reward(
         self,
@@ -330,7 +332,8 @@ class StaffQuizView(View):
 
     @discord.ui.button(
         label="📝 Custom Question",
-        style=discord.ButtonStyle.gray
+        style=discord.ButtonStyle.gray,
+        custom_id="quiz_custom_button"
     )
     async def custom_question(
         self,
@@ -344,7 +347,8 @@ class StaffQuizView(View):
 
     @discord.ui.button(
         label="❌ Cancel",
-        style=discord.ButtonStyle.red
+        style=discord.ButtonStyle.red,
+        custom_id="quiz_cancel_button"
     )
     async def cancel(
         self,

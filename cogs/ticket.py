@@ -204,8 +204,10 @@ class DecisionView(discord.ui.View):
     # ===== TERIMA =====
     @discord.ui.button(
         label="Terima",
-        style=discord.ButtonStyle.success
+        style=discord.ButtonStyle.success,
+        custom_id="ticket_accept"
     )
+
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_message(
@@ -221,8 +223,10 @@ class DecisionView(discord.ui.View):
     # ===== TOLAK =====
     @discord.ui.button(
         label="Tolak",
-        style=discord.ButtonStyle.danger
+        style=discord.ButtonStyle.danger,
+        custom_id="ticket_reject"
     )
+
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         await interaction.response.send_message(
