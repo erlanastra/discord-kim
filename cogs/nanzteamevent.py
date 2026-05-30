@@ -86,9 +86,9 @@ class CreateEventModal(Modal, title="Buat Team Event"):
             title=self.event_name.value,
             description=(
                 f"{self.event_description.value}\n\n"
-                f">>> Buat team kamu sendiri kamu.\n"
-                f"Maksimal Team: {MAX_TEAMS}\n"
-                f"Maksimal Member/Team: {MAX_MEMBERS}"
+                f">>> Buat team kamu sendiri:\n"
+                f"**Maksimal Team:** {MAX_TEAMS}\n"
+                f"**Maksimal Member/Team:** {MAX_MEMBERS}"
             ),
             color=discord.Color.dark_blue()
         )
