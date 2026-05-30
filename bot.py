@@ -2,6 +2,7 @@ import os
 import asyncio
 from discord.ext import commands
 import discord
+from cogs.verifysystem import VerifyButton
 from cogs.setupquote import QuoteView
 from cogs.ticket import TicketView
 from cogs.ticket import DecisionView
@@ -23,13 +24,25 @@ intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
-async def on_ready(): 
-    bot.add_view(QuoteView(bot)) 
-    bot.add_view(TicketView())
-    bot.add_view(MuridView())
-    bot.add_view(MinatView())
-    bot.add_view(GameView())
-    print(f"Bot online sebagai {bot.user}")
+async def on_ready():
+
+    try:
+
+        bot.add_view(VerifyButton(bot))
+        bot.add_view(QuoteView(bot))
+        bot.add_view(TicketView())
+        bot.add_view(MuridView())
+        bot.add_view(MinatView())
+        bot.add_view(GameView())
+
+        print("=" * 50)
+        print(f"Bot online sebagai {bot.user}")
+        print("Persistent Views Loaded")
+        print("=" * 50)
+
+    except Exception as e:
+
+        print(f"ERROR ON_READY: {e}")
 
 async def load_cogs():
     cogs = [

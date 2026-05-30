@@ -98,7 +98,8 @@ class PlatformSelect(discord.ui.Select):
 
         super().__init__(
             placeholder="Pilih platform medsos",
-            options=options
+            options=options,
+            custom_id="verify_platform_select"
         )
 
     async def callback(
@@ -302,7 +303,8 @@ class VerifyButton(discord.ui.View):
     @discord.ui.button(
         label="Lanjut Isi Data",
         style=discord.ButtonStyle.primary,
-        emoji="📋"
+        emoji="📋",
+        custom_id="verify_continue_button"
     )
 
     async def lanjut(
@@ -358,7 +360,8 @@ class VerifyView(discord.ui.View):
     @discord.ui.button(
         label="Approve",
         style=discord.ButtonStyle.success,
-        emoji="✅"
+        emoji="✅",
+        custom_id="verify_approve_button"
     )
 
     async def approve(
@@ -527,7 +530,8 @@ class VerifyView(discord.ui.View):
     @discord.ui.button(
         label="Deny",
         style=discord.ButtonStyle.danger,
-        emoji="❌"
+        emoji="❌",
+        custom_id="verify_deny_button"
     )
 
     async def deny(
