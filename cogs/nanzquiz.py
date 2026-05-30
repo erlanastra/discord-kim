@@ -379,21 +379,34 @@ class NanZQuiz(commands.Cog):
     # RANDOM QUIZ SCHEDULER
     # ==========================================
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(seconds=30)
     async def quiz_scheduler(self):
 
         now = datetime.now()
         current_time = now.strftime("%H:%M")
 
-        random_times = [
+        # JAM QUIZ
+        quiz_times = [
             "12:30",
             "17:00",
             "19:30",
             "21:15"
         ]
 
-        if current_time in random_times:
+        # ANTI DOUBLE SEND
+        if not hasattr(self, "last_quiz_time"):
+            self.last_quiz_time = None
 
+        # JIKA SEKARANG ADALAH WAKTU QUIZ
+        if current_time in quiz_times:
+
+            # CEGAH QUIZ TERKIRIM 2X
+            if self.last_quiz_time == current_time:
+                return
+
+            self.last_quiz_time = current_time
+
+            # JIKA MASIH ADA QUIZ AKTIF
             if self.bot.quiz_active:
                 return
 
@@ -439,6 +452,14 @@ class NanZQuiz(commands.Cog):
                     question_data
                 )
             )
+
+# ==========================================
+# START LOOP SETELAH BOT READY
+# ==========================================
+
+    @quiz_scheduler.before_loop
+    async def before_quiz_scheduler(self):
+        await self.bot.wait_until_ready()
 
     # ==========================================
     # DETEKSI JAWABAN

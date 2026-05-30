@@ -304,7 +304,7 @@ def _render_frame(
 
     # Footer
     a5 = text_alpha(0.5)
-    footer = f"{server_name} Bot  •  auto-greeting  •  {hari}"
+    footer = f"{server_name} Server  •  nanZ Greeting  •  {hari}"
     td.text((62, H - 50), footer, font=f_tiny,
             fill=(*theme["accent1"][:3], _clamp(a5 * 0.5)))
 
@@ -330,7 +330,7 @@ def _render_frame(
             fill=(255, 255, 255, emoji_a))
 
     # Watermark
-    td.text((W - 160, H - 30), f"{server_name}.bot v1.0", font=f_tiny,
+    td.text((W - 160, H - 30), f"{server_name}.Server ", font=f_tiny,
             fill=(*theme["accent2"][:3], 70))
 
     # ── Shimmer scanline sweep ──

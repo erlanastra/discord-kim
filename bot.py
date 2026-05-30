@@ -22,7 +22,7 @@ async def on_ready():
 
 async def load_cogs():
     cogs = [
-        "cogs.announce",
+        "cogs.post",
         "cogs.greeting",
         "cogs.megagombal",
         "cogs.say",
