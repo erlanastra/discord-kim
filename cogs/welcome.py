@@ -303,7 +303,7 @@ class Welcome(commands.Cog):
                 "supaya pengalamanmu nyaman.\n"
 
                 "Ambil role kamu di "
-                "<#1408510751039291443>.\n\n"
+                "<#1510477047724773509>.\n\n"
 
                 "`Sekarang kamu sudah terverifikasi dan bisa menikmati semua channel!`"
             ),

@@ -4,6 +4,7 @@ from discord.ui import View, Button, Modal, TextInput
 import random
 import asyncio
 from datetime import datetime
+import pytz
 
 # ==========================================
 # CONFIG
@@ -383,79 +384,79 @@ class NanZQuiz(commands.Cog):
     # RANDOM QUIZ SCHEDULER
     # ==========================================
 
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=10)
     async def quiz_scheduler(self):
 
-        now = datetime.now()
-        current_time = now.strftime("%H:%M")
+        wib = pytz.timezone("Asia/Jakarta")
+        now = datetime.now(wib)
 
-        # JAM QUIZ
+        # JAM QUIZ FIX WIB
         quiz_times = [
-            "12:30",
-            "17:00",
-            "19:30",
-            "21:15"
+            (15, 0),  # 15:00
+            (20, 0),  # 20:00
+            (21, 0)   # 21:00
         ]
 
         # ANTI DOUBLE SEND
-        if not hasattr(self, "last_quiz_time"):
-            self.last_quiz_time = None
+        if not hasattr(self, "last_quiz_date"):
+            self.last_quiz_date = {}
 
-        # JIKA SEKARANG ADALAH WAKTU QUIZ
-        if current_time in quiz_times:
+        for hour, minute in quiz_times:
 
-            # CEGAH QUIZ TERKIRIM 2X
-            if self.last_quiz_time == current_time:
-                return
+            # KEY UNIK PER HARI
+            key = f"{now.date()}-{hour}:{minute}"
 
-            self.last_quiz_time = current_time
+            # CEK APAKAH SEKARANG SESUAI
+            if now.hour == hour and now.minute == minute:
 
-            # JIKA MASIH ADA QUIZ AKTIF
-            if self.bot.quiz_active:
-                return
+                # CEGAH TERKIRIM 2X
+                if self.last_quiz_date.get(key):
+                    return
 
-            question_data = random.choice(
-                QUESTIONS
-            )
+                self.last_quiz_date[key] = True
 
-            staff_channel = self.bot.get_channel(
-                STAFF_CHANNEL_ID
-            )
+                # JIKA MASIH ADA QUIZ AKTIF
+                if self.bot.quiz_active:
+                    return
 
-            mention_roles = (
-                f"<@&{MOD_ROLE_ID}> "
-                f"<@&{OSIS_ROLE_ID}> "
-                f"<@&{PEMBINA_ROLE_ID}>"
-            )
+                question_data = random.choice(QUESTIONS)
 
-            embed = discord.Embed(
-                title="📢 nanZQuiz Reminder",
-                description=(
-                    "Quiz random siap dimulai.\n\n"
-                    f"❓ **Pertanyaan:**\n"
-                    f"{question_data['question']}\n\n"
-                    f"**Reward Default:** "
-                    f"{DEFAULT_REWARD}\n"
-                    f"**Durasi:** "
-                    f"5 Menit"
-                ),
-                color=discord.Color.dark_purple()
-            )
-
-            embed.set_footer(
-                text="nanZ Server • Staff Approval"
-            )
-
-            embed.timestamp = discord.utils.utcnow()
-
-            await staff_channel.send(
-                content=mention_roles,
-                embed=embed,
-                view=StaffQuizView(
-                    self.bot,
-                    question_data
+                staff_channel = self.bot.get_channel(
+                    STAFF_CHANNEL_ID
                 )
-            )
+
+                mention_roles = (
+                    f"<@&{MOD_ROLE_ID}> "
+                    f"<@&{OSIS_ROLE_ID}> "
+                    f"<@&{PEMBINA_ROLE_ID}>"
+                )
+
+                embed = discord.Embed(
+                    title="📢 nanZQuiz Reminder",
+                    description=(
+                        "Quiz siap dimulai.\n\n"
+                        f"❓ **Pertanyaan:**\n"
+                        f"{question_data['question']}\n\n"
+                        f"**Reward Default:** {DEFAULT_REWARD}\n"
+                        f"**Durasi:** 5 Menit"
+                    ),
+                    color=discord.Color.dark_purple()
+                )
+
+                embed.set_footer(
+                    text="nanZ Server • Staff Approval"
+                )
+
+                embed.timestamp = discord.utils.utcnow()
+
+                await staff_channel.send(
+                    content=mention_roles,
+                    embed=embed,
+                    view=StaffQuizView(
+                        self.bot,
+                        question_data
+                    )
+                )
 
 # ==========================================
 # START LOOP SETELAH BOT READY

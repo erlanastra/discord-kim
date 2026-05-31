@@ -51,7 +51,6 @@ async def load_cogs():
         "cogs.megagombal",
         "cogs.say",
         "cogs.cantikganteng",
-        "cogs.tebakfakta_rounds",
         "cogs.afk",
         "cogs.setup_game",
         "cogs.nanzteamevent",
