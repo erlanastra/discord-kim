@@ -53,6 +53,7 @@ async def load_cogs():
         "cogs.cantikganteng",
         "cogs.afk",
         "cogs.setup_game",
+        "cogs.voice24",
         "cogs.nanzteamevent",
         "cogs.setup_murid",
         "cogs.setup_minat",
