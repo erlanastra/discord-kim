@@ -8,6 +8,8 @@ class MegaCantikGanteng(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+        print("cantikganteng.py loaded")
+
         # Warna embed acak
         self.colors = [
             discord.Color.from_rgb(255, 182, 193),  # Pink

@@ -460,6 +460,13 @@ class AutoReply(commands.Cog):
         if message.author.bot:
             return
 
+        ctx = await self.bot.get_context(message)
+
+        # Ignore command bot
+        if ctx.valid:
+            await self.bot.process_commands(message)
+            return
+
         content = message.content.lower().strip()
         # =============================================
         # FITUR 1: WARNING KATA KASAR
