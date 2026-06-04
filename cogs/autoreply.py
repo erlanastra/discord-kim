@@ -464,7 +464,6 @@ class AutoReply(commands.Cog):
 
         # Ignore command bot
         if ctx.valid:
-            await self.bot.process_commands(message)
             return
 
         content = message.content.lower().strip()
@@ -482,7 +481,6 @@ class AutoReply(commands.Cog):
                 await asyncio.sleep(random.uniform(0.5, 1))
 
             await message.channel.send(embed=embed)
-            await self.bot.process_commands(message)
             return
 
         # =============================================
@@ -512,7 +510,6 @@ class AutoReply(commands.Cog):
 
             if (
                 trigger == content
-                or trigger in words
                 or content.startswith(trigger + " ")
             ):
                 keyword_matched = True
