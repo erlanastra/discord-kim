@@ -12,7 +12,7 @@ class Voice24(commands.Cog):
         self.stay_voice.start()
 
     # ================= COMMAND JOIN =================
-    @commands.command(name="join")
+    @commands.command(name="joinnanZ")
     async def join_voice(self, ctx):
 
         # Cek user ada di vc atau tidak
@@ -76,7 +76,7 @@ class Voice24(commands.Cog):
             await ctx.send(embed=embed)
 
     # ================= COMMAND LEAVE =================
-    @commands.command(name="leave")
+    @commands.command(name="leavenanZ")
     @commands.has_permissions(administrator=True)
     async def leave_voice(self, ctx):
 
