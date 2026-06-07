@@ -718,7 +718,7 @@ class WorldCup(commands.Cog):
             if team:
 
                 final_name = (
-                    f"<{team}> {final_name}"
+                    f"{team}・{final_name}"
                 )
 
             if is_afk:

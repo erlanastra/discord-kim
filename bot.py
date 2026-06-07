@@ -51,6 +51,7 @@ async def load_cogs():
         "cogs.megagombal",
         "cogs.say",
         "cogs.afk",
+        "cogs.autoemoji",
         "cogs.cantikganteng",
         "cogs.worldcup",
         "cogs.setup_game",

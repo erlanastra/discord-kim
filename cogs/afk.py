@@ -147,6 +147,34 @@ class AFK(commands.Cog):
         )
 
         await ctx.send(embed=embed)
+    
+    # ================= CLEAN AFK SAAT BOT READY =================
+    @commands.Cog.listener()
+    async def on_ready(self):
+
+        print("AFK CLEANER AKTIF")
+
+        self.afk_users.clear()
+
+        for guild in self.bot.guilds:
+
+            for member in guild.members:
+
+                try:
+
+                    if member.nick and member.nick.startswith("[AFK] "):
+
+                        original_name = member.nick.replace(
+                            "[AFK] ",
+                            ""
+                        )
+
+                        await member.edit(
+                            nick=original_name
+                        )
+
+                except:
+                    pass
 
     # ================= ON MESSAGE =================
     @commands.Cog.listener()
