@@ -383,7 +383,7 @@ class StaffView(discord.ui.View):
 
                         # REMOVE WORLD CUP
                         old_name = re.sub(
-                            r"<[A-Z]{3}>\s*",
+                            r"[A-Z]{3}・\s*",
                             "",
                             old_name
                         )
@@ -532,25 +532,6 @@ class WorldCup(commands.Cog):
             try:
 
                 # =========================================
-                # FORCE UPDATE GRADIENT
-                # =========================================
-
-                primary, secondary = GRADIENTS.get(
-                    code,
-                    (color, color)
-                )
-
-                try:
-
-                    await role.edit(
-                        primary_colour=discord.Colour(primary),
-                        secondary_colour=discord.Colour(secondary)
-                    )
-
-                except:
-                    pass
-
-                # =========================================
                 # ROLE POSITION
                 # =========================================
 
@@ -560,9 +541,12 @@ class WorldCup(commands.Cog):
 
                 if member_role:
 
-                    await role.edit(
-                        position=member_role.position + 1
+                    await guild.edit_role_positions(
+                        positions={
+                            role: member_role.position + 1
+                        }
                     )
+
 
                 # =========================================
                 # ROLE ICON
@@ -629,8 +613,10 @@ class WorldCup(commands.Cog):
 
             if member_role:
 
-                await role.edit(
-                    position=member_role.position + 1
+                await guild.edit_role_positions(
+                    positions={
+                        role: member_role.position + 1
+                    }
                 )
 
         except Exception as e:
@@ -681,7 +667,7 @@ class WorldCup(commands.Cog):
 
             # REMOVE COUNTRY
             current_name = re.sub(
-                r"<[A-Z]{3}>\s*",
+                r"[A-Z]{3}・\s*",
                 "",
                 current_name
             )
