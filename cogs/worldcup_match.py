@@ -30,8 +30,8 @@ WORLD_CUP_CHAT_ID        = 1512624241999216672
 STAFF_CONTROL_CHANNEL_ID = 1512626594773078228
 
 # Jam announcement jadwal harian (WIB)
-DAILY_ANNOUNCE_HOUR   = 7    # 07:00 WIB
-DAILY_ANNOUNCE_MINUTE = 0
+DAILY_ANNOUNCE_HOUR   = 0    # 07:00 WIB
+DAILY_ANNOUNCE_MINUTE = 5
 
 # =========================================================
 # EMOJIS — sama dengan worldcup.py
@@ -549,7 +549,7 @@ class WorldCupMatch(commands.Cog):
         if not wc_channel:
             return
 
-        date_str = format_date_wib(datetime.utcnow())
+        date_str = format_date_wib(datetime.now(pytz.utc))
 
         # Filter fixture yang dikenali
         known = []
@@ -726,6 +726,13 @@ class WorldCupMatch(commands.Cog):
         match_data["status"]     = status
 
         is_final = status in ("FT", "AET", "PEN", "AWD", "WO")
+
+        if not is_final:
+            await self._update_live_embed(
+                wc_channel,
+                match_data,
+                is_final=False
+            )
 
         # =============================================
         # PROSES GOL BARU
@@ -993,55 +1000,3 @@ class WorldCupMatch(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(WorldCupMatch(bot))
-
-
-# =========================================================
-# CATATAN SETUP
-# =========================================================
-#
-# 1. INSTALL DEPENDENCY
-#    pip install aiohttp pytz
-#
-# 2. SET API KEY (jangan taruh di source code!)
-#    Linux/Mac : export API_FOOTBALL_KEY="isi_key_disini"
-#    Windows   : set API_FOOTBALL_KEY=isi_key_disini
-#    Atau pakai file .env + python-dotenv:
-#      pip install python-dotenv
-#      buat file .env berisi: API_FOOTBALL_KEY=isi_key_disini
-#      tambahkan di main.py: from dotenv import load_dotenv; load_dotenv()
-#
-# 3. DAFTARKAN COG di main.py / bot.py
-#    await bot.load_extension("worldcup_match")
-#
-# 4. LEAGUE ID (WC2026_LEAGUE_ID)
-#    Cek ID resmi WC2026 saat tournament mulai:
-#    GET /leagues?name=FIFA+World+Cup&season=2026
-#
-# 5. GIF — Ganti path/URL di bagian GIF Config sesuai selera
-#    Bisa pakai Giphy / Tenor, pastikan URL langsung ke file .gif
-#
-# 6. INTEGRASI KE StaffView (worldcup.py) — OPSIONAL
-#    Tambahkan tombol ini ke class StaffView di worldcup.py:
-#
-#      @discord.ui.button(
-#          label="Jadwal Hari Ini",
-#          emoji="📅",
-#          style=discord.ButtonStyle.primary,
-#          custom_id="send_wc_schedule"
-#      )
-#      async def send_schedule(self, interaction, button):
-#          cog = interaction.client.get_cog("WorldCupMatch")
-#          if not cog:
-#              return await interaction.response.send_message(
-#                  "Cog tidak aktif.", ephemeral=True
-#              )
-#          await interaction.response.defer(ephemeral=True)
-#          await cog._send_daily_schedule(interaction.guild)
-#          await interaction.followup.send(
-#              embed=discord.Embed(
-#                  description="Jadwal hari ini sudah dikirim.",
-#                  color=0x8A2BE2
-#              ), ephemeral=True
-#          )
-#
-# =========================================================
