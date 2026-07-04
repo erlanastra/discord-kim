@@ -22,6 +22,7 @@ DEFAULT_REWARD   = "75K OwO"
 QUIZ_DURATION    = 300   # detik
 CLUE_INTERVAL    = 60    # detik antar clue (tebak_negara)
 ANGKA_RANGE      = (1, 100)
+HINT_AT_FRACTION = 0.5   # hint muncul di 50% durasi kalau belum ada yang jawab
 
 # ==========================================
 # TIPE CHALLENGE & LABEL
@@ -46,6 +47,37 @@ CHALLENGE_LABELS = {
     "tebak_kode":     "🔐 Tebak Kode",
     "tebak_film":     "🎬 Tebak Film",
     "tebak_pola":     "🧩 Tebak Pola",
+}
+
+# Warna embed berbeda per tipe biar lebih variatif secara visual
+CHALLENGE_COLORS = {
+    "tebak_jawaban":  discord.Color.blue(),
+    "susun_kata":     discord.Color.teal(),
+    "kirim_emoji":    discord.Color.gold(),
+    "kirim_kalimat":  discord.Color.orange(),
+    "hitung_cepat":   discord.Color.green(),
+    "tebak_gambar":   discord.Color.purple(),
+    "petunjuk_huruf": discord.Color.dark_teal(),
+    "tebak_angka":    discord.Color.red(),
+    "anagram":        discord.Color.magenta(),
+    "tebak_negara":   discord.Color.dark_gold(),
+    "isi_angka":      discord.Color.dark_green(),
+    "isi_kata":       discord.Color.dark_orange(),
+    "mirror_text":    discord.Color.dark_magenta(),
+    "apa_persamaan":  discord.Color.dark_blue(),
+    "odd_one_out":    discord.Color.dark_red(),
+    "tebak_kode":     discord.Color.dark_purple(),
+    "tebak_film":     discord.Color.blurple(),
+    "tebak_pola":     discord.Color.fuchsia(),
+}
+
+# Tipe yang boleh dikasih auto-hint di tengah waktu (jawaban berupa teks,
+# bukan yang jawabannya harus persis/exact seperti kirim_emoji/kirim_kalimat,
+# bukan juga tebak_angka/tebak_negara/tebak_gambar/petunjuk_huruf yang
+# sudah punya "hint" bawaan)
+HINT_ELIGIBLE_TYPES = {
+    "tebak_jawaban", "anagram", "isi_kata", "mirror_text",
+    "apa_persamaan", "odd_one_out", "tebak_kode", "tebak_film",
 }
 
 # ==========================================
@@ -250,6 +282,33 @@ def is_case_sensitive(ctype: str) -> bool:
 def reverse_text(text: str) -> str:
     return text[::-1]
 
+def generate_hint(answer: str) -> str:
+    """Buat hint dengan menyamarkan sebagian huruf tiap kata, huruf
+    pertama & terakhir tiap kata tetap terlihat."""
+    words = answer.strip().split(" ")
+    hinted = []
+    for w in words:
+        if len(w) == 0:
+            continue
+        elif len(w) <= 2:
+            hinted.append(w[0] + "•" * (len(w) - 1))
+        else:
+            hinted.append(w[0] + "•" * (len(w) - 2) + w[-1])
+    return " ".join(hinted)
+
+def fmt_leaderboard(leaderboard: dict, guild: discord.Guild) -> str:
+    if not leaderboard:
+        return "Belum ada yang menang quiz. Jadilah yang pertama! 🚀"
+    top = sorted(leaderboard.items(), key=lambda kv: kv[1], reverse=True)[:10]
+    medals = ["🥇", "🥈", "🥉"]
+    lines = []
+    for i, (uid, wins) in enumerate(top):
+        prefix = medals[i] if i < 3 else f"`#{i+1}`"
+        member = guild.get_member(uid) if guild else None
+        name = member.mention if member else f"`{uid}`"
+        lines.append(f"{prefix} {name} — **{wins}** kemenangan")
+    return "\n".join(lines)
+
 # ==========================================
 # MODALS
 # ==========================================
@@ -262,8 +321,13 @@ class RewardModal(Modal, title="🎁 Edit Reward"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
-        self.quiz_view.reward = self.reward.value
-        await interaction.response.send_message(f"✅ Reward diubah → **{self.reward.value}**", ephemeral=True)
+        value = self.reward.value.strip()
+        if not value:
+            return await interaction.response.send_message("❌ Reward tidak boleh kosong!", ephemeral=True)
+        self.quiz_view.reward = value
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send(f"✅ Reward diubah → **{value}**", ephemeral=True)
 
 
 class CustomTebakModal(Modal, title="📝 Custom — Tebak Jawaban / Hitung / Anagram / Isi"):
@@ -275,12 +339,18 @@ class CustomTebakModal(Modal, title="📝 Custom — Tebak Jawaban / Hitung / An
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        q = self.question.value.strip()
+        a = self.answer.value.strip()
+        if not q or not a:
+            return await interaction.response.send_message("❌ Pertanyaan dan jawaban tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": self.quiz_view.challenge_data.get("type", "tebak_jawaban"),
-            "question": self.question.value,
-            "answer": self.answer.value.strip()
+            "question": q,
+            "answer": a
         }
-        await interaction.response.send_message("✅ Challenge berhasil di-custom!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge berhasil di-custom!", ephemeral=True)
 
 
 class CustomKalimatModal(Modal, title="💬 Custom — Kirim Kalimat"):
@@ -291,12 +361,17 @@ class CustomKalimatModal(Modal, title="💬 Custom — Kirim Kalimat"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        val = self.kalimat.value.strip()
+        if not val:
+            return await interaction.response.send_message("❌ Kalimat tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "kirim_kalimat",
-            "question": f"Ketik kalimat ini **persis sama** (kapital & tanda baca dihitung):\n> `{self.kalimat.value}`",
-            "answer": self.kalimat.value
+            "question": f"Ketik kalimat ini **persis sama** (kapital & tanda baca dihitung):\n> `{val}`",
+            "answer": val
         }
-        await interaction.response.send_message("✅ Challenge Kirim Kalimat diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Kirim Kalimat diatur!", ephemeral=True)
 
 
 class CustomEmojiModal(Modal, title="😄 Custom — Kirim Emoji"):
@@ -307,12 +382,17 @@ class CustomEmojiModal(Modal, title="😄 Custom — Kirim Emoji"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        val = self.emoji_str.value.strip()
+        if not val:
+            return await interaction.response.send_message("❌ Emoji tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "kirim_emoji",
-            "question": f"Kirim emoji ini **persis sama**:\n# {self.emoji_str.value}",
-            "answer": self.emoji_str.value
+            "question": f"Kirim emoji ini **persis sama**:\n# {val}",
+            "answer": val
         }
-        await interaction.response.send_message("✅ Challenge Kirim Emoji diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Kirim Emoji diatur!", ephemeral=True)
 
 
 class CustomSusunKataModal(Modal, title="🔀 Custom — Susun Kata"):
@@ -324,19 +404,21 @@ class CustomSusunKataModal(Modal, title="🔀 Custom — Susun Kata"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        acak = self.kata_acak.value.strip()
+        jawab = self.jawaban.value.strip()
+        if not acak or not jawab:
+            return await interaction.response.send_message("❌ Kata acak dan jawaban tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "susun_kata",
-            "question": f"Susun kata berikut jadi kalimat benar!\n**kata acak:** `{self.kata_acak.value}`",
-            "answer": self.jawaban.value.lower().strip()
+            "question": f"Susun kata berikut jadi kalimat benar!\n**kata acak:** `{acak}`",
+            "answer": jawab.lower()
         }
-        await interaction.response.send_message("✅ Challenge Susun Kata diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Susun Kata diatur!", ephemeral=True)
 
 
 class CustomGambarModal(Modal, title="🖼️ Custom — Tebak Gambar (URL)"):
-    """
-    Digunakan kalau staff ingin pakai URL gambar.
-    Untuk upload file langsung, staff klik tombol '📎 Upload Gambar' di draft view.
-    """
     image_url = TextInput(label="URL Gambar", placeholder="https://...")
     question  = TextInput(label="Pertanyaan", placeholder="Apa nama hewan ini?")
     answer    = TextInput(label="Jawaban")
@@ -346,13 +428,22 @@ class CustomGambarModal(Modal, title="🖼️ Custom — Tebak Gambar (URL)"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        url = self.image_url.value.strip()
+        q = self.question.value.strip()
+        a = self.answer.value.strip()
+        if not url.startswith("http"):
+            return await interaction.response.send_message("❌ URL gambar tidak valid! Harus diawali `http`.", ephemeral=True)
+        if not q or not a:
+            return await interaction.response.send_message("❌ Pertanyaan dan jawaban tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "tebak_gambar",
-            "question": self.question.value,
-            "answer": self.answer.value.lower().strip(),
-            "image_url": self.image_url.value
+            "question": q,
+            "answer": a.lower(),
+            "image_url": url
         }
-        await interaction.response.send_message("✅ Challenge Tebak Gambar (URL) diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Tebak Gambar (URL) diatur!", ephemeral=True)
 
 
 class CustomNegaraModal(Modal, title="🗺️ Custom — Tebak Negara"):
@@ -366,17 +457,22 @@ class CustomNegaraModal(Modal, title="🗺️ Custom — Tebak Negara"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        jawab = self.jawaban.value.strip()
+        if not jawab or not self.clue1.value.strip() or not self.clue2.value.strip() or not self.clue3.value.strip():
+            return await interaction.response.send_message("❌ Semua field harus diisi!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "tebak_negara",
             "question": "Tebak negara ini!",
-            "answer": self.jawaban.value.lower().strip(),
+            "answer": jawab.lower(),
             "clues": [
-                f"🌍 **Clue 1:** {self.clue1.value}",
-                f"🌍 **Clue 2:** {self.clue2.value}",
-                f"🌍 **Clue 3:** {self.clue3.value}",
+                f"🌍 **Clue 1:** {self.clue1.value.strip()}",
+                f"🌍 **Clue 2:** {self.clue2.value.strip()}",
+                f"🌍 **Clue 3:** {self.clue3.value.strip()}",
             ]
         }
-        await interaction.response.send_message("✅ Challenge Tebak Negara diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Tebak Negara diatur!", ephemeral=True)
 
 
 class CustomAngkaModal(Modal, title="🎯 Custom — Tebak Angka"):
@@ -392,18 +488,18 @@ class CustomAngkaModal(Modal, title="🎯 Custom — Tebak Angka"):
             lo = int(self.min_val.value.strip() or "1")
             hi = int(self.max_val.value.strip() or "100")
         except ValueError:
-            await interaction.response.send_message("❌ Min dan Max harus berupa angka bulat!", ephemeral=True)
-            return
+            return await interaction.response.send_message("❌ Min dan Max harus berupa angka bulat!", ephemeral=True)
         if lo >= hi:
-            await interaction.response.send_message("❌ Angka minimum harus lebih kecil dari maksimum!", ephemeral=True)
-            return
+            return await interaction.response.send_message("❌ Angka minimum harus lebih kecil dari maksimum!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "tebak_angka",
             "question": f"Tebak angka antara **{lo} sampai {hi}**!\nSemua boleh jawab, yang paling dekat saat waktu habis menang. 🎯",
             "answer": "__generated__",
             "range": (lo, hi)
         }
-        await interaction.response.send_message(f"✅ Range diatur: {lo}–{hi}. Angka rahasia di-generate saat Approve.", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send(f"✅ Range diatur: {lo}–{hi}. Angka rahasia di-generate saat Approve.", ephemeral=True)
 
 
 class CustomMirrorModal(Modal, title="🔁 Custom — Mirror Text"):
@@ -414,13 +510,18 @@ class CustomMirrorModal(Modal, title="🔁 Custom — Mirror Text"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
-        terbalik = reverse_text(self.teks_asli.value)
+        asli = self.teks_asli.value.strip()
+        if not asli:
+            return await interaction.response.send_message("❌ Teks tidak boleh kosong!", ephemeral=True)
+        terbalik = reverse_text(asli)
         self.quiz_view.challenge_data = {
             "type": "mirror_text",
             "question": f"Baca teks terbalik berikut dan ketik versi normalnya!\n```{terbalik}```",
-            "answer": self.teks_asli.value.lower().strip()
+            "answer": asli.lower()
         }
-        await interaction.response.send_message(f"✅ Mirror Text diatur! Teks terbalik: `{terbalik}`", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send(f"✅ Mirror Text diatur! Teks terbalik: `{terbalik}`", ephemeral=True)
 
 
 class CustomPolaModal(Modal, title="🧩 Custom — Tebak Pola"):
@@ -432,12 +533,18 @@ class CustomPolaModal(Modal, title="🧩 Custom — Tebak Pola"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        pola = self.pola.value.strip()
+        jawab = self.jawaban.value.strip()
+        if not pola or not jawab:
+            return await interaction.response.send_message("❌ Pola dan jawaban tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "tebak_pola",
-            "question": f"Lanjutkan pola berikut!\n`{self.pola.value}`",
-            "answer": self.jawaban.value.strip()
+            "question": f"Lanjutkan pola berikut!\n`{pola}`",
+            "answer": jawab
         }
-        await interaction.response.send_message("✅ Challenge Tebak Pola diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Tebak Pola diatur!", ephemeral=True)
 
 
 class CustomFilmModal(Modal, title="🎬 Custom — Tebak Film"):
@@ -449,12 +556,18 @@ class CustomFilmModal(Modal, title="🎬 Custom — Tebak Film"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        emoji = self.emoji_str.value.strip()
+        jawab = self.jawaban.value.strip()
+        if not emoji or not jawab:
+            return await interaction.response.send_message("❌ Emoji dan jawaban tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "tebak_film",
-            "question": f"Tebak judul film/lagu dari emoji ini!\n# {self.emoji_str.value}",
-            "answer": self.jawaban.value.lower().strip()
+            "question": f"Tebak judul film/lagu dari emoji ini!\n# {emoji}",
+            "answer": jawab.lower()
         }
-        await interaction.response.send_message("✅ Challenge Tebak Film diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Tebak Film diatur!", ephemeral=True)
 
 
 class CustomPersamaanModal(Modal, title="🔗 Custom — Apa Persamaan"):
@@ -468,15 +581,20 @@ class CustomPersamaanModal(Modal, title="🔗 Custom — Apa Persamaan"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        jawab = self.jawaban.value.strip()
+        if not jawab or not self.kata1.value.strip() or not self.kata2.value.strip() or not self.kata3.value.strip():
+            return await interaction.response.send_message("❌ Semua field harus diisi!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "apa_persamaan",
             "question": (
                 f"Cari **1 kata** yang menghubungkan ketiga kata ini!\n\n"
-                f"`{self.kata1.value}` **|** `{self.kata2.value}` **|** `{self.kata3.value}`"
+                f"`{self.kata1.value.strip()}` **|** `{self.kata2.value.strip()}` **|** `{self.kata3.value.strip()}`"
             ),
-            "answer": self.jawaban.value.lower().strip()
+            "answer": jawab.lower()
         }
-        await interaction.response.send_message("✅ Challenge Apa Persamaan diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Apa Persamaan diatur!", ephemeral=True)
 
 
 class CustomOddOneOutModal(Modal, title="🧠 Custom — Odd One Out"):
@@ -488,14 +606,19 @@ class CustomOddOneOutModal(Modal, title="🧠 Custom — Odd One Out"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
-        parts = [p.strip() for p in self.pilihan.value.split("|")]
+        jawab = self.jawaban.value.strip()
+        parts = [p.strip() for p in self.pilihan.value.split("|") if p.strip()]
+        if not jawab or len(parts) < 2:
+            return await interaction.response.send_message("❌ Isi minimal 2 pilihan (pisah `|`) dan jawaban!", ephemeral=True)
         display = " **|** ".join(parts)
         self.quiz_view.challenge_data = {
             "type": "odd_one_out",
             "question": f"Mana yang **tidak sekelompok**?\n\n{display}",
-            "answer": self.jawaban.value.lower().strip()
+            "answer": jawab.lower()
         }
-        await interaction.response.send_message("✅ Challenge Odd One Out diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Odd One Out diatur!", ephemeral=True)
 
 
 class CustomKodeModal(Modal, title="🔐 Custom — Tebak Kode"):
@@ -508,26 +631,25 @@ class CustomKodeModal(Modal, title="🔐 Custom — Tebak Kode"):
         self.quiz_view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        soal = self.soal.value.strip()
+        jawab = self.jawaban.value.strip()
+        if not soal or not jawab:
+            return await interaction.response.send_message("❌ Kode dan jawaban tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "tebak_kode",
-            "question": f"Decode kode berikut! *({self.hint.value})*\n```{self.soal.value}```",
-            "answer": self.jawaban.value.lower().strip()
+            "question": f"Decode kode berikut! *({self.hint.value.strip()})*\n```{soal}```",
+            "answer": jawab.lower()
         }
-        await interaction.response.send_message("✅ Challenge Tebak Kode diatur!", ephemeral=True)
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send("✅ Challenge Tebak Kode diatur!", ephemeral=True)
 
 
 # ==========================================
 # UPLOAD GAMBAR — Modal untuk jawaban + instruksi
-# Staff mengirim gambar via pesan terpisah lalu paste URL CDN Discord
-# ATAU kita pakai sistem: staff diminta kirim gambar ke channel staff
 # ==========================================
 
 class UploadGambarModal(Modal, title="📎 Upload Gambar — Tebak Gambar"):
-    """
-    Staff paste URL attachment Discord (upload dulu ke DM/channel lain,
-    copy link, lalu paste di sini). Ini cara paling reliable untuk
-    gambar kustom karena Discord tidak support file upload via Modal.
-    """
     image_url = TextInput(
         label="URL Gambar (Discord CDN / URL publik)",
         placeholder="https://cdn.discordapp.com/attachments/...",
@@ -546,16 +668,21 @@ class UploadGambarModal(Modal, title="📎 Upload Gambar — Tebak Gambar"):
 
     async def on_submit(self, interaction: discord.Interaction):
         url = self.image_url.value.strip()
+        q = self.question.value.strip()
+        a = self.answer.value.strip()
+        if not url.startswith("http"):
+            return await interaction.response.send_message("❌ URL gambar tidak valid! Harus diawali `http`.", ephemeral=True)
+        if not a:
+            return await interaction.response.send_message("❌ Jawaban tidak boleh kosong!", ephemeral=True)
         self.quiz_view.challenge_data = {
             "type": "tebak_gambar",
-            "question": self.question.value,
-            "answer": self.answer.value.lower().strip(),
+            "question": q,
+            "answer": a.lower(),
             "image_url": url
         }
-        await interaction.response.send_message(
-            f"✅ Gambar diatur!\n🖼️ Preview: {url}",
-            ephemeral=True
-        )
+        embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
+        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
+        await interaction.followup.send(f"✅ Gambar diatur!\n🖼️ Preview: {url}", ephemeral=True)
 
 
 # ==========================================
@@ -563,7 +690,6 @@ class UploadGambarModal(Modal, title="📎 Upload Gambar — Tebak Gambar"):
 # ==========================================
 
 def _patch_modal_on_error(modal_cls):
-    """Tambah on_error handler ke modal supaya tidak silent fail / interaction failed."""
     async def on_error(self, interaction: discord.Interaction, error: Exception):
         import traceback
         traceback.print_exception(type(error), error, error.__traceback__)
@@ -643,10 +769,28 @@ class QuizPanelView(View):
             await interaction.followup.send(chunk, ephemeral=True)
 
     @discord.ui.button(
+        label="🏆 Leaderboard",
+        style=discord.ButtonStyle.blurple,
+        custom_id="panel_leaderboard",
+        row=1
+    )
+    async def show_leaderboard(self, interaction: discord.Interaction, button: Button):
+        leaderboard = getattr(self.bot, "quiz_leaderboard", {})
+        embed = discord.Embed(
+            title="🏆 Leaderboard nanZ Quiz",
+            description=fmt_leaderboard(leaderboard, interaction.guild),
+            color=discord.Color.gold()
+        )
+        total_played = getattr(self.bot, "quiz_total_played", 0)
+        embed.set_footer(text=f"nanZ Server • Total quiz dimainkan: {total_played}")
+        embed.timestamp = discord.utils.utcnow()
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(
         label="⏹️ Stop Quiz",
         style=discord.ButtonStyle.red,
         custom_id="panel_stop_quiz",
-        row=0
+        row=1
     )
     async def stop_quiz(self, interaction: discord.Interaction, button: Button):
         if not self.bot.quiz_active:
@@ -685,14 +829,13 @@ def _build_draft_embed(challenge: dict, reward: str) -> discord.Embed:
 
     embed = discord.Embed(
         title=f"📝 Draft Quiz — {label}",
-        color=discord.Color.dark_purple()
+        color=CHALLENGE_COLORS.get(ctype, discord.Color.dark_purple())
     )
     embed.add_field(name="❓ Pertanyaan / Challenge", value=challenge.get("question", "-"), inline=False)
     embed.add_field(name="✅ Jawaban", value=f"`{answer_display}`", inline=True)
     embed.add_field(name="🎁 Reward", value=reward, inline=True)
     embed.add_field(name="⏱️ Durasi", value="5 Menit", inline=True)
 
-    # Tampilkan preview gambar di draft jika ada
     if challenge.get("image_url"):
         embed.set_image(url=challenge["image_url"])
 
@@ -711,12 +854,10 @@ class StaffDraftView(View):
         self.reward = DEFAULT_REWARD
 
     async def on_timeout(self):
-        """Nonaktifkan semua tombol saat draft kadaluarsa (10 menit)."""
         for item in self.children:
             item.disabled = True
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Tolak interaksi kalau view sudah selesai/timeout."""
         if self.is_finished():
             await interaction.response.send_message(
                 "❌ Draft ini sudah kadaluarsa. Buat quiz baru dari panel.",
@@ -732,17 +873,15 @@ class StaffDraftView(View):
         if self.bot.quiz_active:
             return await interaction.response.send_message("❌ Masih ada quiz aktif.", ephemeral=True)
 
-        # ── DEFER DULU agar tidak interaction failed ──────────────
-        # Kita defer ephemeral karena proses selanjutnya bisa lambat (file I/O)
         await interaction.response.defer(ephemeral=True)
 
         self.bot.quiz_active = True
+        self.bot.quiz_total_played = getattr(self.bot, "quiz_total_played", 0) + 1
 
         ctype   = self.challenge_data.get("type", "tebak_jawaban")
         label   = CHALLENGE_LABELS.get(ctype, "❓ Quiz")
         channel = self.bot.get_channel(QUIZ_CHANNEL_ID)
 
-        # Generate angka rahasia untuk tebak_angka
         if ctype == "tebak_angka":
             lo, hi = self.challenge_data.get("range", ANGKA_RANGE)
             secret = random.randint(lo, hi)
@@ -750,16 +889,15 @@ class StaffDraftView(View):
             self.bot.tebak_angka_entries = {}
 
         embed = discord.Embed(
-            title=f"nanZ Quiz — {label}",
+            title=f"🎉 nanZ Quiz — {label}",
             description=self._build_public_description(ctype),
-            color=discord.Color.blurple()
+            color=CHALLENGE_COLORS.get(ctype, discord.Color.blurple())
         )
-        embed.set_footer(text="nanZ Server")
+        embed.set_footer(text="nanZ Server • Jawab secepat mungkin!")
         embed.timestamp = discord.utils.utcnow()
 
         quiz_msg = None
 
-        # ── TEBAK GAMBAR: pakai image_url (bisa CDN Discord/URL publik) ──
         if ctype == "tebak_gambar" and self.challenge_data.get("image_url"):
             embed.set_image(url=self.challenge_data["image_url"])
             quiz_msg = await channel.send(
@@ -767,7 +905,6 @@ class StaffDraftView(View):
                 embed=embed
             )
         else:
-            # Coba pakai GIF lokal
             try:
                 file = discord.File("assets/nanzquiz.gif", filename="nanzquiz.gif")
                 embed.set_image(url="attachment://nanzquiz.gif")
@@ -785,7 +922,6 @@ class StaffDraftView(View):
         self.bot.current_quiz_message = quiz_msg
         self._set_bot_state(ctype)
 
-        # Gunakan followup karena sudah defer
         await interaction.followup.send("✅ Quiz berhasil dipublish!", ephemeral=True)
         self.stop()
         await self._wait_and_end(channel, ctype)
@@ -800,6 +936,30 @@ class StaffDraftView(View):
         if ctype == "tebak_negara":
             self.bot.negara_clues    = self.challenge_data.get("clues", [])
             self.bot.negara_clue_idx = 0
+
+    async def _send_hint_if_eligible(self, channel, ctype: str):
+        """Kirim hint di tengah waktu kalau tipe soal cocok & belum ada yang jawab."""
+        if ctype not in HINT_ELIGIBLE_TYPES:
+            return
+        wait_time = QUIZ_DURATION * HINT_AT_FRACTION
+        await asyncio.sleep(wait_time)
+        if not self.bot.quiz_active:
+            return
+        answer = self.bot.current_answer
+        if not answer:
+            return
+        hint = generate_hint(answer)
+        remaining = int(QUIZ_DURATION - wait_time)
+        embed = discord.Embed(
+            title="💡 Hint Muncul!",
+            description=f"Masih bingung? Ini petunjuknya:\n# `{hint}`\n\n⏳ Sisa waktu ~{remaining // 60} menit {remaining % 60} detik!",
+            color=discord.Color.yellow()
+        )
+        embed.set_footer(text="nanZ Server • Semangat!")
+        try:
+            await channel.send(embed=embed)
+        except Exception:
+            pass
 
     async def _wait_and_end(self, channel, ctype: str):
         if ctype == "tebak_negara":
@@ -838,13 +998,20 @@ class StaffDraftView(View):
             else:
                 winner_id  = min(entries, key=lambda uid: abs(entries[uid][0] - secret))
                 winner_val, winner_member = entries[winner_id]
+
+                leaderboard = getattr(self.bot, "quiz_leaderboard", {})
+                leaderboard[winner_id] = leaderboard.get(winner_id, 0) + 1
+                self.bot.quiz_leaderboard = leaderboard
+                total_wins = leaderboard[winner_id]
+
                 end_embed = discord.Embed(
                     title="🎯 nanZQuiz Winner — Tebak Angka",
                     description=(
                         f"**Angka rahasia:** `{secret}`\n\n"
                         f"Pemenang: {winner_member.mention}\n"
                         f"**Tebakan:** `{winner_val}` *(selisih {abs(winner_val - secret)})*\n"
-                        f"**Reward:** {self.bot.current_reward}\n\n"
+                        f"**Reward:** {self.bot.current_reward}\n"
+                        f"**Total kemenangan:** {total_wins} 🏆\n\n"
                         f"> Staff akan segera memberikan hadiah kamu."
                     ),
                     color=discord.Color.gold()
@@ -875,12 +1042,15 @@ class StaffDraftView(View):
             return
 
         else:
+            hint_task = asyncio.create_task(self._send_hint_if_eligible(channel, ctype))
             await asyncio.sleep(QUIZ_DURATION)
+            if not hint_task.done():
+                hint_task.cancel()
 
         if self.bot.quiz_active:
             end_embed = discord.Embed(
                 title="⏰ Quiz Ended",
-                description="Belum ada yang berhasil kali ini 😔",
+                description="Belum ada yang berhasil kali ini 😔\nJawaban yang benar: **" + str(self.bot.current_answer) + "**",
                 color=discord.Color.red()
             )
             end_embed.set_footer(text="nanZ Server")
@@ -975,7 +1145,6 @@ class StaffDraftView(View):
 
     @discord.ui.button(label="📝 Custom Challenge", style=discord.ButtonStyle.gray, custom_id="draft_custom", row=2)
     async def custom_challenge(self, interaction: discord.Interaction, button: Button):
-        # Instansiasi HANYA modal yang diperlukan — jangan buat semua sekaligus
         ctype = self.challenge_data.get("type", "tebak_jawaban")
         modal_cls_map = {
             "tebak_jawaban":  CustomTebakModal,
@@ -1000,16 +1169,10 @@ class StaffDraftView(View):
         modal_cls = modal_cls_map.get(ctype, CustomTebakModal)
         await interaction.response.send_modal(modal_cls(self))
 
-    # ── UPLOAD GAMBAR (BARU) ───────────────────────────────────────
+    # ── UPLOAD GAMBAR ────────────────────────────────────────────
 
     @discord.ui.button(label="📎 Upload Gambar", style=discord.ButtonStyle.gray, custom_id="draft_upload_img", row=2)
     async def upload_gambar(self, interaction: discord.Interaction, button: Button):
-        """
-        Staff bisa set tipe ke Tebak Gambar dan upload gambar sendiri.
-        Karena Discord Modal tidak support file upload, staff paste URL gambar
-        (bisa dari Discord CDN setelah upload ke DM bot / channel lain).
-        """
-        # Auto-set tipe ke tebak_gambar
         self.challenge_data["type"] = "tebak_gambar"
         await interaction.response.send_modal(UploadGambarModal(self))
 
@@ -1051,6 +1214,8 @@ class NanZQuiz(commands.Cog):
         self.bot.negara_clues           = []
         self.bot.negara_clue_idx        = 0
         self.bot.quiz_max_attempts      = 5
+        self.bot.quiz_leaderboard       = getattr(bot, "quiz_leaderboard", {})
+        self.bot.quiz_total_played      = getattr(bot, "quiz_total_played", 0)
 
     # ==========================================
     # COMMAND: BUAT PANEL PERMANEN
@@ -1066,6 +1231,7 @@ class NanZQuiz(commands.Cog):
                 "Panel kontrol quiz server.\n\n"
                 "**📋 Buat Quiz Baru** — Buat draft quiz, pilih tipe, custom soal, lalu approve.\n"
                 "**📖 Contoh Soal** — Lihat contoh soal tiap tipe sebagai referensi.\n"
+                "**🏆 Leaderboard** — Lihat ranking pemenang quiz.\n"
                 "**⏹️ Stop Quiz** — Hentikan quiz yang sedang berjalan.\n\n"
             ),
             color=discord.Color.dark_purple()
@@ -1094,7 +1260,6 @@ class NanZQuiz(commands.Cog):
         uid        = message.author.id
         max_att    = self.bot.quiz_max_attempts
 
-        # ── CEK ATTEMPT LIMIT ─────────────────────────────────────
         attempts = self.bot.quiz_attempts.get(uid, 0)
         if attempts >= max_att:
             return
@@ -1123,7 +1288,7 @@ class NanZQuiz(commands.Cog):
         if is_case_sensitive(ctype):
             correct = user_input == self.bot.current_answer
         else:
-            correct = user_input.lower() == self.bot.current_answer.lower()
+            correct = user_input.lower() == (self.bot.current_answer or "").lower()
 
         if not correct:
             return
@@ -1131,14 +1296,19 @@ class NanZQuiz(commands.Cog):
         self.bot.quiz_active = False
         label = CHALLENGE_LABELS.get(ctype, "❓ Quiz")
 
+        leaderboard = self.bot.quiz_leaderboard
+        leaderboard[uid] = leaderboard.get(uid, 0) + 1
+        total_wins = leaderboard[uid]
+
         winner_embed = discord.Embed(
-            title="nanZQuiz Winner 🏆",
+            title="🏆 nanZQuiz Winner!",
             description=(
                 f"Selamat {message.author.mention}!\n\n"
                 f"`Berhasil menyelesaikan challenge!`\n\n"
                 f"**Tipe:** {label}\n"
                 f"**Jawaban:** {message.content}\n"
-                f"**Reward:** {self.bot.current_reward}\n\n"
+                f"**Reward:** {self.bot.current_reward}\n"
+                f"**Total kemenangan:** {total_wins} 🎉\n\n"
                 f"> Staff akan segera memberikan hadiahmu."
             ),
             color=discord.Color.gold()
@@ -1171,7 +1341,6 @@ class NanZQuiz(commands.Cog):
         self.bot.current_reward         = None
         self.bot.current_quiz_message   = None
         self.bot.quiz_attempts          = {}
-
 
 # ==========================================
 # SETUP
