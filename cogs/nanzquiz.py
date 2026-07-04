@@ -10,7 +10,7 @@ import pytz
 # CONFIG
 # ==========================================
 
-QUIZ_CHANNEL_ID  = 1511643581457104957
+QUIZ_CHANNEL_ID = 1406557882811682891
 STAFF_CHANNEL_ID = 1511643581457104957
 
 MOD_ROLE_ID    = 1453103644244316343
@@ -326,11 +326,11 @@ class RewardModal(Modal, title="🎁 Edit Reward"):
             return await interaction.response.send_message("❌ Reward tidak boleh kosong!", ephemeral=True)
         self.quiz_view.reward = value
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send(f"✅ Reward diubah → **{value}**", ephemeral=True)
+        await interaction.response.send_message(f"✅ Reward diubah → **{value}**", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
-class CustomTebakModal(Modal, title="📝 Custom — Tebak Jawaban / Hitung / Anagram / Isi"):
+class CustomTebakModal(Modal, title="📝 Custom Challenge — Teks/Angka"):
     question = TextInput(label="Pertanyaan / Instruksi", style=discord.TextStyle.long)
     answer   = TextInput(label="Jawaban (tidak case-sensitive)")
 
@@ -349,8 +349,8 @@ class CustomTebakModal(Modal, title="📝 Custom — Tebak Jawaban / Hitung / An
             "answer": a
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge berhasil di-custom!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge berhasil di-custom!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomKalimatModal(Modal, title="💬 Custom — Kirim Kalimat"):
@@ -370,8 +370,8 @@ class CustomKalimatModal(Modal, title="💬 Custom — Kirim Kalimat"):
             "answer": val
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Kirim Kalimat diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Kirim Kalimat diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomEmojiModal(Modal, title="😄 Custom — Kirim Emoji"):
@@ -391,8 +391,8 @@ class CustomEmojiModal(Modal, title="😄 Custom — Kirim Emoji"):
             "answer": val
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Kirim Emoji diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Kirim Emoji diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomSusunKataModal(Modal, title="🔀 Custom — Susun Kata"):
@@ -414,8 +414,8 @@ class CustomSusunKataModal(Modal, title="🔀 Custom — Susun Kata"):
             "answer": jawab.lower()
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Susun Kata diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Susun Kata diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomGambarModal(Modal, title="🖼️ Custom — Tebak Gambar (URL)"):
@@ -442,8 +442,8 @@ class CustomGambarModal(Modal, title="🖼️ Custom — Tebak Gambar (URL)"):
             "image_url": url
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Tebak Gambar (URL) diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Tebak Gambar (URL) diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomNegaraModal(Modal, title="🗺️ Custom — Tebak Negara"):
@@ -471,8 +471,8 @@ class CustomNegaraModal(Modal, title="🗺️ Custom — Tebak Negara"):
             ]
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Tebak Negara diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Tebak Negara diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomAngkaModal(Modal, title="🎯 Custom — Tebak Angka"):
@@ -498,8 +498,8 @@ class CustomAngkaModal(Modal, title="🎯 Custom — Tebak Angka"):
             "range": (lo, hi)
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send(f"✅ Range diatur: {lo}–{hi}. Angka rahasia di-generate saat Approve.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Range diatur: {lo}–{hi}. Angka rahasia di-generate saat Approve.", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomMirrorModal(Modal, title="🔁 Custom — Mirror Text"):
@@ -520,8 +520,8 @@ class CustomMirrorModal(Modal, title="🔁 Custom — Mirror Text"):
             "answer": asli.lower()
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send(f"✅ Mirror Text diatur! Teks terbalik: `{terbalik}`", ephemeral=True)
+        await interaction.response.send_message(f"✅ Mirror Text diatur! Teks terbalik: `{terbalik}`", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomPolaModal(Modal, title="🧩 Custom — Tebak Pola"):
@@ -543,8 +543,8 @@ class CustomPolaModal(Modal, title="🧩 Custom — Tebak Pola"):
             "answer": jawab
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Tebak Pola diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Tebak Pola diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomFilmModal(Modal, title="🎬 Custom — Tebak Film"):
@@ -566,8 +566,8 @@ class CustomFilmModal(Modal, title="🎬 Custom — Tebak Film"):
             "answer": jawab.lower()
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Tebak Film diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Tebak Film diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomPersamaanModal(Modal, title="🔗 Custom — Apa Persamaan"):
@@ -593,8 +593,8 @@ class CustomPersamaanModal(Modal, title="🔗 Custom — Apa Persamaan"):
             "answer": jawab.lower()
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Apa Persamaan diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Apa Persamaan diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomOddOneOutModal(Modal, title="🧠 Custom — Odd One Out"):
@@ -617,8 +617,8 @@ class CustomOddOneOutModal(Modal, title="🧠 Custom — Odd One Out"):
             "answer": jawab.lower()
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Odd One Out diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Odd One Out diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 class CustomKodeModal(Modal, title="🔐 Custom — Tebak Kode"):
@@ -641,8 +641,8 @@ class CustomKodeModal(Modal, title="🔐 Custom — Tebak Kode"):
             "answer": jawab.lower()
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send("✅ Challenge Tebak Kode diatur!", ephemeral=True)
+        await interaction.response.send_message("✅ Challenge Tebak Kode diatur!", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 # ==========================================
@@ -681,8 +681,8 @@ class UploadGambarModal(Modal, title="📎 Upload Gambar — Tebak Gambar"):
             "image_url": url
         }
         embed = _build_draft_embed(self.quiz_view.challenge_data, self.quiz_view.reward)
-        await interaction.response.edit_message(embed=embed, view=self.quiz_view)
-        await interaction.followup.send(f"✅ Gambar diatur!\n🖼️ Preview: {url}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Gambar diatur!\n🖼️ Preview: {url}", ephemeral=True)
+        await self.quiz_view._refresh_draft_message(embed)
 
 
 # ==========================================
@@ -726,6 +726,19 @@ class QuizPanelView(View):
         super().__init__(timeout=None)
         self.bot = bot
 
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        import traceback
+        print(f"[QuizPanelView] Error pada item {item}:")
+        traceback.print_exception(type(error), error, error.__traceback__)
+        err_text = f"❌ Terjadi error: `{type(error).__name__}: {error}`"
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(err_text, ephemeral=True)
+            else:
+                await interaction.response.send_message(err_text, ephemeral=True)
+        except Exception:
+            pass
+
     @discord.ui.button(
         label="📋 Buat Quiz Baru",
         style=discord.ButtonStyle.green,
@@ -749,6 +762,9 @@ class QuizPanelView(View):
             view=view,
             ephemeral=True
         )
+        # Simpan referensi pesan draft supaya bisa di-edit lagi dari modal / timeout
+        view.message = await interaction.original_response()
+        view.start_timeout_warning()
 
     @discord.ui.button(
         label="📖 Contoh Soal",
@@ -852,10 +868,70 @@ class StaffDraftView(View):
         self.bot = bot
         self.challenge_data = challenge_data
         self.reward = DEFAULT_REWARD
+        self.message = None          # di-set setelah pesan draft terkirim
+        self._warn_task = None       # task pengingat sebelum draft expired
+
+    def start_timeout_warning(self):
+        """Jadwalkan peringatan ~1 menit sebelum draft ini expired (timeout=600s)."""
+        self._warn_task = asyncio.create_task(self._warn_before_timeout())
+
+    async def _warn_before_timeout(self):
+        try:
+            await asyncio.sleep(max(self.timeout - 60, 30))
+            if self.is_finished() or not self.message:
+                return
+            embed = self.message.embeds[0] if self.message.embeds else None
+            await self.message.edit(
+                content="⚠️ **Draft ini akan kadaluarsa dalam ±1 menit!** Klik Approve sekarang atau edit dulu sebelum hangus.",
+                embed=embed,
+                view=self
+            )
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     async def on_timeout(self):
+        if self._warn_task and not self._warn_task.done():
+            self._warn_task.cancel()
         for item in self.children:
             item.disabled = True
+        if self.message:
+            try:
+                embed = self.message.embeds[0] if self.message.embeds else None
+                await self.message.edit(
+                    content="⏰ **Draft ini sudah kadaluarsa.** Klik **📋 Buat Quiz Baru** di panel staff untuk membuat draft baru.",
+                    embed=embed,
+                    view=self
+                )
+            except Exception:
+                pass
+
+    def _cancel_warning(self):
+        if self._warn_task and not self._warn_task.done():
+            self._warn_task.cancel()
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        import traceback
+        print(f"[StaffDraftView] Error pada item {item}:")
+        traceback.print_exception(type(error), error, error.__traceback__)
+        err_text = f"❌ Terjadi error: `{type(error).__name__}: {error}`\n> Coba lagi, atau laporkan ke developer kalau berulang."
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(err_text, ephemeral=True)
+            else:
+                await interaction.response.send_message(err_text, ephemeral=True)
+        except Exception:
+            pass
+
+    async def _refresh_draft_message(self, embed: discord.Embed):
+        """Edit pesan draft asli secara langsung (bukan lewat interaction modal),
+        supaya tidak kena 'interaction failed' saat submit dari Modal."""
+        if self.message:
+            try:
+                await self.message.edit(embed=embed, view=self)
+            except Exception:
+                pass
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if self.is_finished():
@@ -874,6 +950,7 @@ class StaffDraftView(View):
             return await interaction.response.send_message("❌ Masih ada quiz aktif.", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
+        self._cancel_warning()
 
         self.bot.quiz_active = True
         self.bot.quiz_total_played = getattr(self.bot, "quiz_total_played", 0) + 1
@@ -1191,7 +1268,10 @@ class StaffDraftView(View):
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.red, custom_id="draft_cancel", row=3)
     async def cancel(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("❌ Quiz dibatalkan.", ephemeral=True)
+        self._cancel_warning()
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(content="❌ **Quiz dibatalkan.**", view=self)
         self.stop()
 
 
@@ -1341,6 +1421,7 @@ class NanZQuiz(commands.Cog):
         self.bot.current_reward         = None
         self.bot.current_quiz_message   = None
         self.bot.quiz_attempts          = {}
+
 
 # ==========================================
 # SETUP
