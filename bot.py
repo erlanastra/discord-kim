@@ -10,6 +10,7 @@ from cogs.setup_murid import MuridView
 from cogs.setup_minat import MinatView
 from cogs.setup_game import GameView
 from dotenv import load_dotenv
+from database import db
 
 load_dotenv() 
 
@@ -27,7 +28,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
 
     try:
-
         bot.add_view(VerifyButton(bot))
         bot.add_view(QuoteView(bot))
         bot.add_view(TicketView())
@@ -80,9 +80,20 @@ async def load_cogs():
 
 # --- Main loop ---
 async def main():
-    async with bot:
-        await load_cogs()
-        await bot.start(TOKEN)
+
+    await db.connect()
+
+    try:
+
+        async with bot:
+
+            await load_cogs()
+
+            await bot.start(TOKEN)
+
+    finally:
+
+        await db.close()
 
 # --- Run bot ---
 asyncio.run(main())
