@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from datetime import datetime
+from database import db
 import random
 
 
@@ -9,7 +10,6 @@ class AFK(commands.Cog):
     def __init__(self, bot):
 
         self.bot = bot
-        self.afk_users = {}
 
     # ================= RANDOM COLOR =================
     def random_color(self):
@@ -17,6 +17,21 @@ class AFK(commands.Cog):
         return discord.Color(
             random.randint(0, 0xFFFFFF)
         )
+
+    @commands.command(name="dbtest")
+    async def dbtest(self, ctx):
+
+        data = await db.fetchone(
+            "SELECT NOW() AS waktu"
+        )
+
+        embed = discord.Embed(
+            title="✅ Database Connected",
+            description=f"Waktu database:\n```{data['waktu']}```",
+            color=discord.Color.green()
+        )
+
+        await ctx.send(embed=embed)
 
     # ================= FORMAT WAKTU =================
     def format_time(self, seconds):
@@ -47,42 +62,53 @@ class AFK(commands.Cog):
 
     async def afk(self, ctx, *, reason="AFK"):
 
+        if ctx.guild is None:
+
+            embed = discord.Embed(
+                title="❌ Tidak Bisa Digunakan",
+                description="Command ini hanya bisa digunakan di dalam server.",
+                color=0xED4245
+            )
+
+            return await ctx.send(embed=embed)
+
         user = ctx.author
         now = datetime.utcnow()
 
         # ================= CEK SUDAH AFK =================
-        if user.id in self.afk_users:
+        existing = await db.fetchone(
+            """
+            SELECT *
+            FROM afk
+            WHERE user_id=%s
+            AND guild_id=%s
+            """,
+            user.id,
+            ctx.guild.id
+        )
 
-            old_data = self.afk_users[user.id]
+        if existing:
 
-            diff = (
-                now - old_data["since"]
-            ).total_seconds()
+            embed = discord.Embed(
+                title="❌ AFK Gagal",
+                description=f"{user.mention}, kamu sudah AFK sebelumnya!",
+                color=0xED4245
+            )
 
-            # Kalau benar-benar masih AFK
-            if diff > 3:
-
-                embed = discord.Embed(
-                    title="❌ AFK Gagal",
-                    description=(
-                        f"{user.mention}, "
-                        f"kamu sudah AFK sebelumnya!"
-                    ),
-                    color=0xED4245
-                )
-
-                return await ctx.send(
-                    embed=embed
-                )
-
-            # Kalau duplicate execute
-            return
+            return await ctx.send(embed=embed)
 
         # ================= SIMPAN AFK =================
-        self.afk_users[user.id] = {
-            "reason": reason,
-            "since": now
-        }
+        await db.execute(
+            """
+            INSERT INTO afk
+            (user_id, guild_id, reason, afk_since)
+            VALUES (%s,%s,%s,%s)
+            """,
+            user.id,
+            ctx.guild.id,
+            reason,
+            now
+        )
 
         # ================= UBAH NICKNAME =================
         try:
@@ -97,9 +123,8 @@ class AFK(commands.Cog):
                 await user.edit(
                     nick=f"[AFK] {original_name}"
                 )
-
-        except:
-            pass
+        except Exception as e:
+            print(e)
 
         # ================= EMBED AFK =================
         embed = discord.Embed(
@@ -136,7 +161,7 @@ class AFK(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def resetafk(self, ctx):
 
-        self.afk_users.clear()
+        await db.execute("DELETE FROM afk")
 
         embed = discord.Embed(
             title="🧹 AFK Reset",
@@ -148,39 +173,82 @@ class AFK(commands.Cog):
 
         await ctx.send(embed=embed)
     
-    # ================= CLEAN AFK SAAT BOT READY =================
+    # ================= SYNC AFK SAAT BOT READY =================
     @commands.Cog.listener()
     async def on_ready(self):
 
-        print("AFK CLEANER AKTIF")
+        print("AFK DATABASE AKTIF")
 
-        self.afk_users.clear()
+        try:
 
-        for guild in self.bot.guilds:
+            afk_users = await db.fetchall(
+                "SELECT * FROM afk"
+            )
 
-            for member in guild.members:
+            total = 0
+
+            for data in afk_users:
+
+                guild = self.bot.get_guild(
+                    data["guild_id"]
+                )
+
+                if not guild:
+                    continue
+
+                member = guild.get_member(
+                    data["user_id"]
+                )
+
+                if not member:
+                    continue
 
                 try:
 
-                    if member.nick and member.nick.startswith("[AFK] "):
-
-                        original_name = member.nick.replace(
-                            "[AFK] ",
-                            ""
-                        )
+                    if not member.display_name.startswith("[AFK] "):
 
                         await member.edit(
-                            nick=original_name
+                            nick=f"[AFK] {member.display_name}"
                         )
 
-                except:
+                    total += 1
+
+                except Exception:
                     pass
+
+            print(
+                f"AFK Sync selesai ({total} user)"
+            )
+
+        except Exception as e:
+
+            print(
+                f"AFK Sync Error: {e}"
+            )
+
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member):
+
+        await db.execute(
+            """
+            DELETE FROM afk
+            WHERE user_id=%s
+            AND guild_id=%s
+            """,
+            member.id,
+            member.guild.id
+        )
+
 
     # ================= ON MESSAGE =================
     @commands.Cog.listener()
     async def on_message(self, message):
 
         if message.author.bot:
+            return
+        
+        if message.guild is None:
             return
 
         # Ignore command
@@ -190,12 +258,31 @@ class AFK(commands.Cog):
         user_id = message.author.id
 
         # ================= REMOVE AFK =================
-        if user_id in self.afk_users:
+        data = await db.fetchone(
+            """
+            SELECT *
+            FROM afk
+            WHERE user_id=%s
+            AND guild_id=%s
+            """,
+            user_id,
+            message.guild.id
+        )
 
-            data = self.afk_users.pop(user_id)
+        if data:
+
+            await db.execute(
+                """
+                DELETE FROM afk
+                WHERE user_id=%s
+                AND guild_id=%s
+                """,
+                user_id,
+                message.guild.id
+            )
 
             afk_time = (
-                datetime.utcnow() - data["since"]
+                datetime.utcnow() - data["afk_since"]
             ).total_seconds()
 
             waktu = self.format_time(
@@ -216,8 +303,8 @@ class AFK(commands.Cog):
                         nick=original_name
                     )
 
-            except:
-                pass
+            except Exception as e:
+                print(e)
 
             # ================= EMBED WELCOME BACK =================
             embed = discord.Embed(
@@ -237,12 +324,21 @@ class AFK(commands.Cog):
         # ================= CEK USER AFK =================
         for user in message.mentions:
 
-            if user.id in self.afk_users:
+            data = await db.fetchone(
+                """
+                SELECT *
+                FROM afk
+                WHERE user_id=%s
+                AND guild_id=%s
+                """,
+                user.id,
+                message.guild.id
+            )
 
-                data = self.afk_users[user.id]
+            if data:
 
                 afk_time = (
-                    datetime.utcnow() - data["since"]
+                    datetime.utcnow() - data["afk_since"]
                 ).total_seconds()
 
                 waktu = self.format_time(
