@@ -69,7 +69,10 @@ def get_team_name_from_role(role: discord.Role) -> str:
     return name
 
 
-def get_team_channel(guild: discord.Guild, team_name: str) -> discord.TextChannel | None:
+def get_team_channel(
+    guild: discord.Guild,
+    team_name: str
+) -> Optional[discord.TextChannel]:
     """Cari channel berdasarkan topic yang mengandung CHANNEL_MARKER dan nama channel."""
     channel_name = f"{CHANNEL_PREFIX}{team_name.lower()}"
     category = guild.get_channel(TEAM_CATEGORY_ID)
@@ -172,7 +175,7 @@ def _decode_nick(s: str) -> Optional[str]:
 
 def _get_nicks_from_topic(topic: str) -> Dict[int, Optional[str]]:
     """Parse 'nicks:<ID>=<enc>|...' dari topic."""
-    result: dict[int, str | None] = {}
+    result: dict[int, Optional[str]] = {}
     if not topic:
         return result
     m = re.search(r"nicks:(\S+)", topic)
