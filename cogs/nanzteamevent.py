@@ -126,7 +126,7 @@ def is_event_active(guild: discord.Guild) -> bool:
     return len(get_event_roles(guild)) > 0 or _get_event_config_channel(guild) is not None
 
 
-def _get_event_config_channel(guild: discord.Guild) -> discord.TextChannel | None:
+def _get_event_config_channel(guild: discord.Guild) -> Optional[discord.TextChannel]:
     """
     Channel config event: topic mengandung CHANNEL_MARKER dan "event_config:true".
     Digunakan untuk menyimpan max_teams & max_members ketika belum ada team sama sekali.
