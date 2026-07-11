@@ -1,7 +1,10 @@
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime
-from zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 import json
 import random
 import io
