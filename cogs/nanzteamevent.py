@@ -1,4 +1,6 @@
 import re
+from typing import List, Dict, Tuple, Optional
+
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Modal, TextInput
@@ -15,22 +17,6 @@ TEAM_CATEGORY_ID       = 1406602545828466709
 MOD_ROLE_ID     = 1453103644244316343
 OSIS_ROLE_ID    = 1427276194876751902
 PEMBINA_ROLE_ID = 1467360501745844446
-
-# ==========================================
-# MARKER / PREFIX CONVENTION
-#
-# Semua yang dibuat bot ditandai dengan:
-#   Role  → nama mengandung "[NANZ-EVENT]" di belakang,
-#           contoh: "Team nanZ [NANZ-EVENT]"
-#   Channel topic → "leader:<ID> max_members:<N> [NANZ-EVENT]"
-#   Nickname  → "[TeamName] NamaAsli"  (prefix saja, tidak ada marker khusus)
-#
-# Dengan ini bot bisa:
-#   - Temukan semua team hanya dari guild.roles
-#   - Temukan channel team dari channel.topic
-#   - Baca leader_id & max_members dari topic
-#   - Baca team_name dari nama role
-# ==========================================
 
 ROLE_MARKER      = "[NANZ-EVENT]"   # suffix pada nama role
 CHANNEL_MARKER   = "[NANZ-EVENT]"   # substring di topic channel
@@ -67,7 +53,7 @@ def _build_topic(leader_id: int, max_members: int, max_teams: int) -> str:
     )
 
 
-def get_event_roles(guild: discord.Guild) -> list[discord.Role]:
+def get_event_roles(guild: discord.Guild) -> List[discord.Role]:
     """Kembalikan semua role event (yang namanya mengandung ROLE_MARKER)."""
     return [r for r in guild.roles if ROLE_MARKER in r.name]
 
@@ -148,7 +134,7 @@ def _get_event_config_channel(guild: discord.Guild) -> discord.TextChannel | Non
     return None
 
 
-def _get_global_limits(guild: discord.Guild) -> tuple[int, int]:
+def _get_global_limits(guild: discord.Guild) -> Tuple[int, int]:
     """Ambil (max_teams, max_members) dari channel config atau dari team pertama yang ada."""
     config_ch = _get_event_config_channel(guild)
     if config_ch:
@@ -161,7 +147,10 @@ def _get_global_limits(guild: discord.Guild) -> tuple[int, int]:
     return 5, 5
 
 
-def find_team_of_member(guild: discord.Guild, user_id: int) -> tuple[str, dict] | tuple[None, None]:
+def find_team_of_member(
+    guild: discord.Guild,
+    user_id: int
+) -> Tuple[Optional[str], Optional[dict]]:
     """Temukan team tempat user bergabung. Return (team_name, team_data) atau (None, None)."""
     for team_name, data in get_all_teams(guild).items():
         if user_id in data["members"]:
@@ -169,27 +158,19 @@ def find_team_of_member(guild: discord.Guild, user_id: int) -> tuple[str, dict] 
     return None, None
 
 
-# ==========================================
-# ORIGINAL NICKNAME
-# Karena tidak ada persistent storage,
-# simpan di topic channel team dengan format tambahan:
-#   "nicks:<ID>=<nick_encoded>|<ID>=<nick_encoded> ..."
-# nick_encoded: spasi diganti '\s', '|' diganti '\p'
-# ==========================================
-
-def _encode_nick(nick: str | None) -> str:
+def _encode_nick(nick: Optional[str]) -> str:
     if nick is None:
         return "NONE"
     return nick.replace("\\", "\\\\").replace("|", "\\p").replace(" ", "\\s")
 
 
-def _decode_nick(s: str) -> str | None:
+def _decode_nick(s: str) -> Optional[str]:
     if s == "NONE":
         return None
     return s.replace("\\s", " ").replace("\\p", "|").replace("\\\\", "\\")
 
 
-def _get_nicks_from_topic(topic: str) -> dict[int, str | None]:
+def _get_nicks_from_topic(topic: str) -> Dict[int, Optional[str]]:
     """Parse 'nicks:<ID>=<enc>|...' dari topic."""
     result: dict[int, str | None] = {}
     if not topic:
@@ -209,7 +190,7 @@ def _get_nicks_from_topic(topic: str) -> dict[int, str | None]:
     return result
 
 
-def _set_nicks_in_topic(topic: str, nicks: dict[int, str | None]) -> str:
+def _set_nicks_in_topic(topic: str, nicks: Dict[int, Optional[str]]) -> str:
     """Ganti atau tambahkan bagian 'nicks:...' di topic."""
     if not nicks:
         return topic
@@ -222,7 +203,7 @@ def _set_nicks_in_topic(topic: str, nicks: dict[int, str | None]) -> str:
     return topic
 
 
-async def _save_nick_to_channel(channel: discord.TextChannel, user_id: int, nick: str | None):
+async def _save_nick_to_channel(channel: discord.TextChannel, user_id: int, nick: Optional[str]):
     """Simpan nickname asli ke topic channel."""
     topic = channel.topic or ""
     nicks = _get_nicks_from_topic(topic)
@@ -258,7 +239,6 @@ async def _restore_nick_from_channel(
         await channel.edit(topic=new_topic)
     except Exception:
         pass
-
 
 # ==========================================
 # CREATE EVENT MODAL
