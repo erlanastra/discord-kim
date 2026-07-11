@@ -1,10 +1,13 @@
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime
+from typing import Optional
+
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
     from backports.zoneinfo import ZoneInfo
+
 import json
 import random
 import io
@@ -73,9 +76,14 @@ class Greeting(commands.Cog):
     # SESSION HELPER
     # ──────────────────────────────────────────
     @staticmethod
-    def get_session(hour: int) -> str | None:
+    def get_session(hour: int) -> Optional[str]:
         """Return session name atau None jika bukan jam greeting"""
-        mapping = {6: "pagi", 12: "siang", 18: "sore", 22: "malam"}
+        mapping = {
+            6: "pagi",
+            12: "siang",
+            18: "sore",
+            22: "malam"
+        }
         return mapping.get(hour)
 
     # ──────────────────────────────────────────
