@@ -47,6 +47,7 @@ async def on_ready():
 async def load_cogs():
     cogs = [
         "cogs.post",
+        "cogs.ai",
         "cogs.greeting",
         "cogs.megagombal",
         "cogs.say",
