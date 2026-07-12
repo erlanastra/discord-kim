@@ -4,5 +4,7 @@
   "announce_channel": 1416836800411865191,
   "modlog_channel": 1468892074190307409,
   "server_name": "nanZ",
-  "weather_api_key": "f76eb6aab13f3c65c2f670063a7e9b59"
+  "weather_api_key": "f76eb6aab13f3c65c2f670063a7e9b59",
+  "gemini_api_key": "",
+  "ai_channel": 1462043531274092646
 }
