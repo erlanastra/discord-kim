@@ -528,18 +528,5 @@ class AutoReply(commands.Cog):
 
                 break
 
-        # =============================================
-        # FITUR 3: STIKER RANDOM — hanya kalau reply bot
-        #          dan tidak ada keyword yang cocok
-        # =============================================
-        if is_reply_to_bot and not keyword_matched and self.sticker_ids:
-            emoji = random.choice(self.sticker_ids)
-            async with message.channel.typing():
-                await asyncio.sleep(random.uniform(0.5, 1.5))
-            await message.channel.send(emoji)
-
-        await self.bot.process_commands(message)
-
-
 async def setup(bot):
     await bot.add_cog(AutoReply(bot))
