@@ -205,3 +205,24 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ===== Discord Bot =====
+
+# Config & Secrets
+config.json
+config.json.save
+config.json.save.*
+
+# Backup files
+*.save
+*.save.*
+
+# Backup folder
+cogs_backup/
+
+# Runtime data
+activity.json
+afk_data.json
+
+# VS Code
+.vscode/

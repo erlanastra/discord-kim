@@ -1,0 +1,10 @@
+{
+  "welcome_channel": 0,
+  "rules_channel": 0,
+  "announce_channel": 0,
+  "modlog_channel": 0,
+  "server_name": "nanZ",
+  "weather_api_key": "YOUR_WEATHER_API_KEY",
+  "gemini_api_key": "YOUR_GEMINI_API_KEY",
+  "ai_channel": 0
+}
