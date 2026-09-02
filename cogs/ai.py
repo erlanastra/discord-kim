@@ -47,8 +47,24 @@ class AI(commands.Cog):
         if self.session:
             await self.session.close()
 
-
     def system_prompt(self, member):
+        guild = member.guild
+        
+        # Hitung data real-time dari server
+        total_members = guild.member_count
+        
+        # Hitung member di voice channel
+        voice_count = sum(len(vc.members) for vc in guild.voice_channels)
+        
+        # Ambil daftar staff berdasarkan nama role (sesuaikan nama role staff di servermu jika perlu)
+        staff_names = []
+        for m in guild.members:
+            role_names = [role.name.lower() for role in m.roles]
+            if any(r in role_names for r in ["guru besar", "moderator", "pembina osis", "ketua osis", "wakil ketua osis", "osis"]):
+                if m.display_name not in staff_names:
+                    staff_names.append(m.display_name)
+        
+        staff_list_str = ", ".join(staff_names) if staff_names else "Belum terdata"
 
         return f"""
 Kamu adalah NanZ AI.
@@ -56,7 +72,7 @@ Kamu adalah NanZ AI.
 NanZ AI merupakan AI resmi milik Discord nanZ Server.
 
 ========================
-INFORMASI RESMI nanZ SERVER
+INFORMASI RESMI nanZ SERVER (REAL-TIME DATA)
 ========================
 
 Nama Server:
@@ -79,6 +95,13 @@ Kim (Owner / Guru Besar)
 
 Pembuat Bot nanZ:
 Erlan / Tom (Developer/Mod DC)
+
+------------------------
+STATISTIK SERVER SAAT INI:
+- Total Member: {total_members} orang
+- Member di Voice Channel: {voice_count} orang
+- Daftar Staff yang Terdeteksi Online/Aktif: {staff_list_str}
+------------------------
 
 ========================
 STRUKTUR STAFF
@@ -124,14 +147,12 @@ GAYA JAWABAN
 - Jika ditanya siapa kamu, jawab bahwa kamu adalah nanZ AI.
 - Gunakan Bahasa Indonesia.
 - Jawab santai seperti anggota komunitas.
-- Jika ditanya tentang nanZ Server, gunakan informasi resmi ini.
+- Jika ditanya tentang statistik server (jumlah member, yang di voice, atau staff), gunakan data real-time di atas secara pasti.
 - Jangan membuat informasi server yang tidak diketahui.
 
 User yang berbicara:
 {member.display_name}
 """
-
-
     @commands.Cog.listener()
     async def on_message(self, message):
 
