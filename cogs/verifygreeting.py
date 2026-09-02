@@ -18,6 +18,9 @@ class VerifyGreeting(commands.Cog):
         self.PEMBINA_OSIS_ROLE_ID = 1467360501745844446
         self.OSIS_ROLE_ID = 1427276194876751902
 
+        # ✅ CUSTOM EMOJI (Ganti ID dengan emoji server kamu)
+        self.WAITING_EMOJI = "<a:TimerSand:1544744564336758905>" 
+
         # cache anti spam
         self.already_greeted = set()
 
@@ -45,8 +48,9 @@ class VerifyGreeting(commands.Cog):
         # delay biar natural
         await asyncio.sleep(2)
 
-        # mention staff
+        # mention staff + mention member di luar panel (content)
         staff_mention = (
+            f"Welcome {member.mention} to the server!\n"
             f"<@&{self.MOD_DC_ROLE_ID}> "
             f"<@&{self.PEMBINA_OSIS_ROLE_ID}> "
             f"<@&{self.OSIS_ROLE_ID}>"
@@ -58,9 +62,9 @@ class VerifyGreeting(commands.Cog):
             filename="welcomenanz.gif"
         )
 
-        # embed greeting
+        # embed greeting dengan emoji kustom di title
         embed = discord.Embed(
-            title="⏳ Verifikasi diproses",
+            title=f"{self.WAITING_EMOJI} Verifikasi diproses",
             description=(
                 f"{member.mention}, verifikasi kamu sudah masuk.\n"
                 ">>> Mohon tunggu sebentar sampai staff memproses ya.\n"
@@ -79,7 +83,7 @@ class VerifyGreeting(commands.Cog):
             content=staff_mention,
             embed=embed,
             file=gif_file,
-            allowed_mentions=discord.AllowedMentions(roles=True)
+            allowed_mentions=discord.AllowedMentions(users=True, roles=True)
         )
 
 async def setup(bot):
