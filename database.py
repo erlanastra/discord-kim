@@ -12,10 +12,11 @@ class Database:
 
     async def connect(self):
         self.pool = await aiomysql.create_pool(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            db=os.getenv("DB_NAME"),
+            host="127.0.0.1",
+            port=3306,
+            user="nanzuser",
+            password="nanzserversolid",
+            db="nanz_bot",
             autocommit=True
         )
 
