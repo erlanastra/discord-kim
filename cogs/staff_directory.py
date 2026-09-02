@@ -5,24 +5,67 @@ from datetime import datetime
 class StaffDirectory(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # ID Channel tempat panel staff ini dikirim/di-update otomatis
-        self.CHANNEL_ID = 1540754204161736915  # Ganti dengan ID Channel tujuan
-        self.message_id = None 
+        # ID Channel tujuan panel staff
+        self.CHANNEL_ID = 1540754204161736915  
+        # Dictionary untuk menyimpan message_id tiap role agar bisa di-edit terpisah
+        self.message_ids = {} 
         self.update_directory.start()
 
     def cog_unload(self):
         self.update_directory.cancel()
 
-    async def generate_staff_embed(self, guild):
+    # Fungsi untuk menerjemahkan status dan aktivitas member agar mirip seperti sistem desa
+    def get_member_status_text(self, member):
+        # Cek status dasar (online, idle, dnd, offline)
+        if member.status == discord.Status.online:
+            return "🟢 **Aktif (Online)**"
+        elif member.status == discord.Status.idle:
+            return "🟡 **Idle (Waktu Siaga)**"
+        elif member.status == discord.Status.dnd:
+            return "🔴 **Jangan Ganggu (DND)**"
+        else:
+            # Jika offline, kita cek kapan terakhir terlihat atau status web/mobile jika terekam cache
+            return "⚪ **Offline**"
+
+    # Membuat embed khusus per role/panel terpisah
+    async def generate_role_embed(self, guild, role_info):
+        role = guild.get_role(role_info["role_id"])
+        
         embed = discord.Embed(
-            title="🏫 STRUKTUR STAFF nanZ SERVER",
-            description="Daftar pengurus dan staff yang bertugas secara *real-time*.",
             color=discord.Color.blue(),
             timestamp=datetime.now()
         )
+        
+        members_list = []
+        member_count = 0
 
-        # Definisikan hierarki berdasarkan ROLE ID masing-masing
-        # Ganti deretan angka di bawah dengan ID role yang ada di servermu
+        if role:
+            member_count = len(role.members)
+            for member in role.members:
+                status_text = self.get_member_status_text(member)
+                members_list.append(f"• {member.mention} (`{member.display_name}`) ❯ {status_text}")
+
+        content = "\n".join(members_list) if members_list else "*(Belum ada staff)*"
+        
+        embed.set_author(
+            name=f"{role_info['emoji']} {role_info['name']} (Staff)",
+            icon_url=guild.icon.url if guild.icon else None
+        )
+        embed.description = content
+        
+        # Footer ala panel desa/organisasi
+        embed.set_footer(
+            text=f"nanZ Server | {role_info['name']} • Total Anggota: {member_count}",
+            icon_url=guild.icon.url if guild.icon else None
+        )
+        
+        return embed
+
+    async def refresh_all_panels(self, guild):
+        channel = self.bot.get_channel(self.CHANNEL_ID)
+        if not channel:
+            return
+
         hierarchy = [
             {"role_id": 1417582562100117584, "name": "Guru Besar", "emoji": "👑"},
             {"role_id": 1453103644244316343, "name": "Moderator", "emoji": "🛡️"},
@@ -31,76 +74,62 @@ class StaffDirectory(commands.Cog):
         ]
 
         for item in hierarchy:
-            role = guild.get_role(item["role_id"])
-            members_list = []
-            
-            if role:
-                # Urutkan atau tampilkan member yang memiliki role tersebut
-                for member in role.members:
-                    status_emoji = "🟢" if member.status != discord.Status.offline else "⚪"
-                    members_list.append(f"{status_emoji} {member.mention} (`{member.display_name}`)")
+            embed = await self.generate_role_embed(guild, item)
+            msg_id = self.message_ids.get(item["role_id"])
 
-            content = "\n".join(members_list) if members_list else "*(Belum ada staff)*"
-            embed.add_field(
-                name=f"{item['emoji']} {item['name']}",
-                value=content,
-                inline=False
-            )
+            try:
+                if msg_id:
+                    msg = await channel.fetch_message(msg_id)
+                    await msg.edit(embed=embed)
+                else:
+                    # Cari pesan lama di channel berdasarkan kecocokan judul author
+                    found = False
+                    async for message in channel.history(limit=30):
+                        if message.author == self.bot.user and message.embeds:
+                            if message.embeds[0].author.name and item["name"] in message.embeds[0].author.name:
+                                self.message_ids[item["role_id"]] = message.id
+                                await message.edit(embed=embed)
+                                found = True
+                                break
+                    if not found:
+                        new_msg = await channel.send(embed=embed)
+                        self.message_ids[item["role_id"]] = new_msg.id
+            except Exception as e:
+                print(f"Gagal update panel {item['name']}: {e}")
 
-        embed.set_footer(text="Diperbarui secara otomatis oleh nanZ Bot")
-        return embed
-
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=3)
     async def update_directory(self):
         await self.bot.wait_until_ready()
         channel = self.bot.get_channel(self.CHANNEL_ID)
-        if not channel:
-            return
-
-        guild = channel.guild
-        embed = await self.generate_staff_embed(guild)
-
-        try:
-            if self.message_id:
-                try:
-                    msg = await channel.fetch_message(self.message_id)
-                    await msg.edit(embed=embed)
-                    return
-                except discord.NotFound:
-                    pass
-
-            async for message in channel.history(limit=10):
-                if message.author == self.bot.user and message.embeds:
-                    self.message_id = message.id
-                    await message.edit(embed=embed)
-                    return
-
-            new_msg = await channel.send(embed=embed)
-            self.message_id = new_msg.id
-        except Exception as e:
-            print(f"Gagal mengupdate staff directory: {e}")
+        if channel:
+            await self.refresh_all_panels(channel.guild)
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         if before.roles != after.roles:
             channel = self.bot.get_channel(self.CHANNEL_ID)
-            if channel and self.message_id:
-                try:
-                    msg = await channel.fetch_message(self.message_id)
-                    embed = await self.generate_staff_embed(after.guild)
-                    await msg.edit(embed=embed)
-                except Exception:
-                    pass
+            if channel:
+                await self.refresh_all_panels(after.guild)
 
     @commands.command(name="setupdirectory")
     @commands.has_permissions(administrator=True)
     async def setup_directory(self, ctx):
-        """Perintah manual untuk memunculkan panel pertama kali"""
+        """Membuat panel terpisah baru untuk setiap role staff"""
         self.CHANNEL_ID = ctx.channel.id
-        embed = await self.generate_staff_embed(ctx.guild)
-        msg = await ctx.send(embed=embed)
-        self.message_id = msg.id
         await ctx.message.delete()
+        
+        hierarchy = [
+            {"role_id": 1417582562100117584, "name": "Guru Besar", "emoji": "👑"},
+            {"role_id": 1453103644244316343, "name": "Moderator", "emoji": "🛡️"},
+            {"role_id": 1467360501745844446, "name": "Pembina OSIS", "emoji": "📚"},
+            {"role_id": 1427276194876751902, "name": "OSIS", "emoji": "✍️"}
+        ]
+
+        # Kirim 4 pesan terpisah untuk masing-masing role
+        for item in hierarchy:
+            embed = await self.generate_role_embed(ctx.guild, item)
+            msg = await ctx.send(embed=embed)
+            self.message_ids[item["role_id"]] = msg.id
 
 async def setup(bot):
     await bot.add_cog(StaffDirectory(bot))
