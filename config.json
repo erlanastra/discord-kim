@@ -6,5 +6,6 @@
   "server_name": "nanZ",
   "weather_api_key": "f76eb6aab13f3c65c2f670063a7e9b59",
   "gemini_api_key": "",
-  "ai_channel": 1462043531274092646
+  "ai_channel": 1462043531274092646,
+  "gemini_model": "gemini-2.0-flash"
 }

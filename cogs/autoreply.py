@@ -9,20 +9,6 @@ class AutoReply(commands.Cog):
         self.bot = bot
 
         # =============================================
-        # EMOJI SERVER — format: <:nama:ID> atau <a:nama:ID> kalau animated
-        # Ganti nama dan ID sesuai emoji di server kamu
-        # Cara dapat ID: Developer Mode → klik kanan emoji → Copy Emoji ID
-        # =============================================
-        self.sticker_ids = [
-            "<:22cathink:1493158293940473856>",
-            "<:1joseph_kenned:1493144793956618240>",
-            "<:kimthinking:1507084030288465960>",
-            "<:jkyujibruh:1493137332906360923>",
-            "<:kimpose:1507082661976604833>",
-            "<:22starecatto:1493145059636543518>",
-        ]
-
-        # =============================================
         # KATA-KATA TERLARANG
         # =============================================
         self.badwords = [
@@ -527,19 +513,6 @@ class AutoReply(commands.Cog):
                 )
 
                 break
-
-        # =============================================
-        # FITUR 3: STIKER RANDOM — hanya kalau reply bot
-        #          dan tidak ada keyword yang cocok
-        # =============================================
-        if is_reply_to_bot and not keyword_matched and self.sticker_ids:
-            emoji = random.choice(self.sticker_ids)
-            async with message.channel.typing():
-                await asyncio.sleep(random.uniform(0.5, 1.5))
-            await message.channel.send(emoji)
-
-        await self.bot.process_commands(message)
-
 
 async def setup(bot):
     await bot.add_cog(AutoReply(bot))
