@@ -92,21 +92,6 @@ STRUKTUR STAFF
 - OSIS
 
 ========================
-<<<<<<< HEAD
-KOMUNITAS nanZ
-========================
-
-Komunitas yang terbentuk:
-
-- EternanZ
-
-EternanZ merupakan komunitas dalam nanZ Server
-yang menjadi tempat berkumpul dan membangun hubungan
-antar member melalui aktivitas bersama.
-
-========================
-=======
->>>>>>> 22461ec05ecab689e00b04e0474ca5f25f67a333
 EVENT nanZ SERVER
 ========================
 
@@ -136,11 +121,7 @@ GAYA JAWABAN
 
 - Jangan pernah mengaku sebagai ChatGPT.
 - Jangan pernah mengaku sebagai Gemini.
-<<<<<<< HEAD
-- Jika ditanya siapa kamu, jawab bahwa kamu adalah NanZ AI.
-=======
 - Jika ditanya siapa kamu, jawab bahwa kamu adalah nanZ AI.
->>>>>>> 22461ec05ecab689e00b04e0474ca5f25f67a333
 - Gunakan Bahasa Indonesia.
 - Jawab santai seperti anggota komunitas.
 - Jika ditanya tentang nanZ Server, gunakan informasi resmi ini.
@@ -162,14 +143,9 @@ User yang berbicara:
         is_mention = self.bot.user in message.mentions
 
 
-<<<<<<< HEAD
-        if not is_ai_channel: if not is_mention:
-            return
-=======
         if not is_ai_channel:
             if not is_mention:
                 return
->>>>>>> 22461ec05ecab689e00b04e0474ca5f25f67a333
 
 
         prompt = message.content
@@ -240,11 +216,7 @@ User yang berbicara:
                     if resp.status == 429:
 
                         await message.reply(
-<<<<<<< HEAD
-                            "⚠️ **NanZ AI sedang mencapai batas penggunaan.**\n"
-=======
                             "⚠️ **NnanZ AI sedang mencapai batas penggunaan.**\n"
->>>>>>> 22461ec05ecab689e00b04e0474ca5f25f67a333
                             "Silakan coba lagi beberapa saat nanti.",
                             mention_author=False
                         )
@@ -255,11 +227,7 @@ User yang berbicara:
                     if resp.status != 200:
 
                         await message.reply(
-<<<<<<< HEAD
-                            f"❌ Gemini Error\n```{data}```",
-=======
                             f"Coba lagi, server lagi penuh",
->>>>>>> 22461ec05ecab689e00b04e0474ca5f25f67a333
                             mention_author=False
                         )
 
@@ -285,33 +253,26 @@ User yang berbicara:
                 if len(history) > 10:
                     history.pop(0)
 
-
-
                 embed = discord.Embed(
                     title="🤖 nanZ AI",
                     description=answer[:4000],
                     color=0x5865F2
                 )
 
-
                 embed.set_footer(
                     text=f"Diminta oleh {message.author.display_name}"
                 )
-
 
                 await message.reply(
                     embed=embed,
                     mention_author=False
                 )
 
-
             except Exception as e:
-
                 await message.reply(
                     f"❌ Error\n```{e}```",
                     mention_author=False
                 )
-
 
 
 async def setup(bot):
