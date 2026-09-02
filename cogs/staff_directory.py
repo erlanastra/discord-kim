@@ -5,12 +5,12 @@ from datetime import datetime, timezone
 
 class StaffDirectory(commands.Cog):
     """
-    Cog untuk menampilkan panel staff per-role secara otomatis & real-time.
-    Fitur:
-    - Panel terpisah per role dengan warna khas masing-masing role
-    - Status member (Online / Idle / DND / Offline) + ikon
-    - Sorting otomatis: yang online tampil di atas
-    - Summary panel (ringkasan total staff & yang sedang aktif)
+    Cog untuk menampilkan panel staff, tetap terpisah per-role (1 embed = 1 role),
+    tapi dengan isi panel yang lebih rapi:
+    - Member dikelompokkan per status (🟢 Online / 🌙 Idle / ⛔ DND / ⚪ Offline)
+      sebagai field terpisah, jadi enak dibaca dan langsung kelihatan siapa aktif
+    - Warna embed beda per role
+    - Nomor urut + nama staff rapi dalam satu kolom
     - Auto-chunking supaya tidak melebihi limit embed Discord
     - Auto refresh saat role berubah / status berubah / bot restart
     - Command manual: !setupdirectory & !syncdirectory
@@ -58,8 +58,7 @@ class StaffDirectory(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.CHANNEL_ID = 1540754204161736915  # ID Channel tujuan panel staff
-        self.message_ids = {}          # role_id -> message_id
-        self.summary_message_id = None  # message_id untuk panel ringkasan
+        self.message_ids = {}  # role_id -> message_id
         self.update_directory.start()
 
     def cog_unload(self):
@@ -71,21 +70,15 @@ class StaffDirectory(commands.Cog):
 
     def get_status_info(self, member: discord.Member):
         emoji, label = self.STATUS_MAP.get(member.status, ("⚪", "Offline"))
-        return f"{emoji} **{label}**"
+        return emoji, label
 
-    def sort_members(self, members):
-        """Online/Idle/DND ditaruh paling atas, offline di bawah, lalu alfabet."""
-        priority = {
-            discord.Status.online: 0,
-            discord.Status.idle: 1,
-            discord.Status.dnd: 1,
-            discord.Status.offline: 2,
-            discord.Status.invisible: 2,
-        }
-        return sorted(
-            members,
-            key=lambda m: (priority.get(m.status, 2), m.display_name.lower()),
-        )
+    def group_by_status(self, members):
+        """Kelompokkan member ke 4 kategori status, urut alfabet di tiap grup."""
+        groups = {"Online": [], "Idle": [], "Do Not Disturb": [], "Offline": []}
+        for m in sorted(members, key=lambda m: m.display_name.lower()):
+            _, label = self.get_status_info(m)
+            groups[label].append(m)
+        return groups
 
     def chunk_member_lines(self, lines):
         """Pecah daftar member jadi beberapa field kalau kepanjangan
@@ -99,7 +92,7 @@ class StaffDirectory(commands.Cog):
             length += len(line) + 1
         if current:
             chunks.append(current)
-        return chunks or [["*(Belum ada staff terdaftar)*"]]
+        return chunks
 
     # ------------------------------------------------------------------ #
     # Embed builders
@@ -107,9 +100,9 @@ class StaffDirectory(commands.Cog):
 
     async def generate_role_embed(self, guild: discord.Guild, role_info: dict):
         role = guild.get_role(role_info["role_id"])
-        members = self.sort_members(role.members) if role else []
-        online_count = sum(1 for m in members if m.status != discord.Status.offline)
+        members = role.members if role else []
         total_count = len(members)
+        online_count = sum(1 for m in members if m.status != discord.Status.offline)
 
         embed = discord.Embed(
             color=role_info.get("color", discord.Color.blue()),
@@ -119,53 +112,39 @@ class StaffDirectory(commands.Cog):
             name=f"{role_info['emoji']} {role_info['name']} (Staff)",
             icon_url=guild.icon.url if guild.icon else None,
         )
+        embed.description = (
+            f"👥 **Total Staff:** `{total_count}`  •  🟢 **Sedang Aktif:** `{online_count}`"
+        )
 
-        lines = [
-            f"• {m.mention}  |  `{m.display_name}`  ⎯  {self.get_status_info(m)}"
-            for m in members
-        ]
+        if total_count == 0:
+            embed.add_field(name="\u200b", value="*(Belum ada staff terdaftar)*", inline=False)
+        else:
+            groups = self.group_by_status(members)
+            group_order = [
+                ("Online", "🟢"),
+                ("Idle", "🌙"),
+                ("Do Not Disturb", "⛔"),
+                ("Offline", "⚪"),
+            ]
+            counter = 0
+            for label, emoji in group_order:
+                bucket = groups[label]
+                if not bucket:
+                    continue
 
-        chunks = self.chunk_member_lines(lines)
-        for i, chunk in enumerate(chunks):
-            field_name = "Daftar Staff" if i == 0 else "\u200b"
-            embed.add_field(name=field_name, value="\n".join(chunk), inline=False)
+                lines = []
+                for m in bucket:
+                    counter += 1
+                    lines.append(f"`{counter:02d}.` {m.mention} — **{m.display_name}**")
+
+                for chunk_i, chunk in enumerate(self.chunk_member_lines(lines)):
+                    field_name = f"{emoji} {label} ({len(bucket)})" if chunk_i == 0 else "\u200b"
+                    embed.add_field(name=field_name, value="\n".join(chunk), inline=False)
 
         embed.set_footer(
-            text=(
-                f"nanZ Server | {role_info['name']} • "
-                f"Total: {total_count} • Aktif: {online_count}"
-            ),
+            text=f"nanZ Server | {role_info['name']} • Terakhir diperbarui",
             icon_url=guild.icon.url if guild.icon else None,
         )
-        return embed
-
-    async def generate_summary_embed(self, guild: discord.Guild):
-        """Panel ringkasan di paling atas: total staff & yang lagi online."""
-        embed = discord.Embed(
-            title="📋 Ringkasan Staff Directory",
-            color=discord.Color.dark_theme(),
-            timestamp=datetime.now(timezone.utc),
-        )
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-
-        total_all, online_all = 0, 0
-        for item in self.HIERARCHY:
-            role = guild.get_role(item["role_id"])
-            members = role.members if role else []
-            online = sum(1 for m in members if m.status != discord.Status.offline)
-            total_all += len(members)
-            online_all += online
-            embed.add_field(
-                name=f"{item['emoji']} {item['name']}",
-                value=f"👥 {len(members)} total\n🟢 {online} aktif",
-                inline=True,
-            )
-
-        embed.description = (
-            f"**Total Seluruh Staff:** `{total_all}`  |  **Sedang Aktif:** `{online_all}`"
-        )
-        embed.set_footer(text="Panel ini update otomatis setiap 3 menit")
         return embed
 
     # ------------------------------------------------------------------ #
@@ -207,15 +186,6 @@ class StaffDirectory(commands.Cog):
         if not channel:
             return
 
-        # 1. Panel ringkasan di paling atas
-        summary_embed = await self.generate_summary_embed(guild)
-        summary_store = {"summary": self.summary_message_id}
-        await self._send_or_edit(
-            channel, summary_store, "summary", summary_embed, match_text="Ringkasan Staff Directory"
-        )
-        self.summary_message_id = summary_store["summary"]
-
-        # 2. Panel per role
         for item in self.HIERARCHY:
             embed = await self.generate_role_embed(guild, item)
             try:
@@ -265,12 +235,7 @@ class StaffDirectory(commands.Cog):
         """Membuat panel staff directory baru di channel ini (reset semua panel lama)."""
         self.CHANNEL_ID = ctx.channel.id
         self.message_ids = {}
-        self.summary_message_id = None
         await ctx.message.delete()
-
-        summary_embed = await self.generate_summary_embed(ctx.guild)
-        summary_msg = await ctx.send(embed=summary_embed)
-        self.summary_message_id = summary_msg.id
 
         for item in self.HIERARCHY:
             embed = await self.generate_role_embed(ctx.guild, item)
