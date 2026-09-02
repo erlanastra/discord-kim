@@ -9,20 +9,6 @@ class AutoReply(commands.Cog):
         self.bot = bot
 
         # =============================================
-        # EMOJI SERVER — format: <:nama:ID> atau <a:nama:ID> kalau animated
-        # Ganti nama dan ID sesuai emoji di server kamu
-        # Cara dapat ID: Developer Mode → klik kanan emoji → Copy Emoji ID
-        # =============================================
-        self.sticker_ids = [
-            "<:22cathink:1493158293940473856>",
-            "<:1joseph_kenned:1493144793956618240>",
-            "<:kimthinking:1507084030288465960>",
-            "<:jkyujibruh:1493137332906360923>",
-            "<:kimpose:1507082661976604833>",
-            "<:22starecatto:1493145059636543518>",
-        ]
-
-        # =============================================
         # KATA-KATA TERLARANG
         # =============================================
         self.badwords = [
