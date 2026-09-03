@@ -5,22 +5,25 @@ from datetime import datetime
 class StaffDirectory(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # ID Channel tujuan panel staff
         self.CHANNEL_ID = 1540754204161736915  
-        self.message_ids = {} 
+        # Menyimpan ID pesan untuk masing-masing role secara spesifik
+        self.message_ids = {
+            1417582562100117584: None, # Guru Besar
+            1453103644244316343: None, # Moderator
+            1467360501745844446: None, # Pembina OSIS
+            1427276194876751902: None  # OSIS
+        }
         self.update_directory.start()
 
     def cog_unload(self):
         self.update_directory.cancel()
 
-    # Format status sederhana (Online / Offline) tanpa detail waktu yang rumit
     def get_clean_status(self, member):
         if member.status != discord.Status.offline:
             return "🟢 **Online**"
         else:
             return "⚪ **Offline**"
 
-    # Membuat embed khusus per role dengan layout rapi dan profesional
     async def generate_role_embed(self, guild, role_info):
         role = guild.get_role(role_info["role_id"])
         
@@ -36,7 +39,6 @@ class StaffDirectory(commands.Cog):
             member_count = len(role.members)
             for member in role.members:
                 status_text = self.get_clean_status(member)
-                # Layout baris dibuat lebih rapi dengan format list terstruktur
                 members_list.append(f"• {member.mention}  |  `{member.display_name}`  ⎯  {status_text}")
 
         content = "\n".join(members_list) if members_list else "*(Belum ada staff terdaftar)*"
@@ -59,7 +61,6 @@ class StaffDirectory(commands.Cog):
         if not channel:
             return
 
-        # Hierarki lengkap dengan Pembina OSIS di dalamnya
         hierarchy = [
             {"role_id": 1417582562100117584, "name": "Guru Besar", "emoji": "👑"},
             {"role_id": 1453103644244316343, "name": "Moderator", "emoji": "🛡️"},
@@ -69,24 +70,26 @@ class StaffDirectory(commands.Cog):
 
         for item in hierarchy:
             embed = await self.generate_role_embed(guild, item)
-            msg_id = self.message_ids.get(item["role_id"])
+            role_id = item["role_id"]
+            msg_id = self.message_ids.get(role_id)
 
             try:
                 if msg_id:
                     msg = await channel.fetch_message(msg_id)
                     await msg.edit(embed=embed)
                 else:
+                    # Cari pesan bot di channel yang sesuai dengan nama role
                     found = False
-                    async for message in channel.history(limit=30):
+                    async for message in channel.history(limit=50):
                         if message.author == self.bot.user and message.embeds:
                             if message.embeds[0].author.name and item["name"] in message.embeds[0].author.name:
-                                self.message_ids[item["role_id"]] = message.id
+                                self.message_ids[role_id] = message.id
                                 await message.edit(embed=embed)
                                 found = True
                                 break
                     if not found:
                         new_msg = await channel.send(embed=embed)
-                        self.message_ids[item["role_id"]] = new_msg.id
+                        self.message_ids[role_id] = new_msg.id
             except Exception as e:
                 print(f"Gagal update panel {item['name']}: {e}")
 
@@ -107,7 +110,7 @@ class StaffDirectory(commands.Cog):
     @commands.command(name="setupdirectory")
     @commands.has_permissions(administrator=True)
     async def setup_directory(self, ctx):
-        """Membuat panel terpisah baru untuk setiap role staff"""
+        """Membuat ulang seluruh panel terpisah untuk semua role staff"""
         self.CHANNEL_ID = ctx.channel.id
         await ctx.message.delete()
         
@@ -118,6 +121,8 @@ class StaffDirectory(commands.Cog):
             {"role_id": 1427276194876751902, "name": "OSIS", "emoji": "✍️"}
         ]
 
+        # Bersihkan pesan lama bot di channel tersebut jika ingin fresh (opsional)
+        # Kirim 4 panel terpisah secara berurutan
         for item in hierarchy:
             embed = await self.generate_role_embed(ctx.guild, item)
             msg = await ctx.send(embed=embed)

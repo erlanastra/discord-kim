@@ -15,6 +15,11 @@ MEMBER_ROLE_ID = 1453095603008442510
 SISWA_ROLE_ID = 1453246082405503036
 SISWI_ROLE_ID = 1453246187636396032
 
+# ROLE UMUR — GANTI 0 DENGAN ID ROLE DISCORD KAMU
+AGE_15_18_ROLE_ID = 1545088940413943829
+AGE_19_22_ROLE_ID = 1545089256270078043
+AGE_23_PLUS_ROLE_ID = 1545089354765049936
+
 # ROLE NON VERIF
 NONVERIF_ROLE_ID = 1504467138440597604
 
@@ -76,42 +81,6 @@ def get_tiktok_followers(username):
         return "Error"
 
 
-# ================= PLATFORM SELECT =================
-class PlatformSelect(discord.ui.Select):
-
-    def __init__(self):
-
-        options = [
-
-            discord.SelectOption(
-                label="Instagram",
-                value="IG",
-                emoji="📸"
-            ),
-
-            discord.SelectOption(
-                label="TikTok",
-                value="TikTok",
-                emoji="🎵"
-            )
-        ]
-
-        super().__init__(
-            placeholder="Pilih platform medsos",
-            options=options,
-            custom_id="verify_platform_select"
-        )
-
-    async def callback(
-        self,
-        interaction: discord.Interaction
-    ):
-
-        self.view.platform = self.values[0]
-
-        await interaction.response.defer()
-
-
 # ================= VERIFY MODAL =================
 class VerifyModal(
     discord.ui.Modal,
@@ -126,28 +95,19 @@ class VerifyModal(
         label="Asal"
     )
 
-    umur = discord.ui.TextInput(
-        label="Umur (opsional)",
-        required=False
-    )
-
-    gender = discord.ui.TextInput(
-        label="Gender (L/P)",
-        placeholder="L atau P",
-        max_length=1
-    )
-
     username = discord.ui.TextInput(
         label="Username Medsos",
         placeholder="@username"
     )
 
-    def __init__(self, bot, platform):
+    def __init__(self, bot, platform, umur, gender):
 
         super().__init__()
 
         self.bot = bot
         self.platform = platform
+        self.umur = umur
+        self.gender = gender
 
     async def on_submit(
         self,
@@ -159,13 +119,6 @@ class VerifyModal(
 
             return await interaction.response.send_message(
                 "⚠️ Username harus pakai @",
-                ephemeral=True
-            )
-
-        if self.gender.value.upper() not in ["L", "P"]:
-
-            return await interaction.response.send_message(
-                "⚠️ Gender hanya boleh L atau P!",
                 ephemeral=True
             )
 
@@ -231,13 +184,13 @@ class VerifyModal(
 
             embed.add_field(
                 name="Umur",
-                value=self.umur.value or "Tidak diisi",
+                value=self.umur,
                 inline=True
             )
 
             embed.add_field(
                 name="Gender",
-                value=self.gender.value.upper(),
+                value=self.gender,
                 inline=True
             )
 
@@ -268,8 +221,8 @@ class VerifyModal(
                 interaction.user.id,
                 self.nama.value,
                 self.asal.value,
-                self.umur.value,
-                self.gender.value.upper(),
+                self.umur,
+                self.gender,
                 medsos_final,
                 followers,
                 link
@@ -287,18 +240,107 @@ class VerifyModal(
 
 
 # ================= VERIFY BUTTON =================
+class PlatformSelect(discord.ui.Select):
+
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="Instagram",
+                value="IG",
+                emoji="📸"
+            ),
+            discord.SelectOption(
+                label="TikTok",
+                value="TikTok",
+                emoji="🎵"
+            )
+        ]
+
+        super().__init__(
+            placeholder="Pilih platform medsos",
+            options=options,
+            custom_id="verify_platform_select"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.platform = self.values[0]
+        await interaction.response.defer()
+
+
+class AgeSelect(discord.ui.Select):
+
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="15–18 Tahun",
+                value="15-18",
+                emoji="🎂"
+            ),
+            discord.SelectOption(
+                label="19–22 Tahun",
+                value="19-22",
+                emoji="🎂"
+            ),
+            discord.SelectOption(
+                label="23+ Tahun",
+                value="23+",
+                emoji="🎂"
+            )
+        ]
+
+        super().__init__(
+            placeholder="Pilih rentang umur",
+            options=options,
+            custom_id="verify_age_select"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.umur = self.values[0]
+        await interaction.response.defer()
+
+
+class GenderSelect(discord.ui.Select):
+
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="Siswa",
+                value="L",
+                description="Pilih jika kamu laki-laki",
+                emoji="👦"
+            ),
+            discord.SelectOption(
+                label="Siswi",
+                value="P",
+                description="Pilih jika kamu perempuan",
+                emoji="👧"
+            )
+        ]
+
+        super().__init__(
+            placeholder="Pilih gender",
+            options=options,
+            custom_id="verify_gender_select"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.gender = self.values[0]
+        await interaction.response.defer()
+
+
 class VerifyButton(discord.ui.View):
 
     def __init__(self, bot):
-
         super().__init__(timeout=None)
 
         self.bot = bot
         self.platform = None
+        self.umur = None
+        self.gender = None
 
-        self.add_item(
-            PlatformSelect()
-        )
+        self.add_item(PlatformSelect())
+        self.add_item(AgeSelect())
+        self.add_item(GenderSelect())
 
     @discord.ui.button(
         label="Lanjut Isi Data",
@@ -306,7 +348,6 @@ class VerifyButton(discord.ui.View):
         emoji="📋",
         custom_id="verify_continue_button"
     )
-
     async def lanjut(
         self,
         interaction: discord.Interaction,
@@ -314,16 +355,29 @@ class VerifyButton(discord.ui.View):
     ):
 
         if not self.platform:
-
             return await interaction.response.send_message(
-                "⚠️ Pilih platform dulu!",
+                "⚠️ Pilih platform medsos dulu!",
+                ephemeral=True
+            )
+
+        if not self.umur:
+            return await interaction.response.send_message(
+                "⚠️ Pilih rentang umur dulu!",
+                ephemeral=True
+            )
+
+        if not self.gender:
+            return await interaction.response.send_message(
+                "⚠️ Pilih gender dulu!",
                 ephemeral=True
             )
 
         await interaction.response.send_modal(
             VerifyModal(
                 self.bot,
-                self.platform
+                self.platform,
+                self.umur,
+                self.gender
             )
         )
 
@@ -386,6 +440,18 @@ class VerifyView(discord.ui.View):
             SISWI_ROLE_ID
         )
 
+        age_15_18_role = interaction.guild.get_role(
+            AGE_15_18_ROLE_ID
+        ) if AGE_15_18_ROLE_ID else None
+
+        age_19_22_role = interaction.guild.get_role(
+            AGE_19_22_ROLE_ID
+        ) if AGE_19_22_ROLE_ID else None
+
+        age_23_plus_role = interaction.guild.get_role(
+            AGE_23_PLUS_ROLE_ID
+        ) if AGE_23_PLUS_ROLE_ID else None
+
         # ================= ROLE ================
         # ================= ROLE =================
         if member:
@@ -402,6 +468,18 @@ class VerifyView(discord.ui.View):
 
             elif self.gender == "P" and siswi_role:
                 roles_to_add.append(siswi_role)
+
+            # Role umur
+            age_roles = {
+                "15-18": age_15_18_role,
+                "19-22": age_19_22_role,
+                "23+": age_23_plus_role
+            }
+
+            age_role = age_roles.get(self.umur)
+
+            if age_role:
+                roles_to_add.append(age_role)
 
             # Tambahkan role baru
             if roles_to_add:
@@ -603,7 +681,8 @@ class VerifySystem(commands.Cog):
             name="Informasi",
             value=(
                 "• Data hanya dilihat staff\n"
-                "• Gender otomatis dapat role\n"
+                "• Umur & gender dipilih melalui opsi\n"
+                "• Role umur & gender otomatis diberikan\n"
                 "• Verifikasi untuk keamanan server"
             ),
             inline=False
