@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 from datetime import datetime, timezone
 import json
 import os
+import asyncio
 
 
 class StaffDirectory(commands.Cog):
@@ -40,15 +41,46 @@ class StaffDirectory(commands.Cog):
             }
         ]
 
-        # ID pesan masing-masing role
+        # ==========================================
+        # MESSAGE ID
+        # ==========================================
+
         self.message_ids = {
             role["role_id"]: None
             for role in self.STAFF_ROLES
         }
 
-        # Database aktivitas
+        # ==========================================
+        # EMBED CACHE
+        # ==========================================
+
+        # Menyimpan isi embed terakhir.
+        # Kalau tidak berubah, bot tidak akan PATCH message.
+        self.embed_cache = {}
+
+        # ==========================================
+        # ACTIVITY DATABASE
+        # ==========================================
+
         self.activity_file = "staff_activity.json"
         self.activity_data = self.load_activity()
+
+        # ==========================================
+        # REFRESH CONTROL
+        # ==========================================
+
+        # Mencegah dua refresh berjalan bersamaan.
+        self.refresh_lock = asyncio.Lock()
+
+        # Task debounce untuk presence / role update.
+        self.refresh_task = None
+
+        # Waktu debounce.
+        self.REFRESH_DELAY = 5
+
+        # ==========================================
+        # START AUTO REFRESH
+        # ==========================================
 
         self.update_directory.start()
 
@@ -68,13 +100,16 @@ class StaffDirectory(commands.Cog):
                 "r",
                 encoding="utf-8"
             ) as f:
+
                 return json.load(f)
 
         except Exception as e:
+
             print(
                 f"[STAFF DIRECTORY] "
                 f"Gagal membaca activity data: {e}"
             )
+
             return {}
 
     # ==========================================
@@ -85,6 +120,7 @@ class StaffDirectory(commands.Cog):
         """Menyimpan database aktivitas staff."""
 
         try:
+
             with open(
                 self.activity_file,
                 "w",
@@ -99,6 +135,7 @@ class StaffDirectory(commands.Cog):
                 )
 
         except Exception as e:
+
             print(
                 f"[STAFF DIRECTORY] "
                 f"Gagal menyimpan activity data: {e}"
@@ -115,6 +152,15 @@ class StaffDirectory(commands.Cog):
                 timezone.utc
             ).timestamp()
         )
+
+        old_timestamp = self.activity_data.get(
+            str(member_id)
+        )
+
+        # Jangan tulis file kalau timestamp
+        # sebenarnya tidak berubah.
+        if old_timestamp == timestamp:
+            return
 
         self.activity_data[str(member_id)] = timestamp
 
@@ -188,7 +234,10 @@ class StaffDirectory(commands.Cog):
             color=discord.Color.blue()
         )
 
-        # Role tidak ditemukan
+        # ======================================
+        # ROLE TIDAK DITEMUKAN
+        # ======================================
+
         if not role:
 
             embed.description = (
@@ -197,7 +246,10 @@ class StaffDirectory(commands.Cog):
 
             return embed
 
-        # Urutkan berdasarkan nama
+        # ======================================
+        # URUTKAN MEMBER
+        # ======================================
+
         members = sorted(
             role.members,
             key=lambda m: m.display_name.lower()
@@ -272,119 +324,253 @@ class StaffDirectory(commands.Cog):
         return embed
 
     # ==========================================
+    # FIND OLD STAFF MESSAGES
+    # ==========================================
+
+    async def find_existing_messages(self, channel):
+
+        found = {}
+
+        try:
+
+            async for message in channel.history(
+                limit=100
+            ):
+
+                if message.author != self.bot.user:
+                    continue
+
+                if not message.embeds:
+                    continue
+
+                author = message.embeds[0].author
+
+                if not author or not author.name:
+                    continue
+
+                for role_info in self.STAFF_ROLES:
+
+                    role_id = role_info["role_id"]
+
+                    if role_id in self.message_ids:
+                        if self.message_ids[role_id]:
+                            continue
+
+                    if role_info["name"] in author.name:
+
+                        found[role_id] = message.id
+                        break
+
+        except discord.HTTPException as e:
+
+            print(
+                f"[STAFF DIRECTORY] "
+                f"Gagal mencari message lama: {e}"
+            )
+
+        return found
+
+    # ==========================================
+    # SCHEDULE REFRESH
+    # ==========================================
+
+    def schedule_refresh(self, guild):
+
+        # Kalau task sebelumnya masih berjalan,
+        # tidak membuat task baru.
+        if (
+            self.refresh_task
+            and not self.refresh_task.done()
+        ):
+            return
+
+        self.refresh_task = asyncio.create_task(
+            self._delayed_refresh(guild)
+        )
+
+    # ==========================================
+    # DELAYED REFRESH
+    # ==========================================
+
+    async def _delayed_refresh(self, guild):
+
+        try:
+
+            # Tunggu beberapa detik supaya
+            # event yang datang bersamaan digabung.
+            await asyncio.sleep(
+                self.REFRESH_DELAY
+            )
+
+            await self.refresh_all_panels(
+                guild
+            )
+
+        except asyncio.CancelledError:
+
+            pass
+
+        except Exception as e:
+
+            print(
+                f"[STAFF DIRECTORY] "
+                f"Refresh task error: {e}"
+            )
+
+    # ==========================================
     # REFRESH ALL PANELS
     # ==========================================
 
     async def refresh_all_panels(self, guild):
 
-        channel = self.bot.get_channel(
-            self.CHANNEL_ID
-        )
+        # ======================================
+        # LOCK
+        # ======================================
 
-        if not channel:
-            print(
-                "[STAFF DIRECTORY] "
-                "Channel tidak ditemukan."
-            )
+        if self.refresh_lock.locked():
             return
 
-        for role_info in self.STAFF_ROLES:
+        async with self.refresh_lock:
 
-            role_id = role_info["role_id"]
+            channel = self.bot.get_channel(
+                self.CHANNEL_ID
+            )
 
-            try:
+            if not channel:
 
-                embed = await self.generate_role_embed(
-                    guild,
-                    role_info
+                print(
+                    "[STAFF DIRECTORY] "
+                    "Channel tidak ditemukan."
                 )
 
-                message_id = self.message_ids.get(
-                    role_id
+                return
+
+            # ==================================
+            # CARI MESSAGE LAMA SEKALI SAJA
+            # ==================================
+
+            missing_roles = [
+                role_info
+                for role_info in self.STAFF_ROLES
+                if not self.message_ids.get(
+                    role_info["role_id"]
+                )
+            ]
+
+            if missing_roles:
+
+                found_messages = (
+                    await self.find_existing_messages(
+                        channel
+                    )
                 )
 
-                # ==================================
-                # EDIT MESSAGE YANG SUDAH ADA
-                # ==================================
-
-                if message_id:
-
-                    try:
-
-                        message = await channel.fetch_message(
-                            message_id
-                        )
-
-                        await message.edit(
-                            embed=embed
-                        )
-
-                        continue
-
-                    except discord.NotFound:
-
-                        self.message_ids[
-                            role_id
-                        ] = None
-
-                    except discord.HTTPException as e:
-
-                        print(
-                            f"[STAFF DIRECTORY] "
-                            f"Gagal edit "
-                            f"{role_info['name']}: {e}"
-                        )
-
-                        continue
-
-                # ==================================
-                # CARI MESSAGE BOT LAMA
-                # ==================================
-
-                found_message = None
-
-                async for message in channel.history(
-                    limit=100
-                ):
-
-                    if (
-                        message.author == self.bot.user
-                        and message.embeds
-                    ):
-
-                        author = message.embeds[
-                            0
-                        ].author
-
-                        if (
-                            author
-                            and author.name
-                            and role_info["name"]
-                            in author.name
-                        ):
-
-                            found_message = message
-                            break
-
-                # ==================================
-                # UPDATE MESSAGE LAMA
-                # ==================================
-
-                if found_message:
+                for role_id, message_id in found_messages.items():
 
                     self.message_ids[
                         role_id
-                    ] = found_message.id
+                    ] = message_id
 
-                    await found_message.edit(
-                        embed=embed
+            # ==================================
+            # UPDATE SETIAP PANEL
+            # ==================================
+
+            for role_info in self.STAFF_ROLES:
+
+                role_id = role_info["role_id"]
+
+                try:
+
+                    embed = (
+                        await self.generate_role_embed(
+                            guild,
+                            role_info
+                        )
                     )
 
-                # ==================================
-                # BUAT MESSAGE BARU
-                # ==================================
+                    # ==================================
+                    # UBAH EMBED MENJADI DATA
+                    # ==================================
 
-                else:
+                    embed_data = embed.to_dict()
+
+                    old_embed_data = (
+                        self.embed_cache.get(
+                            role_id
+                        )
+                    )
+
+                    message_id = (
+                        self.message_ids.get(
+                            role_id
+                        )
+                    )
+
+                    # ==================================
+                    # MESSAGE SUDAH ADA
+                    # ==================================
+
+                    if message_id:
+
+                        # Kalau embed sama persis,
+                        # JANGAN kirim PATCH.
+                        if (
+                            old_embed_data
+                            == embed_data
+                        ):
+
+                            continue
+
+                        try:
+
+                            # PartialMessage memungkinkan
+                            # edit langsung tanpa fetch_message().
+                            message = (
+                                channel.get_partial_message(
+                                    message_id
+                                )
+                            )
+
+                            await message.edit(
+                                embed=embed
+                            )
+
+                            self.embed_cache[
+                                role_id
+                            ] = embed_data
+
+                            continue
+
+                        except discord.NotFound:
+
+                            print(
+                                "[STAFF DIRECTORY] "
+                                f"Message {role_info['name']} "
+                                "sudah tidak ditemukan."
+                            )
+
+                            self.message_ids[
+                                role_id
+                            ] = None
+
+                            self.embed_cache.pop(
+                                role_id,
+                                None
+                            )
+
+                        except discord.HTTPException as e:
+
+                            print(
+                                "[STAFF DIRECTORY] "
+                                f"Gagal edit "
+                                f"{role_info['name']}: {e}"
+                            )
+
+                            continue
+
+                    # ==================================
+                    # MESSAGE TIDAK ADA
+                    # ==================================
 
                     new_message = await channel.send(
                         embed=embed
@@ -394,12 +580,21 @@ class StaffDirectory(commands.Cog):
                         role_id
                     ] = new_message.id
 
-            except Exception as e:
+                    self.embed_cache[
+                        role_id
+                    ] = embed_data
 
-                print(
-                    f"[STAFF DIRECTORY] "
-                    f"Error {role_info['name']}: {e}"
-                )
+                    print(
+                        "[STAFF DIRECTORY] "
+                        f"Panel {role_info['name']} dibuat."
+                    )
+
+                except Exception as e:
+
+                    print(
+                        "[STAFF DIRECTORY] "
+                        f"Error {role_info['name']}: {e}"
+                    )
 
     # ==========================================
     # STAFF MENGIRIM PESAN
@@ -453,28 +648,25 @@ class StaffDirectory(commands.Cog):
         if not is_staff:
             return
 
-        # Kalau status berubah menjadi aktif,
-        # update waktu aktivitas terakhir.
+        # ======================================
+        # OFFLINE → ONLINE
+        # ======================================
+
         if (
             before.status == discord.Status.offline
             and after.status != discord.Status.offline
         ):
 
+            # Simpan aktivitas terakhir
             self.update_activity(
                 after.id
             )
 
-            # Update panel supaya langsung
-            # berubah menjadi "Aktif"
-            channel = self.bot.get_channel(
-                self.CHANNEL_ID
+            # Jangan langsung refresh.
+            # Masukkan ke debounce.
+            self.schedule_refresh(
+                after.guild
             )
-
-            if channel:
-
-                await self.refresh_all_panels(
-                    after.guild
-                )
 
     # ==========================================
     # ROLE STAFF BERUBAH
@@ -487,19 +679,52 @@ class StaffDirectory(commands.Cog):
         after
     ):
 
-        # Tidak ada perubahan role
+        # ======================================
+        # TIDAK ADA PERUBAHAN ROLE
+        # ======================================
+
         if before.roles == after.roles:
             return
 
-        channel = self.bot.get_channel(
-            self.CHANNEL_ID
+        # ======================================
+        # CEK APAKAH ROLE STAFF TERKAIT
+        # ======================================
+
+        staff_role_ids = {
+            role["role_id"]
+            for role in self.STAFF_ROLES
+        }
+
+        before_roles = {
+            role.id
+            for role in before.roles
+        }
+
+        after_roles = {
+            role.id
+            for role in after.roles
+        }
+
+        # Role yang berubah
+        changed_roles = (
+            before_roles ^ after_roles
         )
 
-        if channel:
+        # Kalau bukan role staff,
+        # tidak perlu refresh directory.
+        if not (
+            changed_roles
+            & staff_role_ids
+        ):
+            return
 
-            await self.refresh_all_panels(
-                after.guild
-            )
+        # ======================================
+        # REFRESH DENGAN DEBOUNCE
+        # ======================================
+
+        self.schedule_refresh(
+            after.guild
+        )
 
     # ==========================================
     # AUTO REFRESH
@@ -514,11 +739,16 @@ class StaffDirectory(commands.Cog):
             self.CHANNEL_ID
         )
 
-        if channel:
+        if not channel:
+            return
 
-            await self.refresh_all_panels(
-                channel.guild
-            )
+        await self.refresh_all_panels(
+            channel.guild
+        )
+
+    # ==========================================
+    # BEFORE AUTO REFRESH
+    # ==========================================
 
     @update_directory.before_loop
     async def before_update_directory(self):
@@ -543,24 +773,41 @@ class StaffDirectory(commands.Cog):
         self.CHANNEL_ID = ctx.channel.id
 
         try:
+
             await ctx.message.delete()
-        except:
+
+        except Exception:
             pass
+
+        # Reset cache
+        self.embed_cache.clear()
+
+        # ======================================
+        # BUAT PANEL BARU
+        # ======================================
 
         for role_info in self.STAFF_ROLES:
 
-            embed = await self.generate_role_embed(
-                ctx.guild,
-                role_info
+            embed = (
+                await self.generate_role_embed(
+                    ctx.guild,
+                    role_info
+                )
             )
 
             message = await ctx.send(
                 embed=embed
             )
 
+            role_id = role_info["role_id"]
+
             self.message_ids[
-                role_info["role_id"]
+                role_id
             ] = message.id
+
+            self.embed_cache[
+                role_id
+            ] = embed.to_dict()
 
         print(
             "[STAFF DIRECTORY] "
@@ -575,6 +822,17 @@ class StaffDirectory(commands.Cog):
 
         self.update_directory.cancel()
 
+        if (
+            self.refresh_task
+            and not self.refresh_task.done()
+        ):
+
+            self.refresh_task.cancel()
+
+
+# ==============================================
+# SETUP
+# ==============================================
 
 async def setup(bot):
 
