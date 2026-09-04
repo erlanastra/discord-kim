@@ -4,6 +4,70 @@ import json
 import os
 from datetime import datetime, timezone, timedelta
 
+# ==========================================
+# VIEW: PAGINATION BUTTONS (NEXT / PREV)
+# ==========================================
+class TopStatsPaginator(discord.ui.View):
+    def __init__(self, chat_list, voice_list, title_info, color):
+        super().__init__(timeout=180)  # Tombol aktif selama 3 menit
+        self.chat_list = chat_list
+        self.voice_list = voice_list
+        self.title_info = title_info
+        self.color = color
+        
+        self.current_page = 0
+        self.items_per_page = 5  # Menampilkan 5 item per halaman agar rapi
+        
+        self.max_chat_pages = max(1, (len(self.chat_list) + self.items_per_page - 1) // self.items_per_page)
+        self.max_voice_pages = max(1, (len(self.voice_list) + self.items_per_page - 1) // self.items_per_page)
+        self.max_page = max(self.max_chat_pages, self.max_voice_pages)
+        
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.prev_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page >= self.max_page - 1
+
+    def create_embed(self):
+        start_idx = self.current_page * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+
+        current_chat = self.chat_list[start_idx:end_idx]
+        current_voice = self.voice_list[start_idx:end_idx]
+
+        embed = discord.Embed(
+            title=f"🏆 Top Statistik Server nanZ",
+            description=f"{self.title_info}\nHalaman **{self.current_page + 1} / {self.max_page}**",
+            color=self.color
+        )
+
+        chat_text = "".join([f"{idx}. <@{uid}> — **{cnt}** pesan\n" for idx, (uid, cnt) in current_chat])
+        voice_text = "".join([f"{idx}. <@{uid}> — **{cnt}** aktivitas\n" for idx, (uid, cnt) in current_voice])
+
+        embed.add_field(name="💬 Top Chatting", value=chat_text or "*Tidak ada data di halaman ini*", inline=False)
+        embed.add_field(name="🔊 Top Voice Activity", value=voice_text or "*Tidak ada data di halaman ini*", inline=False)
+        embed.set_footer(text="Gunakan tombol di bawah untuk navigasi halaman.")
+        return embed
+
+    @discord.ui.button(label="◀️ Sebelumnya", style=discord.ButtonStyle.blurple)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.create_embed(), view=self)
+        else:
+            await interaction.response.defer()
+
+    @discord.ui.button(label="Selanjutnya ▶️", style=discord.ButtonStyle.blurple)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < self.max_page - 1:
+            self.current_page += 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=self.create_embed(), view=self)
+        else:
+            await interaction.response.defer()
+
+
 class TopStats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -27,14 +91,6 @@ class TopStats(commands.Cog):
         except Exception as e:
             print(f"[STATS] Gagal menyimpan database: {e}")
 
-    def get_wib_today(self):
-        utc_now = datetime.now(timezone.utc)
-        wib_time = utc_now.astimezone(timezone(timedelta(hours=7)))
-        return wib_time.strftime("%Y-%m-%d")
-
-    # ==========================================
-    # LISTENER: DETEKSI CHAT TEKS (Akumulasi Permanen)
-    # ==========================================
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot or not message.guild:
@@ -42,7 +98,10 @@ class TopStats(commands.Cog):
 
         guild_id = str(message.guild.id)
         user_id = str(message.author.id)
-        date_str = self.get_wib_today()
+        
+        utc_now = datetime.now(timezone.utc)
+        wib_time = utc_now.astimezone(timezone(timedelta(hours=7)))
+        date_str = wib_time.strftime("%Y-%m-%d")
 
         if guild_id not in self.stats_data:
             self.stats_data[guild_id] = {}
@@ -53,9 +112,6 @@ class TopStats(commands.Cog):
         chat_counts[user_id] = chat_counts.get(user_id, 0) + 1
         self.save_db()
 
-    # ==========================================
-    # LISTENER: DETEKSI VOICE CHANNEL
-    # ==========================================
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         if member.bot or not member.guild:
@@ -63,7 +119,10 @@ class TopStats(commands.Cog):
 
         guild_id = str(member.guild.id)
         user_id = str(member.id)
-        date_str = self.get_wib_today()
+        
+        utc_now = datetime.now(timezone.utc)
+        wib_time = utc_now.astimezone(timezone(timedelta(hours=7)))
+        date_str = wib_time.strftime("%Y-%m-%d")
 
         if guild_id not in self.stats_data:
             self.stats_data[guild_id] = {}
@@ -75,104 +134,96 @@ class TopStats(commands.Cog):
             voice_counts[user_id] = voice_counts.get(user_id, 0) + 1
             self.save_db()
 
+    def aggregate_data(self, guild_id, period_filter=None):
+        if guild_id not in self.stats_data:
+            return {}, {}
+
+        total_chat = {}
+        total_voice = {}
+
+        for date_key, day_data in self.stats_data[guild_id].items():
+            if period_filter and not date_key.startswith(period_filter):
+                continue
+
+            for uid, count in day_data.get("chat", {}).items():
+                total_chat[uid] = total_chat.get(uid, 0) + count
+
+            for uid, count in day_data.get("voice", {}).items():
+                total_voice[uid] = total_voice.get(uid, 0) + count
+
+        return total_chat, total_voice
+
     # ==========================================
-    # COMMAND 1: TOP CHAT & VOICE SEMUA
+    # COMMAND 1: TOP STATS DENGAN TOMBOL PAGINATION
     # ==========================================
     @commands.command(name="topstat", aliases=["topchat", "topvoice"])
-    async def top_stat(self, ctx):
+    async def top_stat(self, ctx, periode: str = None):
         guild_id = str(ctx.guild.id)
-        date_str = self.get_wib_today()
+        chat_dict, voice_dict = self.aggregate_data(guild_id, periode)
 
-        if guild_id not in self.stats_data or date_str not in self.stats_data[guild_id]:
-            await ctx.reply("📊 Belum ada data statistik aktivitas hari ini.")
-            return
+        sorted_chat = sorted(chat_dict.items(), key=lambda x: x[1], reverse=True)
+        sorted_voice = sorted(voice_dict.items(), key=lambda x: x[1], reverse=True)
 
-        data = self.stats_data[guild_id][date_str]
-        sorted_chat = sorted(data.get("chat", {}).items(), key=lambda x: x[1], reverse=True)[:5]
-        sorted_voice = sorted(data.get("voice", {}).items(), key=lambda x: x[1], reverse=True)[:5]
+        # Format list dengan penomoran indeks global (1, 2, 3, ...)
+        formatted_chat = [(i, uid, cnt) for i, (uid, cnt) in enumerate(sorted_chat, 1)]
+        formatted_voice = [(i, uid, cnt) for i, (uid, cnt) in enumerate(sorted_voice, 1)]
 
-        embed = discord.Embed(
-            title="🏆 Top Statistik Server nanZ (Semua Member)",
-            description=f"Tanggal: **{date_str} (WIB)**",
-            color=discord.Color.gold()
-        )
+        title_info = f"Periode: **{periode}**" if periode else "Akumulasi **Sepanjang Masa**"
 
-        chat_text = "".join([f"{i}. <@{uid}> — **{cnt}** pesan\n" for i, (uid, cnt) in enumerate(sorted_chat, 1)])
-        voice_text = "".join([f"{i}. <@{uid}> — **{cnt}** aktivitas\n" for i, (uid, cnt) in enumerate(sorted_voice, 1)])
-
-        embed.add_field(name="💬 Top Chatting", value=chat_text or "*Belum ada data*", inline=False)
-        embed.add_field(name="🔊 Top Voice Activity", value=voice_text or "*Belum ada data*", inline=False)
-        await ctx.send(embed=embed)
+        view = TopStatsPaginator(formatted_chat, formatted_voice, title_info, discord.Color.gold())
+        await ctx.send(embed=view.create_embed(), view=view)
 
     # ==========================================
-    # COMMAND 2: TOP STATS BERDASARKAN ROLE
-    # Penggunaan: !toprole @RoleName
+    # COMMAND 2: TOP ROLE DENGAN TOMBOL PAGINATION
     # ==========================================
     @commands.command(name="toprole")
-    async def top_role(self, ctx, target_role: discord.Role = None):
+    async def top_role(self, ctx, target_role: discord.Role = None, periode: str = None):
         if not target_role:
-            await ctx.reply("⚠️ Harap tag role yang ingin dicek! Contoh: `!toprole @OSIS`")
+            await ctx.reply("⚠️ Format kurang lengkap! Contoh: `!toprole @OSIS` atau `!toprole @OSIS 2026-09`")
             return
 
         guild_id = str(ctx.guild.id)
-        date_str = self.get_wib_today()
+        chat_dict, voice_dict = self.aggregate_data(guild_id, periode)
 
-        if guild_id not in self.stats_data or date_str not in self.stats_data[guild_id]:
-            await ctx.reply(f"📊 Belum ada data statistik untuk role **{target_role.name}** hari ini.")
-            return
+        filtered_chat = {uid: cnt for uid, cnt in chat_dict.items() if ctx.guild.get_member(int(uid)) and target_role in ctx.guild.get_member(int(uid)).roles}
+        filtered_voice = {uid: cnt for uid, cnt in voice_dict.items() if ctx.guild.get_member(int(uid)) and target_role in ctx.guild.get_member(int(uid)).roles}
 
-        data = self.stats_data[guild_id][date_str]
-        
-        # Filter data hanya untuk member yang memiliki role tersebut
-        filtered_chat = {uid: cnt for uid, cnt in data.get("chat", {}).items() if ctx.guild.get_member(int(uid)) and target_role in ctx.guild.get_member(int(uid)).roles}
-        filtered_voice = {uid: cnt for uid, cnt in data.get("voice", {}).items() if ctx.guild.get_member(int(uid)) and target_role in ctx.guild.get_member(int(uid)).roles}
+        sorted_chat = sorted(filtered_chat.items(), key=lambda x: x[1], reverse=True)
+        sorted_voice = sorted(filtered_voice.items(), key=lambda x: x[1], reverse=True)
 
-        sorted_chat = sorted(filtered_chat.items(), key=lambda x: x[1], reverse=True)[:5]
-        sorted_voice = sorted(filtered_voice.items(), key=lambda x: x[1], reverse=True)[:5]
+        formatted_chat = [(i, uid, cnt) for i, (uid, cnt) in enumerate(sorted_chat, 1)]
+        formatted_voice = [(i, uid, cnt) for i, (uid, cnt) in enumerate(sorted_voice, 1)]
 
-        embed = discord.Embed(
-            title=f"🛡️ Top Statistik Role: {target_role.name}",
-            description=f"Tanggal: **{date_str} (WIB)**",
-            color=target_role.color
-        )
+        title_info = f"Role: **{target_role.name}** | Periode: **{periode or 'Sepanjang Masa'}**"
 
-        chat_text = "".join([f"{i}. <@{uid}> — **{cnt}** pesan\n" for i, (uid, cnt) in enumerate(sorted_chat, 1)])
-        voice_text = "".join([f"{i}. <@{uid}> — **{cnt}** aktivitas\n" for i, (uid, cnt) in enumerate(sorted_voice, 1)])
-
-        embed.add_field(name="💬 Top Chat (Role Ini)", value=chat_text or "*Tidak ada data*", inline=False)
-        embed.add_field(name="🔊 Top Voice (Role Ini)", value=voice_text or "*Tidak ada data*", inline=False)
-        await ctx.send(embed=embed)
+        view = TopStatsPaginator(formatted_chat, formatted_voice, title_info, target_role.color)
+        await ctx.send(embed=view.create_embed(), view=view)
 
     # ==========================================
-    # COMMAND 3: CEK STATS MEMBER YANG DI-TAG
-    # Penggunaan: !cekuser @Member
+    # COMMAND 3: CEK USER
     # ==========================================
     @commands.command(name="cekuser", aliases=["statsuser"])
-    async def cek_user(self, ctx, member: discord.Member = None):
+    async def cek_user(self, ctx, member: discord.Member = None, periode: str = None):
         if not member:
-            member = ctx.author # Default ke pengirim jika tidak tag siapa pun
+            member = ctx.author
 
         guild_id = str(ctx.guild.id)
-        date_str = self.get_wib_today()
+        chat_dict, voice_dict = self.aggregate_data(guild_id, periode)
         user_id = str(member.id)
 
-        chat_count = 0
-        voice_count = 0
+        chat_count = chat_dict.get(user_id, 0)
+        voice_count = voice_dict.get(user_id, 0)
 
-        if guild_id in self.stats_data and date_str in self.stats_data[guild_id]:
-            day_data = self.stats_data[guild_id][date_str]
-            chat_count = day_data.get("chat", {}).get(user_id, 0)
-            voice_count = day_data.get("voice", {}).get(user_id, 0)
+        title_info = f"({periode})" if periode else "(Total Sepanjang Masa)"
 
         embed = discord.Embed(
-            title=f"📊 Statistik Aktivitas: {member.display_name}",
+            title=f"📊 Statistik: {member.display_name} {title_info}",
             color=member.color
         )
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.add_field(name="💬 Total Chat Hari Ini", value=f"**{chat_count}** pesan", inline=True)
-        embed.add_field(name="🔊 Total Voice Hari Ini", value=f"**{voice_count}** aktivitas", inline=True)
-        embed.set_footer(text=f"Tanggal: {date_str} WIB")
-
+        embed.add_field(name="💬 Total Pesan Chat", value=f"**{chat_count}** pesan", inline=True)
+        embed.add_field(name="🔊 Total Aktivitas Voice", value=f"**{voice_count}** aktivitas", inline=True)
+        
         await ctx.send(embed=embed)
 
 async def setup(bot):
