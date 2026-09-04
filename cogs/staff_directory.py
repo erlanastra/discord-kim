@@ -22,22 +22,26 @@ class StaffDirectory(commands.Cog):
             {
                 "role_id": 1417582562100117584,
                 "name": "Guru Besar",
-                "emoji": "👑"
+                "emoji": "👑",
+                "color": discord.Color.gold()
             },
             {
                 "role_id": 1453103644244316343,
                 "name": "Moderator",
-                "emoji": "🛡️"
+                "emoji": "🛡️",
+                "color": discord.Color.blue()
             },
             {
                 "role_id": 1467360501745844446,
                 "name": "Pembina OSIS",
-                "emoji": "📚"
+                "emoji": "📚",
+                "color": discord.Color.purple()
             },
             {
                 "role_id": 1427276194876751902,
                 "name": "OSIS",
-                "emoji": "✍️"
+                "emoji": "✍️",
+                "color": discord.Color.green()
             }
         ]
 
@@ -230,8 +234,15 @@ class StaffDirectory(commands.Cog):
             role_info["role_id"]
         )
 
+        # ======================================
+        # EMBED DASAR
+        # ======================================
+
         embed = discord.Embed(
-            color=discord.Color.blue()
+            color=role_info.get(
+                "color",
+                discord.Color.blue()
+            )
         )
 
         # ======================================
@@ -241,7 +252,7 @@ class StaffDirectory(commands.Cog):
         if not role:
 
             embed.description = (
-                "⚠️ Role tidak ditemukan."
+                "⚠️ **Role tidak ditemukan.**"
             )
 
             return embed
@@ -256,50 +267,12 @@ class StaffDirectory(commands.Cog):
         )
 
         # ======================================
-        # TIDAK ADA STAFF
-        # ======================================
-
-        if not members:
-
-            embed.description = (
-                "*Belum ada staff terdaftar.*"
-            )
-
-        # ======================================
-        # ADA STAFF
-        # ======================================
-
-        else:
-
-            staff_list = []
-
-            for member in members:
-
-                status = self.get_activity_status(
-                    member
-                )
-
-                # Mention staff
-                staff_info = (
-                    f"👤 {member.mention}\n"
-                    f"   └ {status}"
-                )
-
-                staff_list.append(
-                    staff_info
-                )
-
-            embed.description = (
-                "\n\n".join(staff_list)
-            )
-
-        # ======================================
         # HEADER
         # ======================================
 
         embed.set_author(
             name=(
-                f"{role_info['emoji']} "
+                f"{role_info['emoji']}  "
                 f"{role_info['name']}"
             ),
             icon_url=(
@@ -310,13 +283,62 @@ class StaffDirectory(commands.Cog):
         )
 
         # ======================================
+        # TIDAK ADA STAFF
+        # ======================================
+
+        if not members:
+
+            embed.description = (
+                "╰─ *Belum ada staff yang terdaftar.*"
+            )
+
+        # ======================================
+        # ADA STAFF
+        # ======================================
+
+        else:
+
+            staff_list = []
+
+            for index, member in enumerate(members):
+
+                status = self.get_activity_status(
+                    member
+                )
+
+                # Nomor urut
+                number = f"{index + 1:02d}"
+
+                # ==================================
+                # FORMAT STAFF
+                # ==================================
+
+                staff_info = (
+                    f"**{number}. {member.display_name}**\n"
+                    f"　└ {member.mention}\n"
+                    f"　　└ {status}"
+                )
+
+                staff_list.append(
+                    staff_info
+                )
+
+            # ==================================
+            # GABUNGKAN STAFF
+            # ==================================
+
+            embed.description = (
+                "\n\n".join(staff_list)
+            )
+
+        # ======================================
         # FOOTER
         # ======================================
 
         embed.set_footer(
             text=(
-                f"nanZ Server • "
-                f"{role_info['name']} • "
+                f"nanZ Server  •  "
+                f"{role_info['name']}  •  "
                 f"{len(members)} Staff"
             )
         )
@@ -353,12 +375,14 @@ class StaffDirectory(commands.Cog):
                     role_id = role_info["role_id"]
 
                     if role_id in self.message_ids:
+
                         if self.message_ids[role_id]:
                             continue
 
                     if role_info["name"] in author.name:
 
                         found[role_id] = message.id
+
                         break
 
         except discord.HTTPException as e:
