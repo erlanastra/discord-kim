@@ -38,8 +38,9 @@ class TopStatsPaginator(discord.ui.View):
             color=self.color
         )
 
-        chat_text = "".join([f"{idx}. <@{uid}> — **{cnt}** pesan\n" for idx, (uid, cnt) in current_chat])
-        voice_text = "".join([f"{idx}. <@{uid}> — **{cnt}** aktivitas\n" for idx, (uid, cnt) in current_voice])
+        # Diperbaiki agar menerima 3 nilai: idx, uid, cnt
+        chat_text = "".join([f"{idx}. <@{uid}> — **{cnt}** pesan\n" for idx, uid, cnt in current_chat])
+        voice_text = "".join([f"{idx}. <@{uid}> — **{cnt}** aktivitas\n" for idx, uid, cnt in current_voice])
 
         embed.add_field(name="💬 Top Chatting", value=chat_text or "*Tidak ada data di halaman ini*", inline=False)
         embed.add_field(name="🔊 Top Voice Activity", value=voice_text or "*Tidak ada data di halaman ini*", inline=False)
@@ -150,9 +151,6 @@ class TopStats(commands.Cog):
 
         return total_chat, total_voice
 
-    # ==========================================
-    # COMMAND 1: TOP STATS
-    # ==========================================
     @commands.command(name="topstat", aliases=["topchat", "topvoice"])
     async def top_stat(self, ctx, periode: str = None):
         guild_id = str(ctx.guild.id)
@@ -169,9 +167,6 @@ class TopStats(commands.Cog):
         view = TopStatsPaginator(formatted_chat, formatted_voice, title_info, discord.Color.gold())
         await ctx.send(embed=view.create_embed(), view=view)
 
-    # ==========================================
-    # COMMAND 2: TOP ROLE (Fixed optional parameter)
-    # ==========================================
     @commands.command(name="toprole")
     async def top_role(self, ctx, target_role: discord.Role, periode: str = None):
         guild_id = str(ctx.guild.id)
@@ -196,9 +191,6 @@ class TopStats(commands.Cog):
         if isinstance(error, commands.MissingRequiredArgument):
             await ctx.reply("⚠️ Format kurang lengkap! Contoh: `!toprole @OSIS` atau `!toprole @OSIS 2026-09`")
 
-    # ==========================================
-    # COMMAND 3: CEK USER
-    # ==========================================
     @commands.command(name="cekuser", aliases=["statsuser"])
     async def cek_user(self, ctx, member: discord.Member = None, periode: str = None):
         if not member:
