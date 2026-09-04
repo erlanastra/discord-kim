@@ -151,7 +151,7 @@ class TopStats(commands.Cog):
         return total_chat, total_voice
 
     # ==========================================
-    # COMMAND 1: TOP STATS (Diperbaiki agar stabil)
+    # COMMAND 1: TOP STATS
     # ==========================================
     @commands.command(name="topstat", aliases=["topchat", "topvoice"])
     async def top_stat(self, ctx, periode: str = None):
@@ -170,7 +170,7 @@ class TopStats(commands.Cog):
         await ctx.send(embed=view.create_embed(), view=view)
 
     # ==========================================
-    # COMMAND 2: TOP ROLE (Diperbaiki agar stabil)
+    # COMMAND 2: TOP ROLE (Fixed optional parameter)
     # ==========================================
     @commands.command(name="toprole")
     async def top_role(self, ctx, target_role: discord.Role, periode: str = None):
