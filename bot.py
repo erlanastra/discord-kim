@@ -63,6 +63,7 @@ async def load_cogs():
         "cogs.setupquote",
         "cogs.nanzquiz",
         "cogs.autoreply",
+        "cogs.staff_attendance",
         "cogs.staff_directory",
         "cogs.verif_reminder",
         "cogs.moderation",
