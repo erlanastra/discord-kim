@@ -4,19 +4,16 @@ import json
 import os
 from datetime import datetime, timezone, timedelta
 
-# ==========================================
-# VIEW: PAGINATION BUTTONS (NEXT / PREV)
-# ==========================================
 class TopStatsPaginator(discord.ui.View):
     def __init__(self, chat_list, voice_list, title_info, color):
-        super().__init__(timeout=180)  # Tombol aktif selama 3 menit
+        super().__init__(timeout=180)
         self.chat_list = chat_list
         self.voice_list = voice_list
         self.title_info = title_info
         self.color = color
         
         self.current_page = 0
-        self.items_per_page = 5  # Menampilkan 5 item per halaman agar rapi
+        self.items_per_page = 5
         
         self.max_chat_pages = max(1, (len(self.chat_list) + self.items_per_page - 1) // self.items_per_page)
         self.max_voice_pages = max(1, (len(self.voice_list) + self.items_per_page - 1) // self.items_per_page)
@@ -36,7 +33,7 @@ class TopStatsPaginator(discord.ui.View):
         current_voice = self.voice_list[start_idx:end_idx]
 
         embed = discord.Embed(
-            title=f"🏆 Top Statistik Server nanZ",
+            title="🏆 Top Statistik Server nanZ",
             description=f"{self.title_info}\nHalaman **{self.current_page + 1} / {self.max_page}**",
             color=self.color
         )
@@ -154,7 +151,7 @@ class TopStats(commands.Cog):
         return total_chat, total_voice
 
     # ==========================================
-    # COMMAND 1: TOP STATS DENGAN TOMBOL PAGINATION
+    # COMMAND 1: TOP STATS (Diperbaiki agar stabil)
     # ==========================================
     @commands.command(name="topstat", aliases=["topchat", "topvoice"])
     async def top_stat(self, ctx, periode: str = None):
@@ -164,7 +161,6 @@ class TopStats(commands.Cog):
         sorted_chat = sorted(chat_dict.items(), key=lambda x: x[1], reverse=True)
         sorted_voice = sorted(voice_dict.items(), key=lambda x: x[1], reverse=True)
 
-        # Format list dengan penomoran indeks global (1, 2, 3, ...)
         formatted_chat = [(i, uid, cnt) for i, (uid, cnt) in enumerate(sorted_chat, 1)]
         formatted_voice = [(i, uid, cnt) for i, (uid, cnt) in enumerate(sorted_voice, 1)]
 
@@ -174,14 +170,10 @@ class TopStats(commands.Cog):
         await ctx.send(embed=view.create_embed(), view=view)
 
     # ==========================================
-    # COMMAND 2: TOP ROLE DENGAN TOMBOL PAGINATION
+    # COMMAND 2: TOP ROLE (Diperbaiki agar stabil)
     # ==========================================
     @commands.command(name="toprole")
-    async def top_role(self, ctx, target_role: discord.Role = None, periode: str = None):
-        if not target_role:
-            await ctx.reply("⚠️ Format kurang lengkap! Contoh: `!toprole @OSIS` atau `!toprole @OSIS 2026-09`")
-            return
-
+    async def top_role(self, ctx, target_role: discord.Role, periode: str = None):
         guild_id = str(ctx.guild.id)
         chat_dict, voice_dict = self.aggregate_data(guild_id, periode)
 
@@ -198,6 +190,11 @@ class TopStats(commands.Cog):
 
         view = TopStatsPaginator(formatted_chat, formatted_voice, title_info, target_role.color)
         await ctx.send(embed=view.create_embed(), view=view)
+
+    @top_role.error
+    async def toprole_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply("⚠️ Format kurang lengkap! Contoh: `!toprole @OSIS` atau `!toprole @OSIS 2026-09`")
 
     # ==========================================
     # COMMAND 3: CEK USER
