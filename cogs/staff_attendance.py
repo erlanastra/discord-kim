@@ -13,6 +13,7 @@ class StaffAttendance(commands.Cog):
         # ID Channel khusus absensi
         self.ATTENDANCE_CHANNEL_ID = 1528025859792044082
         
+        # Sinkronisasi role ID staff
         self.STAFF_ROLE_IDS = [
             1417582562100117584, # Guru Besar
             1453103644244316343, # Moderator
@@ -37,6 +38,7 @@ class StaffAttendance(commands.Cog):
         except Exception as e:
             print(f"[ATTENDANCE] Gagal menyimpan database: {e}")
 
+    # Helper untuk mendapatkan waktu WIB (UTC+7)
     def get_wib_time(self):
         utc_now = datetime.now(timezone.utc)
         wib_time = utc_now.astimezone(timezone(timedelta(hours=7)))
@@ -102,7 +104,7 @@ class StaffAttendance(commands.Cog):
         await ctx.send(embed=embed)
 
     # ==========================================
-    # COMMAND: IZIN
+    # COMMAND: IZIN (Seharian & Sebagian Waktu)
     # ==========================================
     @commands.command(name="izin")
     async def izin(self, ctx, *, keterangan: str = None):
@@ -117,8 +119,8 @@ class StaffAttendance(commands.Cog):
         if not keterangan:
             await ctx.reply(
                 "⚠️ Format izin kurang lengkap!\n"
-                "Contoh Izin Seharian: `!izin Sakit demam`\n"
-                "Contoh Izin Sebagian Waktu: `!izin Sampai pulang sekolah - Urusan keluarga`"
+                "• Contoh Seharian: `!izin Sakit demam`\n"
+                "• Contoh Sebagian Waktu: `!izin Sampai pulang sekolah - Urusan keluarga`"
             )
             return
 
@@ -157,7 +159,7 @@ class StaffAttendance(commands.Cog):
         await ctx.send(embed=embed)
 
     # ==========================================
-    # COMMAND: REKAP ABSEN
+    # COMMAND: REKAP HARIAN
     # ==========================================
     @commands.command(name="rekapabsen")
     async def rekap_absen(self, ctx):
@@ -205,7 +207,114 @@ class StaffAttendance(commands.Cog):
         await ctx.send(embed=embed)
 
     # ==========================================
-    # LISTENER: KEAMANAN PESAN AI
+    # COMMAND: REKAP BULANAN (EVALUASI)
+    # ==========================================
+    @commands.command(name="rekapbulanan")
+    async def rekap_bulanan(self, ctx, bulan: str = None, tahun: str = None):
+        if not await self.check_channel(ctx):
+            return
+
+        is_staff = any(role.id in self.STAFF_ROLE_IDS for role in ctx.author.roles)
+        if not is_staff:
+            await ctx.reply("🤫 **Rahasia!**")
+            return
+
+        now = self.get_wib_time()
+        if not bulan:
+            bulan = now.strftime("%m")
+        if not tahun:
+            tahun = now.strftime("%Y")
+
+        target_prefix = f"{tahun}-{bulan}"
+        summary = {}
+
+        for date_str, records in self.attendance_data.items():
+            if date_str.startswith(target_prefix):
+                for m_id, info in records.items():
+                    if m_id not in summary:
+                        summary[m_id] = {
+                            "name": info.get("name", "Unknown"),
+                            "tepat_waktu": 0,
+                            "telat": 0,
+                            "izin": 0
+                        }
+                    
+                    status = info["status"]
+                    if "Tepat Waktu" in status:
+                        summary[m_id]["tepat_waktu"] += 1
+                    elif "Telat" in status:
+                        summary[m_id]["telat"] += 1
+                    elif "Izin" in status:
+                        summary[m_id]["izin"] += 1
+
+        embed = discord.Embed(
+            title=f"📈 Rekap Evaluasi Bulanan Staff ({target_prefix})",
+            description=f"Akumulasi data absensi untuk bulan **{bulan}** tahun **{tahun}**.",
+            color=discord.Color.dark_blue()
+        )
+
+        if not summary:
+            embed.description += "\n\n*Tidak ada data absensi yang tercatat pada periode tersebut.*"
+        else:
+            result_lines = []
+            for m_id, data in summary.items():
+                line = (
+                    f"👤 <@{m_id}> (`{data['name']}`)\n"
+                    f" 🟢 Tepat Waktu: **{data['tepat_waktu']}** | "
+                    f" 🟠 Telat: **{data['telat']}** | "
+                    f" 🟡 Izin: **{data['izin']}**"
+                )
+                result_lines.append(line)
+            
+            embed.add_field(name="Ringkasan Performa Staff", value="\n\n".join(result_lines), inline=False)
+
+        embed.set_footer(text="Gunakan data ini untuk evaluasi akhir bulan nanZ.")
+        await ctx.send(embed=embed)
+
+    # ==========================================
+    # COMMAND: HELP ABSENSI
+    # ==========================================
+    @commands.command(name="helpabsen", aliases=["absenhelp", "bantuabsen"])
+    async def help_absen(self, ctx):
+        if not await self.check_channel(ctx):
+            return
+
+        is_staff = any(role.id in self.STAFF_ROLE_IDS for role in ctx.author.roles)
+        if not is_staff:
+            await ctx.reply("❌ Perintah ini khusus untuk Staff nanZ!")
+            return
+
+        embed = discord.Embed(
+            title="📖 Daftar Perintah Absensi nanZ",
+            description="Berikut adalah daftar command absensi yang dapat digunakan:",
+            color=discord.Color.purple()
+        )
+        embed.add_field(
+            name="`!absen`",
+            value="Melakukan absensi harian.\n• **Tepat Waktu**: Pukul 04:00 - 12:00 WIB\n• **Telat**: Di atas pukul 12:00 WIB",
+            inline=False
+        )
+        embed.add_field(
+            name="`!izin [keterangan]`",
+            value="Mengajukan izin (seharian penuh atau sebagian waktu).\n• *Contoh Seharian:* `!izin Sakit demam`\n• *Contoh Sebagian:* `!izin Sampai pulang sekolah - Urusan keluarga`",
+            inline=False
+        )
+        embed.add_field(
+            name="`!rekapabsen`",
+            value="Melihat rekapitulasi kehadiran dan izin seluruh staff pada hari ini.",
+            inline=False
+        )
+        embed.add_field(
+            name="`!rekapbulanan [bulan] [tahun]`",
+            value="Melihat rekap akumulasi bulanan untuk bahan evaluasi akhir bulan.\n• *Contoh:* `!rekapbulanan 09 2026`",
+            inline=False
+        )
+        embed.set_footer(text="Zona Waktu: WIB | Khusus Staff nanZ")
+
+        await ctx.send(embed=embed)
+
+    # ==========================================
+    # LISTENER: KEAMANAN PESAN AI / MEMBER
     # ==========================================
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -216,7 +325,6 @@ class StaffAttendance(commands.Cog):
         trigger_keywords = ["absen", "siapa yang telat", "siapa yang izin", "rekap absen", "data absen"]
         
         if any(keyword in content_lower for keyword in trigger_keywords):
-            # Jika dibahas di channel absensi atau channel lain oleh non-staff
             is_staff = isinstance(message.author, discord.Member) and any(role.id in self.STAFF_ROLE_IDS for role in message.author.roles)
             if not is_staff:
                 await message.reply("🤫 **Rahasia!**")
