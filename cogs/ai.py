@@ -1,6 +1,9 @@
 import discord
-from discord.ext import commands
+from discord import app_commands
+from discord.ext import commands, tasks
 import aiohttp
+import asyncio
+import base64
 import json
 import logging
 import os
@@ -11,117 +14,270 @@ from collections import defaultdict
 # =========================================================
 # CONFIG
 # =========================================================
+# config.json yang didukung:
+# {
+#   "gemini_api_key": "...",
+#   "ai_channel": 123456789012345678,
+#   "gemini_model": "gemini-3.5-flash",        (opsional)
+#   "gemini_fallback_model": "gemini-3.1-flash-lite",  (opsional, dipakai kalau model utama gagal)
+#   "gemini_temperature": 0.9,                 (opsional)
+#   "gemini_max_output_tokens": 2048,          (opsional)
+#   "ai_cooldown_seconds": 4                   (opsional, anti-spam per user)
+# }
 
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
-
 API_KEY = config["gemini_api_key"]
 AI_CHANNEL = config["ai_channel"]
 
-GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = config.get("gemini_model", "gemini-3.5-flash")
+FALLBACK_MODEL = config.get("gemini_fallback_model")
 
-URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/"
-    f"models/{GEMINI_MODEL}:generateContent?key={API_KEY}"
-)
+TEMPERATURE = config.get("gemini_temperature", 0.9)
+MAX_OUTPUT_TOKENS = config.get("gemini_max_output_tokens", 2048)
+AI_COOLDOWN_SECONDS = config.get("ai_cooldown_seconds", 4)
+
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def gemini_url(model):
+    return f"{GEMINI_BASE}/{model}:generateContent?key={API_KEY}"
+
+
+GENERATION_CONFIG = {
+    "temperature": TEMPERATURE,
+    "topP": 0.95,
+    "topK": 40,
+    "maxOutputTokens": MAX_OUTPUT_TOKENS,
+}
+
+# Ambang batas longgar (BLOCK_ONLY_HIGH) supaya obrolan santai komunitas tidak
+# ketahan filter secara berlebihan, tapi konten benar-benar berbahaya tetap ditolak.
+SAFETY_SETTINGS = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+]
+
+MAX_HISTORY_TURNS = 6          # jumlah pasangan tanya-jawab yang dikirim sbg konteks
+MAX_HISTORY_STORED = 10        # jumlah pasangan yang disimpan per user
+EMBED_CHUNK_SIZE = 4000        # batas aman < limit 4096 milik Discord embed
+MAX_EMBED_CHUNKS = 3           # cegah spam kalau jawaban kepanjangan
+MAX_IMAGE_PARTS = 3             # batas lampiran gambar per pesan
+
+# Role yang dianggap "Crew nanZ" — dicek dengan substring, jadi "Crew nanZ",
+# "Crew", "crew trial", dll semua kena. Bisa diganti lewat config.json.
+CREW_ROLE_KEYWORD = config.get("crew_role_keyword", "crew").lower()
+
+# Kalau pertanyaan mengandung salah satu kata kunci ini DAN penanya bukan
+# Crew nanZ, bot menolak menjawab (tanpa memanggil Gemini sama sekali).
+INTERNAL_TOPIC_KEYWORDS = [
+    k.lower() for k in config.get("internal_topic_keywords", [
+        "staff", "crew", "internal", "rapat staff", "meeting staff",
+        "keputusan staff", "urusan staff", "rahasia staff", "diskusi staff",
+    ])
+]
 
 
 # =========================================================
 # LOGGING
 # =========================================================
-
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("nanZ-AI")
 
 
 # =========================================================
-# ACTIVITY DATABASE
+# STORAGE (activity + chat history)
 # =========================================================
-
 ACTIVITY_FILE = "ai_activity.json"
+HISTORY_FILE = "ai_chat_history.json"
+
+
+def _read_json(path, default):
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _write_json_atomic(path, data):
+    """Tulis lewat file sementara lalu rename, biar aman kalau bot crash di tengah proses simpan."""
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_path, path)
 
 
 def load_activity():
-
-    if not os.path.exists(ACTIVITY_FILE):
-        return {}
-
-    try:
-        with open(ACTIVITY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    except Exception:
-        return {}
+    return _read_json(ACTIVITY_FILE, {})
 
 
 def save_activity(data):
-
     try:
-        with open(ACTIVITY_FILE, "w", encoding="utf-8") as f:
-            json.dump(
-                data,
-                f,
-                indent=4,
-                ensure_ascii=False
-            )
-
+        _write_json_atomic(ACTIVITY_FILE, data)
     except Exception as e:
-        logging.error(f"Gagal menyimpan activity: {e}")
+        logger.error(f"Gagal menyimpan activity: {e}")
+
+
+def load_history_raw():
+    return _read_json(HISTORY_FILE, {})
+
+
+def save_history_raw(data):
+    try:
+        _write_json_atomic(HISTORY_FILE, data)
+    except Exception as e:
+        logger.error(f"Gagal menyimpan chat history: {e}")
+
+
+def history_key(guild_id, user_id):
+    return f"{guild_id}:{user_id}"
+
+
+# =========================================================
+# LEADERBOARD VIEW (tombol interaktif)
+# =========================================================
+class LeaderboardView(discord.ui.View):
+    def __init__(self, cog, guild):
+        super().__init__(timeout=90)
+        self.cog = cog
+        self.guild = guild
+        self.mode = "active"
+
+    def build_embed(self):
+        stats = self.cog.get_server_statistics(self.guild)
+        mapping = {
+            "chat": ("💬 Top Chat", stats["top_chat"]),
+            "voice": ("🎙️ Top Voice", stats["top_voice"]),
+            "active": ("🔥 Member Paling Aktif", stats["top_active"]),
+        }
+        title, lines = mapping[self.mode]
+
+        embed = discord.Embed(
+            title=title,
+            description="\n".join(lines) if lines else "Belum ada data aktivitas.",
+            color=0x5865F2,
+        )
+        embed.set_footer(text=f"{self.guild.name} • Leaderboard nanZ")
+        return embed
+
+    async def _switch(self, interaction, mode):
+        self.mode = mode
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.style = (
+                    discord.ButtonStyle.success
+                    if child.custom_id == mode
+                    else discord.ButtonStyle.secondary
+                )
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="Chat", emoji="💬", custom_id="chat", style=discord.ButtonStyle.secondary)
+    async def chat_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._switch(interaction, "chat")
+
+    @discord.ui.button(label="Voice", emoji="🎙️", custom_id="voice", style=discord.ButtonStyle.secondary)
+    async def voice_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._switch(interaction, "voice")
+
+    @discord.ui.button(label="Paling Aktif", emoji="🔥", custom_id="active", style=discord.ButtonStyle.success)
+    async def active_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._switch(interaction, "active")
 
 
 # =========================================================
 # AI COG
 # =========================================================
-
 class AI(commands.Cog):
 
     def __init__(self, bot):
-
         self.bot = bot
 
+        # riwayat percakapan per (guild_id, user_id) -> list[(pertanyaan, jawaban)]
         self.chat_history = defaultdict(list)
 
         self.session = None
 
-        # Statistik aktivitas
+        # Statistik aktivitas & kunci supaya tidak ada dua write bersamaan
         self.activity = load_activity()
+        self.activity_lock = asyncio.Lock()
+        self.history_lock = asyncio.Lock()
 
-        # Voice session
+        # Voice session yang sedang berjalan
         self.voice_sessions = {}
 
-        # Cache message count agar tidak terlalu sering write
-        self.save_counter = 0
+        # Anti-spam per user untuk fitur AI
+        self.last_ai_use = {}
 
+        # Cache jumlah pesan supaya tidak terlalu sering write ke disk
+        self.save_counter = 0
 
     # =====================================================
     # LOAD / UNLOAD
     # =====================================================
 
     async def cog_load(self):
-
         self.session = aiohttp.ClientSession()
 
-        logging.info("====================================")
-        logging.info("nanZ AI SYSTEM AKTIF")
-        logging.info("Gemini Model: %s", GEMINI_MODEL)
-        logging.info("Activity Tracking: AKTIF")
-        logging.info("====================================")
+        raw_history = load_history_raw()
+        for key, pairs in raw_history.items():
+            self.chat_history[key] = [tuple(pair) for pair in pairs]
 
+        # Rekonsiliasi voice: kalau bot baru restart tapi ada member yang sudah
+        # di voice channel, mulai hitung dari sekarang supaya tidak error saat leave.
+        for guild in self.bot.guilds:
+            for vc in guild.voice_channels:
+                for member in vc.members:
+                    if not member.bot:
+                        self.voice_sessions[member.id] = {
+                            "started": time.time(),
+                            "channel": vc.name,
+                        }
+
+        self.autosave.start()
+
+        logger.info("====================================")
+        logger.info("nanZ AI SYSTEM AKTIF")
+        logger.info("Gemini Model: %s", GEMINI_MODEL)
+        if FALLBACK_MODEL:
+            logger.info("Fallback Model: %s", FALLBACK_MODEL)
+        logger.info("Activity Tracking: AKTIF")
+        logger.info("====================================")
 
     async def cog_unload(self):
+        self.autosave.cancel()
 
         if self.session:
             await self.session.close()
 
-        save_activity(self.activity)
+        await self._persist()
 
+    @tasks.loop(minutes=5)
+    async def autosave(self):
+        await self._persist()
+
+    async def _persist(self):
+        async with self.activity_lock:
+            await asyncio.to_thread(save_activity, self.activity)
+
+        async with self.history_lock:
+            serializable = {
+                key: [list(pair) for pair in pairs]
+                for key, pairs in self.chat_history.items()
+                if pairs
+            }
+            await asyncio.to_thread(save_history_raw, serializable)
 
     # =====================================================
     # MEMBER ACTIVITY
     # =====================================================
 
     def get_member_activity(self, member):
-
         guild_id = str(member.guild.id)
         user_id = str(member.id)
 
@@ -129,25 +285,108 @@ class AI(commands.Cog):
             self.activity[guild_id] = {}
 
         if user_id not in self.activity[guild_id]:
-
             self.activity[guild_id][user_id] = {
                 "messages": 0,
                 "voice_seconds": 0,
                 "voice_sessions": 0,
                 "last_message": None,
-                "last_voice": None
+                "last_voice": None,
             }
 
         return self.activity[guild_id][user_id]
 
+    # =====================================================
+    # GEMINI API CALL (dengan retry + fallback model)
+    # =====================================================
+
+    async def _post_gemini(self, url, payload):
+        backoff = 2
+        for attempt in range(3):
+            try:
+                async with self.session.post(
+                    url, json=payload, timeout=aiohttp.ClientTimeout(total=30)
+                ) as resp:
+                    data = await resp.json()
+
+                    if resp.status == 200:
+                        candidates = data.get("candidates") or []
+                        if not candidates:
+                            reason = data.get("promptFeedback", {}).get(
+                                "blockReason", "tidak diketahui"
+                            )
+                            return None, f"blocked:{reason}"
+
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        text = "".join(p.get("text", "") for p in parts).strip()
+
+                        if not text:
+                            return None, "empty"
+
+                        return text, None
+
+                    if resp.status == 429:
+                        return None, "ratelimit"
+
+                    if resp.status >= 500 and attempt < 2:
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+
+                    logger.error(f"Gemini Error {resp.status}: {data}")
+                    return None, f"error:{resp.status}"
+
+            except asyncio.TimeoutError:
+                if attempt < 2:
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                return None, "timeout"
+
+            except Exception as e:
+                logger.exception("Gemini request gagal")
+                return None, f"exception:{e}"
+
+        return None, "unknown"
+
+    async def generate_content(self, contents, system_text):
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_text}]},
+            "contents": contents,
+            "generationConfig": GENERATION_CONFIG,
+            "safetySettings": SAFETY_SETTINGS,
+        }
+
+        text, err = await self._post_gemini(gemini_url(GEMINI_MODEL), payload)
+
+        # Kalau model utama kena rate limit / error server dan ada fallback, coba sekali lagi
+        if text is None and FALLBACK_MODEL and err in ("ratelimit", "timeout") or (
+            text is None and FALLBACK_MODEL and isinstance(err, str) and err.startswith("error:5")
+        ):
+            logger.warning(f"Model utama gagal ({err}), mencoba fallback {FALLBACK_MODEL}")
+            text, err = await self._post_gemini(gemini_url(FALLBACK_MODEL), payload)
+
+        return text, err
+
+    @staticmethod
+    def error_to_message(err):
+        if err is None:
+            return None
+        if err.startswith("blocked"):
+            return "⚠️ Jawaban diblokir filter keamanan Gemini. Coba ubah pertanyaanmu ya."
+        if err == "ratelimit":
+            return "⚠️ **nanZ AI sedang mencapai batas penggunaan.**\nCoba lagi beberapa saat nanti."
+        if err == "timeout":
+            return "⚠️ Server AI lambat merespons, coba lagi ya."
+        if err == "empty":
+            return "⚠️ AI tidak memberikan jawaban, coba ulangi pertanyaanmu."
+        return "⚠️ Coba lagi, server AI sedang bermasalah."
 
     # =====================================================
-    # MESSAGE TRACKING
+    # MESSAGE TRACKING + AI CHAT
     # =====================================================
 
     @commands.Cog.listener()
     async def on_message(self, message):
-
         if message.author.bot:
             return
 
@@ -157,581 +396,324 @@ class AI(commands.Cog):
         # ---------------------------------------------
         # CATAT AKTIVITAS MEMBER
         # ---------------------------------------------
-
         stats = self.get_member_activity(message.author)
-
         stats["messages"] += 1
         stats["last_message"] = int(time.time())
 
         self.save_counter += 1
-
-        # Simpan setiap 20 message
         if self.save_counter >= 20:
-
-            save_activity(self.activity)
-
+            async with self.activity_lock:
+                await asyncio.to_thread(save_activity, self.activity)
             self.save_counter = 0
-
 
         # ---------------------------------------------
         # CEK APAKAH PESAN UNTUK AI
         # ---------------------------------------------
-
         is_ai_channel = message.channel.id == AI_CHANNEL
 
-        is_mention = self.bot.user in message.mentions
+        # PENTING: pakai deteksi tag literal di isi pesan, BUKAN message.mentions.
+        # Kalau member me-reply pesan bot, Discord otomatis menambahkan bot ke
+        # message.mentions (karena notifikasi ping reply) walau member tidak
+        # benar-benar mengetik @bot. Supaya di luar channel AI bot cuma
+        # merespons kalau benar-benar di-tag (bukan sekadar dibalas), kita cek
+        # string mention literalnya langsung dari message.content.
+        is_explicit_mention = (
+            f"<@{self.bot.user.id}>" in message.content
+            or f"<@!{self.bot.user.id}>" in message.content
+        )
 
-        if not is_ai_channel and not is_mention:
+        if not is_ai_channel and not is_explicit_mention:
             return
 
+        is_mention = is_explicit_mention
 
         prompt = message.content
-
-
-        # Hilangkan mention bot
         if is_mention:
-
-            prompt = prompt.replace(
-                f"<@{self.bot.user.id}>",
-                ""
-            )
-
-            prompt = prompt.replace(
-                f"<@!{self.bot.user.id}>",
-                ""
-            )
-
+            prompt = prompt.replace(f"<@{self.bot.user.id}>", "")
+            prompt = prompt.replace(f"<@!{self.bot.user.id}>", "")
             prompt = prompt.strip()
 
+        # ---------------------------------------------
+        # GATE TOPIK INTERNAL STAFF (dicek sebelum panggil Gemini sama sekali)
+        # ---------------------------------------------
+        prompt_lower = prompt.lower()
+        is_internal_topic = any(kw in prompt_lower for kw in INTERNAL_TOPIC_KEYWORDS)
 
-        if not prompt:
+        if is_internal_topic and not self.is_crew_member(message.author):
+            await message.reply(
+                "🔒 Maaf, ini kelihatannya pembahasan internal Crew nanZ. "
+                "Cuma member dengan role **Crew nanZ** yang bisa nanya soal ini ke aku ya.",
+                mention_author=False,
+            )
             return
 
+        # ---------------------------------------------
+        # SIAPKAN LAMPIRAN GAMBAR (multimodal)
+        # ---------------------------------------------
+        user_parts = []
+        image_note = False
+
+        if prompt:
+            user_parts.append({"text": prompt})
+
+        for attachment in message.attachments:
+            if len(user_parts) - (1 if prompt else 0) >= MAX_IMAGE_PARTS:
+                break
+            if attachment.content_type and attachment.content_type.startswith("image/"):
+                try:
+                    img_bytes = await attachment.read()
+                    b64 = base64.b64encode(img_bytes).decode("utf-8")
+                    user_parts.append({
+                        "inline_data": {
+                            "mime_type": attachment.content_type,
+                            "data": b64,
+                        }
+                    })
+                    image_note = True
+                except Exception:
+                    logger.warning("Gagal membaca lampiran gambar")
+
+        if not user_parts:
+            return
+
+        # ---------------------------------------------
+        # ANTI-SPAM
+        # ---------------------------------------------
+        now = time.time()
+        last_used = self.last_ai_use.get(message.author.id, 0)
+
+        if now - last_used < AI_COOLDOWN_SECONDS:
+            try:
+                await message.add_reaction("⏳")
+            except Exception:
+                pass
+            return
+
+        self.last_ai_use[message.author.id] = now
 
         # ---------------------------------------------
         # AI RESPONSE
         # ---------------------------------------------
-
         async with message.channel.typing():
+            key = history_key(message.guild.id, message.author.id)
+            history = self.chat_history[key]
 
-            history = self.chat_history[message.author.id]
+            contents = []
+            for q, a in history[-MAX_HISTORY_TURNS:]:
+                contents.append({"role": "user", "parts": [{"text": q}]})
+                contents.append({"role": "model", "parts": [{"text": a}]})
 
-            conversation = self.system_prompt(
-                message.guild,
-                message.author
+            contents.append({"role": "user", "parts": user_parts})
+
+            system_text = await self.system_prompt(
+                message.guild, message.author, message.channel, message
             )
 
+            answer, err = await self.generate_content(contents, system_text)
 
-            # History user
-            for q, a in history[-5:]:
+            if answer is None:
+                await message.reply(self.error_to_message(err), mention_author=False)
+                return
 
-                conversation += (
-                    f"\nUser: {q}"
-                    f"\nAI: {a}"
-                )
+            history.append((prompt if prompt else "[gambar]", answer))
+            if len(history) > MAX_HISTORY_STORED:
+                del history[: len(history) - MAX_HISTORY_STORED]
 
+            await self._send_ai_answer(message, answer, image_note)
 
-            conversation += (
-                f"\nUser: {prompt}"
-                f"\nAI:"
+    async def _send_ai_answer(self, message, answer, image_note):
+        chunks = [
+            answer[i : i + EMBED_CHUNK_SIZE]
+            for i in range(0, len(answer), EMBED_CHUNK_SIZE)
+        ] or ["(kosong)"]
+
+        chunks = chunks[:MAX_EMBED_CHUNKS]
+
+        for index, chunk in enumerate(chunks):
+            embed = discord.Embed(
+                title="🤖 nanZ AI" if index == 0 else f"🤖 nanZ AI (lanjutan {index + 1})",
+                description=chunk,
+                color=0x5865F2,
             )
 
+            if index == 0:
+                footer = f"Diminta oleh {message.author.display_name}"
+                if image_note:
+                    footer += " • 📎 gambar terlampir"
+                embed.set_footer(text=footer)
 
-            payload = {
-
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": conversation
-                            }
-                        ]
-                    }
-                ]
-
-            }
-
-
-            try:
-
-                async with self.session.post(
-                    URL,
-                    json=payload
-                ) as resp:
-
-                    data = await resp.json()
-
-
-                    # ---------------------------------
-                    # GEMINI RATE LIMIT
-                    # ---------------------------------
-
-                    if resp.status == 429:
-
-                        await message.reply(
-                            "⚠️ **nanZ AI sedang mencapai batas penggunaan.**\n"
-                            "Coba lagi beberapa saat nanti.",
-                            mention_author=False
-                        )
-
-                        return
-
-
-                    if resp.status != 200:
-
-                        logging.error(
-                            f"Gemini Error {resp.status}: {data}"
-                        )
-
-                        await message.reply(
-                            "⚠️ Coba lagi, server AI sedang penuh.",
-                            mention_author=False
-                        )
-
-                        return
-
-
-                    answer = (
-                        data["candidates"][0]
-                        ["content"]
-                        ["parts"][0]
-                        ["text"]
-                    )
-
-
-                # Simpan history
-                history.append(
-                    (
-                        prompt,
-                        answer
-                    )
-                )
-
-
-                if len(history) > 10:
-                    history.pop(0)
-
-
-                # ---------------------------------
-                # EMBED RESPONSE
-                # ---------------------------------
-
-                embed = discord.Embed(
-                    title="🤖 nanZ AI",
-                    description=answer[:4000],
-                    color=0x5865F2
-                )
-
-                embed.set_footer(
-                    text=f"Diminta oleh {message.author.display_name}"
-                )
-
-
-                await message.reply(
-                    embed=embed,
-                    mention_author=False
-                )
-
-
-            except Exception as e:
-
-                logging.exception("Gemini Error")
-
-                await message.reply(
-                    f"❌ Terjadi error:\n```{e}```",
-                    mention_author=False
-                )
-
+            if index == 0:
+                await message.reply(embed=embed, mention_author=False)
+            else:
+                await message.channel.send(embed=embed)
 
     # =====================================================
     # VOICE TRACKING
     # =====================================================
 
     @commands.Cog.listener()
-    async def on_voice_state_update(
-        self,
-        member,
-        before,
-        after
-    ):
-
+    async def on_voice_state_update(self, member, before, after):
         if member.bot:
             return
 
-        # ---------------------------------------------
         # MASUK VOICE
-        # ---------------------------------------------
-
         if before.channel is None and after.channel is not None:
-
             self.voice_sessions[member.id] = {
                 "started": time.time(),
-                "channel": after.channel.name
+                "channel": after.channel.name,
             }
 
             stats = self.get_member_activity(member)
-
             stats["voice_sessions"] += 1
             stats["last_voice"] = int(time.time())
 
-            save_activity(self.activity)
-
-
-        # ---------------------------------------------
         # PINDAH VOICE
-        # ---------------------------------------------
-
         elif (
             before.channel is not None
             and after.channel is not None
             and before.channel.id != after.channel.id
         ):
-
-            # Hitung session sebelumnya
             if member.id in self.voice_sessions:
-
                 started = self.voice_sessions[member.id]["started"]
-
-                seconds = int(
-                    time.time() - started
-                )
+                seconds = int(time.time() - started)
 
                 stats = self.get_member_activity(member)
-
                 stats["voice_seconds"] += seconds
-
 
             self.voice_sessions[member.id] = {
                 "started": time.time(),
-                "channel": after.channel.name
+                "channel": after.channel.name,
             }
 
-
-        # ---------------------------------------------
         # KELUAR VOICE
-        # ---------------------------------------------
-
         elif before.channel is not None and after.channel is None:
-
             if member.id in self.voice_sessions:
-
                 started = self.voice_sessions[member.id]["started"]
-
-                seconds = int(
-                    time.time() - started
-                )
+                seconds = int(time.time() - started)
 
                 stats = self.get_member_activity(member)
-
                 stats["voice_seconds"] += seconds
 
                 del self.voice_sessions[member.id]
 
-
-            save_activity(self.activity)
-
+        async with self.activity_lock:
+            await asyncio.to_thread(save_activity, self.activity)
 
     # =====================================================
     # FORMAT WAKTU
     # =====================================================
 
     def format_seconds(self, seconds):
-
         seconds = int(seconds)
-
         days = seconds // 86400
         seconds %= 86400
-
         hours = seconds // 3600
         seconds %= 3600
-
         minutes = seconds // 60
 
         if days:
             return f"{days}h {hours}j"
-
         if hours:
             return f"{hours}j {minutes}m"
-
         return f"{minutes}m"
-
 
     # =====================================================
     # SERVER STATISTICS
     # =====================================================
 
     def get_server_statistics(self, guild):
-
-        # ---------------------------------------------
-        # MEMBER STATUS
-        # ---------------------------------------------
-
-        online = 0
-        idle = 0
-        dnd = 0
-        offline = 0
+        online = idle = dnd = offline = 0
 
         for member in guild.members:
-
             if member.bot:
                 continue
-
             status = member.status
-
             if status == discord.Status.online:
                 online += 1
-
             elif status == discord.Status.idle:
                 idle += 1
-
             elif status == discord.Status.dnd:
                 dnd += 1
-
             else:
                 offline += 1
 
-
-        # ---------------------------------------------
-        # VOICE
-        # ---------------------------------------------
-
         voice_members = []
-
         for vc in guild.voice_channels:
-
             for member in vc.members:
-
-                if member.bot:
-                    continue
-
-                voice_members.append(
-                    f"{member.display_name} → {vc.name}"
-                )
-
-
-        # ---------------------------------------------
-        # ROLE STATISTICS
-        # ---------------------------------------------
+                if not member.bot:
+                    voice_members.append(f"{member.display_name} → {vc.name}")
 
         role_stats = []
-
-        for role in sorted(
-            guild.roles,
-            key=lambda r: len(r.members),
-            reverse=True
-        ):
-
+        for role in sorted(guild.roles, key=lambda r: len(r.members), reverse=True):
             if role.is_default():
                 continue
+            count = len([m for m in role.members if not m.bot])
+            role_stats.append(f"{role.name}: {count}")
 
-            count = len([
-                m for m in role.members
-                if not m.bot
-            ])
-
-            role_stats.append(
-                f"{role.name}: {count}"
-            )
-
-
-        # ---------------------------------------------
-        # ACTIVITY DATABASE
-        # ---------------------------------------------
-
-        guild_activity = self.activity.get(
-            str(guild.id),
-            {}
-        )
-
-
+        guild_activity = self.activity.get(str(guild.id), {})
         activity_members = []
 
-
         for member in guild.members:
-
             if member.bot:
                 continue
 
             data = guild_activity.get(
                 str(member.id),
-                {
-                    "messages": 0,
-                    "voice_seconds": 0,
-                    "voice_sessions": 0,
-                    "last_message": None,
-                    "last_voice": None
-                }
+                {"messages": 0, "voice_seconds": 0, "voice_sessions": 0,
+                 "last_message": None, "last_voice": None},
             )
 
+            messages = data.get("messages", 0)
+            voice_seconds = data.get("voice_seconds", 0)
 
-            messages = data.get(
-                "messages",
-                0
-            )
-
-            voice_seconds = data.get(
-                "voice_seconds",
-                0
-            )
-
-            # Tambahkan waktu voice yang sedang berlangsung
             if member.id in self.voice_sessions:
+                started = self.voice_sessions[member.id]["started"]
+                voice_seconds += int(time.time() - started)
 
-                started = self.voice_sessions[
-                    member.id
-                ]["started"]
+            activity_score = messages + (voice_seconds / 60)
 
-                voice_seconds += int(
-                    time.time() - started
-                )
+            activity_members.append({
+                "member": member,
+                "messages": messages,
+                "voice_seconds": voice_seconds,
+                "score": activity_score,
+            })
 
-
-            activity_score = (
-                messages
-                + (voice_seconds / 60)
-            )
-
-
-            activity_members.append(
-                {
-                    "member": member,
-                    "messages": messages,
-                    "voice_seconds": voice_seconds,
-                    "score": activity_score
-                }
-            )
-
-
-        # ---------------------------------------------
-        # TOP CHAT
-        # ---------------------------------------------
-
-        top_chat = sorted(
-            activity_members,
-            key=lambda x: x["messages"],
-            reverse=True
-        )[:15]
-
-
-        top_chat_text = []
-
-        for index, data in enumerate(
-            top_chat,
-            start=1
-        ):
-
-            top_chat_text.append(
-                f"{index}. "
-                f"{data['member'].display_name} "
-                f"— {data['messages']} chat"
-            )
-
-
-        # ---------------------------------------------
-        # TOP VOICE
-        # ---------------------------------------------
-
-        top_voice = sorted(
-            activity_members,
-            key=lambda x: x["voice_seconds"],
-            reverse=True
-        )[:15]
-
-
-        top_voice_text = []
-
-        for index, data in enumerate(
-            top_voice,
-            start=1
-        ):
-
-            top_voice_text.append(
-                f"{index}. "
-                f"{data['member'].display_name} "
-                f"— {self.format_seconds(data['voice_seconds'])}"
-            )
-
-
-        # ---------------------------------------------
-        # TOP ACTIVE
-        # ---------------------------------------------
-
-        top_active = sorted(
-            activity_members,
-            key=lambda x: x["score"],
-            reverse=True
-        )[:15]
-
-
-        top_active_text = []
-
-        for index, data in enumerate(
-            top_active,
-            start=1
-        ):
-
-            top_active_text.append(
-                f"{index}. "
-                f"{data['member'].display_name} "
-                f"— {data['messages']} chat, "
-                f"{self.format_seconds(data['voice_seconds'])} voice"
-            )
-
-
-        # ---------------------------------------------
-        # CHANNEL STATISTICS
-        # ---------------------------------------------
-
-        text_channels = []
-
-        for channel in guild.text_channels:
-
-            text_channels.append(
-                channel.name
-            )
-
-
-        voice_channels = []
-
-        for channel in guild.voice_channels:
-
-            voice_channels.append(
-                f"{channel.name}: {len(channel.members)} orang"
-            )
-
-
-        # ---------------------------------------------
-        # STAFF
-        # ---------------------------------------------
-
-        staff_members = []
-
-        staff_keywords = [
-            "guru besar",
-            "owner",
-            "admin",
-            "moderator",
-            "mod",
-            "pembina",
-            "ketua",
-            "wakil ketua",
-            "osis",
-            "staff",
-            "developer",
-            "dev"
+        top_chat = sorted(activity_members, key=lambda x: x["messages"], reverse=True)[:15]
+        top_chat_text = [
+            f"{i}. {d['member'].display_name} — {d['messages']} chat"
+            for i, d in enumerate(top_chat, start=1)
         ]
 
+        top_voice = sorted(activity_members, key=lambda x: x["voice_seconds"], reverse=True)[:15]
+        top_voice_text = [
+            f"{i}. {d['member'].display_name} — {self.format_seconds(d['voice_seconds'])}"
+            for i, d in enumerate(top_voice, start=1)
+        ]
 
+        top_active = sorted(activity_members, key=lambda x: x["score"], reverse=True)[:15]
+        top_active_text = [
+            f"{i}. {d['member'].display_name} — {d['messages']} chat, "
+            f"{self.format_seconds(d['voice_seconds'])} voice"
+            for i, d in enumerate(top_active, start=1)
+        ]
+
+        text_channels = [c.name for c in guild.text_channels]
+        voice_channels = [
+            f"{c.name}: {len(c.members)} orang" for c in guild.voice_channels
+        ]
+
+        staff_keywords = [
+            "guru besar", "owner", "admin", "moderator", "mod", "pembina",
+            "ketua", "wakil ketua", "osis", "staff", "developer", "dev",
+        ]
+
+        staff_members = []
         for member in guild.members:
-
             if member.bot:
                 continue
 
-            role_names = [
-                role.name.lower()
-                for role in member.roles
-            ]
-
+            role_names = [role.name.lower() for role in member.roles]
             is_staff = any(
                 keyword in role_name
                 for role_name in role_names
@@ -739,275 +721,275 @@ class AI(commands.Cog):
             )
 
             if is_staff:
+                data = guild_activity.get(str(member.id), {"messages": 0, "voice_seconds": 0})
+                staff_members.append({
+                    "member": member,
+                    "messages": data.get("messages", 0),
+                    "voice": data.get("voice_seconds", 0),
+                })
 
-                data = guild_activity.get(
-                    str(member.id),
-                    {
-                        "messages": 0,
-                        "voice_seconds": 0
-                    }
-                )
+        staff_members.sort(key=lambda x: x["messages"] + x["voice"] / 60, reverse=True)
 
-                staff_members.append(
-                    {
-                        "member": member,
-                        "messages": data.get(
-                            "messages",
-                            0
-                        ),
-                        "voice": data.get(
-                            "voice_seconds",
-                            0
-                        )
-                    }
-                )
-
-
-        staff_members.sort(
-            key=lambda x: (
-                x["messages"]
-                + x["voice"] / 60
-            ),
-            reverse=True
-        )
-
-
-        staff_text = []
-
-        for staff in staff_members:
-
-            member = staff["member"]
-
-            status = str(
-                member.status
-            ).replace(
-                "dnd",
-                "dnd"
-            )
-
-            staff_text.append(
-                f"{member.display_name} "
-                f"({status}) — "
-                f"{staff['messages']} chat, "
-                f"{self.format_seconds(staff['voice'])} voice"
-            )
-
-
-        # ---------------------------------------------
-        # RETURN
-        # ---------------------------------------------
+        staff_text = [
+            f"{s['member'].display_name} ({s['member'].status}) — "
+            f"{s['messages']} chat, {self.format_seconds(s['voice'])} voice"
+            for s in staff_members
+        ]
 
         return {
             "total_members": guild.member_count,
-            "human_members": len([
-                m for m in guild.members
-                if not m.bot
-            ]),
-            "bots": len([
-                m for m in guild.members
-                if m.bot
-            ]),
-
+            "human_members": len([m for m in guild.members if not m.bot]),
+            "bots": len([m for m in guild.members if m.bot]),
             "online": online,
             "idle": idle,
             "dnd": dnd,
             "offline": offline,
-
             "voice_count": len(voice_members),
-
             "voice_members": voice_members[:30],
-
             "roles": role_stats,
-
             "top_chat": top_chat_text,
-
             "top_voice": top_voice_text,
-
             "top_active": top_active_text,
-
             "text_channels": text_channels,
-
             "voice_channels": voice_channels,
-
-            "staff": staff_text
+            "staff": staff_text,
         }
-
 
     # =====================================================
     # SYSTEM PROMPT
     # =====================================================
 
-    def system_prompt(self, guild, member):
+    # =====================================================
+    # KONTEKS SITUASIONAL (percakapan, pin, & info server)
+    # =====================================================
 
-        stats = self.get_server_statistics(
-            guild
-        )
+    async def get_recent_channel_context(self, channel, exclude_id=None, limit=8):
+        """Ambil beberapa pesan terakhir di channel supaya AI paham obrolan yang
+        sedang berlangsung, bukan cuma riwayat 1-on-1 dengan user itu sendiri."""
+        lines = []
+        try:
+            async for msg in channel.history(limit=limit + 1):
+                if msg.id == exclude_id:
+                    continue
+                content = msg.content.strip()
+                if not content:
+                    continue
+                if msg.author.bot and msg.author.id != self.bot.user.id:
+                    continue
+                tag = "nanZ AI" if msg.author.id == self.bot.user.id else msg.author.display_name
+                lines.append(f"{tag}: {content[:200]}")
+                if len(lines) >= limit:
+                    break
+        except Exception:
+            logger.warning("Gagal mengambil histori channel untuk konteks")
+        lines.reverse()
+        return lines
 
+    async def get_reply_context(self, message):
+        """Kalau pesan user adalah balasan ke pesan lain, ambil isi pesan yang dibalas."""
+        if not message.reference:
+            return None
+        try:
+            replied = message.reference.resolved
+            if replied is None:
+                replied = await message.channel.fetch_message(message.reference.message_id)
+            if replied and replied.content:
+                author = "nanZ AI" if replied.author.id == self.bot.user.id else replied.author.display_name
+                return f"{author}: {replied.content[:300]}"
+        except Exception:
+            logger.warning("Gagal mengambil pesan yang dibalas")
+        return None
 
-        roles = "\n".join(
-            f"- {role}"
-            for role in stats["roles"]
-        )
+    async def get_pinned_context(self, channel, limit=5):
+        try:
+            pins = await channel.pins()
+            return [f"{p.author.display_name}: {p.content[:150]}" for p in pins[:limit] if p.content]
+        except Exception:
+            return []
 
-        top_chat = "\n".join(
-            stats["top_chat"]
-        )
+    def is_crew_member(self, member):
+        """Cek apakah member punya role 'Crew nanZ' (atau varian namanya)."""
+        return any(CREW_ROLE_KEYWORD in role.name.lower() for role in member.roles)
 
-        top_voice = "\n".join(
-            stats["top_voice"]
-        )
+    async def get_guild_context(self, guild):
+        """Info level-server: boost, verifikasi, event kalender, member baru — supaya
+        AI bisa 'baca situasi' server secara keseluruhan, bukan cuma angka chat/voice."""
+        try:
+            created = guild.created_at.strftime("%d %B %Y")
+        except Exception:
+            created = "tidak diketahui"
 
-        top_active = "\n".join(
-            stats["top_active"]
-        )
+        events = []
+        try:
+            # Fetch langsung ke API biar datanya selalu terbaru (bukan cache lama),
+            # ini yang bikin bot bisa "baca" event kalender server secara akurat.
+            scheduled = await guild.fetch_scheduled_events()
+        except Exception:
+            scheduled = list(guild.scheduled_events)
 
-        voice_members = "\n".join(
-            f"- {x}"
-            for x in stats["voice_members"]
-        )
+        for event in scheduled:
+            try:
+                start = event.start_time.strftime("%d %b %Y %H:%M") if event.start_time else "?"
+                end = f" s/d {event.end_time.strftime('%H:%M')}" if event.end_time else ""
 
-        voice_channels = "\n".join(
-            f"- {x}"
-            for x in stats["voice_channels"]
-        )
+                if event.location:
+                    location = event.location
+                elif event.channel:
+                    location = event.channel.name
+                else:
+                    location = "Tidak diketahui"
 
-        staff = "\n".join(
-            f"- {x}"
-            for x in stats["staff"]
-        )
+                desc = f" — {event.description[:120]}" if event.description else ""
+                status = event.status.name.lower()
 
+                events.append(f"{event.name} | {start}{end} | @ {location} | status: {status}{desc}")
+            except Exception:
+                continue
+
+        recent_joins = []
+        try:
+            humans = [m for m in guild.members if not m.bot and m.joined_at]
+            humans.sort(key=lambda m: m.joined_at, reverse=True)
+            for m in humans[:5]:
+                recent_joins.append(f"{m.display_name} (bergabung {m.joined_at.strftime('%d %b %Y')})")
+        except Exception:
+            pass
+
+        return {
+            "description": guild.description or "Tidak ada deskripsi server.",
+            "created": created,
+            "boosts": guild.premium_subscription_count or 0,
+            "boost_tier": guild.premium_tier or 0,
+            "verification": str(guild.verification_level).replace("_", " ").title(),
+            "emoji_count": len(guild.emojis),
+            "events": events,
+            "recent_joins": recent_joins,
+        }
+
+    async def system_prompt(self, guild, member, channel=None, message=None):
+        stats = self.get_server_statistics(guild)
+        guild_info = await self.get_guild_context(guild)
+
+        is_crew = self.is_crew_member(member)
+
+        roles = "\n".join(f"- {r}" for r in stats["roles"])
+        top_chat = "\n".join(stats["top_chat"])
+        top_voice = "\n".join(stats["top_voice"])
+        top_active = "\n".join(stats["top_active"])
+        voice_members = "\n".join(f"- {x}" for x in stats["voice_members"])
+        voice_channels = "\n".join(f"- {x}" for x in stats["voice_channels"])
+
+        # Data staff cuma ditaruh di prompt kalau penanyanya sendiri Crew nanZ.
+        # Ini bukan cuma instruksi ke AI buat "jangan bilang" — datanya memang
+        # tidak pernah dikirim ke Gemini kalau penanya bukan crew, jadi lebih aman.
+        if is_crew:
+            staff = "\n".join(f"- {x}" for x in stats["staff"]) or "Belum terdeteksi staff."
+        else:
+            staff = "🔒 Disembunyikan — hanya bisa dilihat oleh Crew nanZ."
+
+        events = "\n".join(f"- {e}" for e in guild_info["events"])
+        recent_joins = "\n".join(f"- {j}" for j in guild_info["recent_joins"])
+
+        recent_chat = []
+        reply_context = None
+        pinned = []
+
+        if channel is not None:
+            recent_chat = await self.get_recent_channel_context(
+                channel, exclude_id=message.id if message else None
+            )
+            pinned = await self.get_pinned_context(channel)
+
+        if message is not None:
+            reply_context = await self.get_reply_context(message)
+
+        recent_chat_text = "\n".join(recent_chat)
+        pinned_text = "\n".join(f"- {p}" for p in pinned)
 
         return f"""
-Kamu adalah nanZ AI.
+Kamu adalah nanZ AI, AI resmi milik Discord nanZ Server.
+Kamu bisa memahami teks maupun gambar yang dikirim member (multimodal), dan kamu
+punya akses penuh untuk membaca situasi server secara real-time: obrolan yang
+sedang berlangsung, pesan yang dipin, event terjadwal, member baru, sampai
+statistik chat/voice. Gunakan semua ini supaya jawabanmu terasa "nyambung"
+dengan apa yang sedang terjadi di server, bukan cuma jawaban generik.
 
-Kamu adalah AI resmi milik Discord nanZ Server.
+==================================================
+INFO UMUM SERVER
+==================================================
+Deskripsi: {guild_info["description"]}
+Server Dibuat: {guild_info["created"]}
+Boost: {guild_info["boosts"]} (Level {guild_info["boost_tier"]})
+Level Verifikasi: {guild_info["verification"]}
+Jumlah Emoji Kustom: {guild_info["emoji_count"]}
+
+EVENT TERJADWAL:
+{events if events else "Tidak ada event terjadwal."}
+
+MEMBER YANG BARU BERGABUNG:
+{recent_joins if recent_joins else "Tidak ada data member baru."}
 
 ==================================================
 IDENTITAS SERVER
 ==================================================
-
-Nama Server:
-nanZ Server
-
-Tanggal Berdiri:
-18 Agustus 2025
-
-Tema:
-School Community / Sekolahan
-
-Owner:
-Kim / Guru Besar
-
-Developer Bot:
-Erlan / Tom
+Nama Server: nanZ Server
+Tanggal Berdiri: 18 Agustus 2025
+Tema: School Community / Sekolahan
+Owner: Kim / Guru Besar
+Developer Bot: Erlan / Tom
 
 ==================================================
-AKSES STATISTIK SERVER
+AKSES STATISTIK SERVER (real-time, jangan mengarang)
 ==================================================
+Total Member: {stats["total_members"]}
+Member Manusia: {stats["human_members"]}
+Bot: {stats["bots"]}
+Online: {stats["online"]} | Idle: {stats["idle"]} | DND: {stats["dnd"]} | Offline: {stats["offline"]}
+Sedang Voice: {stats["voice_count"]}
 
-Kamu memiliki akses terhadap statistik server
-yang dikirimkan sistem secara real-time.
-
-Gunakan DATA DI BAWAH INI sebagai sumber utama
-ketika menjawab pertanyaan tentang server.
-
-JANGAN MENGARANG DATA.
-
-==================================================
-STATISTIK MEMBER
-==================================================
-
-Total Member:
-{stats["total_members"]}
-
-Member Manusia:
-{stats["human_members"]}
-
-Bot:
-{stats["bots"]}
-
-Online:
-{stats["online"]}
-
-Idle:
-{stats["idle"]}
-
-Do Not Disturb:
-{stats["dnd"]}
-
-Offline:
-{stats["offline"]}
-
-Sedang Voice:
-{stats["voice_count"]}
-
-==================================================
-MEMBER YANG SEDANG VOICE
-==================================================
-
+MEMBER YANG SEDANG VOICE:
 {voice_members if voice_members else "Tidak ada member di voice."}
 
-==================================================
-SEMUA ROLE SERVER
-==================================================
-
+SEMUA ROLE SERVER:
 {roles if roles else "Belum ada role."}
 
-==================================================
-TOP MEMBER BERDASARKAN CHAT
-==================================================
-
+TOP MEMBER BERDASARKAN CHAT:
 {top_chat if top_chat else "Belum ada data chat."}
 
-==================================================
-TOP MEMBER BERDASARKAN WAKTU VOICE
-==================================================
-
+TOP MEMBER BERDASARKAN WAKTU VOICE:
 {top_voice if top_voice else "Belum ada data voice."}
 
-==================================================
-MEMBER PALING AKTIF
-==================================================
-
+MEMBER PALING AKTIF:
 {top_active if top_active else "Belum ada data aktivitas."}
 
-==================================================
-STATISTIK VOICE CHANNEL
-==================================================
-
+STATISTIK VOICE CHANNEL:
 {voice_channels if voice_channels else "Tidak ada voice channel."}
 
-==================================================
-STAFF SERVER
-==================================================
+STAFF SERVER:
+{staff}
 
-{staff if staff else "Belum terdeteksi staff."}
+==================================================
+OBROLAN TERAKHIR DI CHANNEL INI (konteks percakapan)
+==================================================
+{recent_chat_text if recent_chat_text else "Belum ada obrolan sebelumnya di channel ini."}
+
+PESAN YANG DIPIN DI CHANNEL INI:
+{pinned_text if pinned_text else "Tidak ada pesan yang dipin."}
+
+{f"USER MEMBALAS PESAN INI:\n{reply_context}" if reply_context else ""}
 
 ==================================================
 USER YANG SEDANG BERBICARA
 ==================================================
-
-Nama:
-{member.display_name}
-
-User ID:
-{member.id}
-
-Status:
-{member.status}
-
-Role User:
-
-{", ".join(
-    role.name
-    for role in member.roles
-    if not role.is_default()
-) or "Tidak memiliki role khusus"}
+Nama: {member.display_name}
+User ID: {member.id}
+Status: {member.status}
+Role User: {", ".join(r.name for r in member.roles if not r.is_default()) or "Tidak memiliki role khusus"}
+Status Crew nanZ: {"YA, dia Crew nanZ" if is_crew else "BUKAN Crew nanZ"}
 
 ==================================================
 INFORMASI EVENT nanZ
 ==================================================
-
 - Girls Corner
 - Nobar
 - Podcast
@@ -1017,35 +999,158 @@ INFORMASI EVENT nanZ
 ==================================================
 ATURAN MENJAWAB
 ==================================================
-
-1. Jangan pernah mengaku sebagai ChatGPT.
-2. Jangan pernah mengaku sebagai Gemini.
-3. Jika ditanya siapa kamu, jawab nanZ AI.
-4. Gunakan Bahasa Indonesia.
-5. Gaya santai seperti anggota komunitas.
-6. Jika ditanya statistik server, gunakan data real-time.
-7. Jangan mengarang nama member.
-8. Jangan mengarang jumlah member.
-9. Jangan mengarang role.
-10. Jangan mengarang aktivitas.
-11. Jika data aktivitas belum tersedia, katakan bahwa
-    sistem baru mulai mencatat aktivitas tersebut.
-12. Jika ditanya member paling aktif, gunakan ranking
-    aktivitas yang tersedia.
-13. Jika ditanya staff paling aktif, gunakan data staff.
-14. Jika ditanya role tertentu, gunakan statistik role.
-15. Jika ditanya siapa yang sedang VC, gunakan daftar
-    voice member saat ini.
-16. Jangan membocorkan API key atau konfigurasi internal.
+1. Jangan pernah mengaku sebagai ChatGPT atau Gemini. Kamu adalah nanZ AI.
+2. Gunakan Bahasa Indonesia dengan gaya santai seperti anggota komunitas.
+3. Jika ditanya statistik server, gunakan data real-time di atas — jangan mengarang
+   nama, jumlah member, role, atau aktivitas.
+4. Jika data aktivitas belum tersedia, katakan sistem baru mulai mencatat.
+5. Jika ada gambar yang dikirim, deskripsikan dan jawab sesuai isi gambar tersebut.
+6. Jangan membocorkan API key atau konfigurasi internal.
+7. Manfaatkan konteks obrolan terakhir & pesan yang dipin kalau relevan dengan
+   pertanyaan, tapi jangan asal nyambung-nyambungkan kalau memang tidak nyambung.
+8. Kalau user membalas pesan tertentu, pahami konteks itu sebelum menjawab.
+9. Kalau ditanya soal event kalender, boost, atau member baru, gunakan data real-time di atas.
+10. PENTING: kalau "Status Crew nanZ" di atas BUKAN Crew nanZ, dan pertanyaannya
+    menyangkut urusan internal staff/crew (misalnya rapat staff, keputusan internal,
+    data staff, atau pembahasan yang memang sifatnya internal), TOLAK dengan sopan.
+    Bilang itu pembahasan internal Crew nanZ dan cuma crew yang bisa akses. Jangan
+    tetap menjawab isi pertanyaannya walau kamu tahu jawabannya.
 """
-    
+
+    # =====================================================
+    # SLASH COMMANDS
+    # =====================================================
+
+    @app_commands.command(name="leaderboard", description="Lihat leaderboard aktivitas server (chat/voice/aktif)")
+    async def leaderboard(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        view = LeaderboardView(self, interaction.guild)
+        await interaction.followup.send(embed=view.build_embed(), view=view)
+
+    @app_commands.command(name="profil", description="Lihat statistik aktivitas seorang member")
+    @app_commands.describe(member="Member yang mau dilihat (kosongkan untuk diri sendiri)")
+    async def profil(self, interaction: discord.Interaction, member: discord.Member = None):
+        member = member or interaction.user
+
+        if member.bot:
+            await interaction.response.send_message("Bot tidak memiliki statistik aktivitas.", ephemeral=True)
+            return
+
+        data = self.get_member_activity(member)
+        voice_seconds = data["voice_seconds"]
+
+        if member.id in self.voice_sessions:
+            voice_seconds += int(time.time() - self.voice_sessions[member.id]["started"])
+
+        stats = self.get_server_statistics(interaction.guild)
+        rank = next(
+            (i + 1 for i, line in enumerate(stats["top_active"]) if member.display_name in line),
+            None,
+        )
+
+        embed = discord.Embed(
+            title=f"📊 Statistik {member.display_name}",
+            color=member.color if member.color.value else 0x5865F2,
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.add_field(name="💬 Pesan", value=str(data["messages"]), inline=True)
+        embed.add_field(name="🎙️ Waktu Voice", value=self.format_seconds(voice_seconds), inline=True)
+        embed.add_field(
+            name="🏆 Ranking Aktif",
+            value=f"#{rank}" if rank else "Belum masuk top 15",
+            inline=True,
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="resetchat", description="Hapus riwayat percakapanmu dengan nanZ AI")
+    async def resetchat(self, interaction: discord.Interaction):
+        key = history_key(interaction.guild.id, interaction.user.id)
+        self.chat_history.pop(key, None)
+        await interaction.response.send_message(
+            "✅ Riwayat percakapanmu dengan nanZ AI sudah dihapus.", ephemeral=True
+        )
+
+    @app_commands.command(name="vc", description="Lihat siapa saja yang sedang di voice channel")
+    async def vc(self, interaction: discord.Interaction):
+        stats = self.get_server_statistics(interaction.guild)
+
+        embed = discord.Embed(
+            title="🎙️ Sedang di Voice",
+            description="\n".join(f"- {x}" for x in stats["voice_members"]) or "Tidak ada member di voice.",
+            color=0x5865F2,
+        )
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="serverinfo", description="Lihat situasi server secara real-time")
+    async def serverinfo(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        guild = interaction.guild
+        info = await self.get_guild_context(guild)
+
+        embed = discord.Embed(
+            title=f"🏫 Situasi {guild.name}",
+            description=info["description"],
+            color=0x5865F2,
+        )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+
+        embed.add_field(name="📅 Dibuat", value=info["created"], inline=True)
+        embed.add_field(name="🚀 Boost", value=f"{info['boosts']} (Lv.{info['boost_tier']})", inline=True)
+        embed.add_field(name="🛡️ Verifikasi", value=info["verification"], inline=True)
+        embed.add_field(
+            name="🗓️ Event Terjadwal",
+            value="\n".join(info["events"]) if info["events"] else "Tidak ada.",
+            inline=False,
+        )
+        embed.add_field(
+            name="🆕 Member Baru",
+            value="\n".join(info["recent_joins"]) if info["recent_joins"] else "Tidak ada data.",
+            inline=False,
+        )
+
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="events", description="Lihat event terjadwal di kalender server")
+    async def events(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        guild = interaction.guild
+
+        try:
+            scheduled = await guild.fetch_scheduled_events()
+        except Exception:
+            scheduled = list(guild.scheduled_events)
+
+        if not scheduled:
+            await interaction.followup.send(
+                embed=discord.Embed(
+                    title="🗓️ Kalender Event nanZ",
+                    description="Belum ada event yang dijadwalkan.",
+                    color=0x5865F2,
+                )
+            )
+            return
+
+        embed = discord.Embed(title="🗓️ Kalender Event nanZ", color=0x5865F2)
+
+        for event in scheduled[:10]:
+            start = event.start_time.strftime("%d %b %Y, %H:%M") if event.start_time else "?"
+            location = event.location or (event.channel.name if event.channel else "Tidak diketahui")
+            value = f"🕒 {start}\n📍 {location}"
+            if event.description:
+                value += f"\n{event.description[:150]}"
+            if getattr(event, "url", None):
+                value += f"\n[Lihat event]({event.url})"
+
+            embed.add_field(name=f"📌 {event.name}", value=value, inline=False)
+
+        await interaction.followup.send(embed=embed)
+
 
 # =========================================================
 # SETUP
 # =========================================================
 
 async def setup(bot):
-
-    await bot.add_cog(
-        AI(bot)
-    )
+    await bot.add_cog(AI(bot))
