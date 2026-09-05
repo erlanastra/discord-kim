@@ -426,6 +426,12 @@ class AI(commands.Cog):
         self.save_counter = 0
 
 
+    async def _run_blocking(self, func, *args):
+        """Python 3.8-compatible replacement for asyncio.to_thread()."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, func, *args)
+
+
     # =====================================================
     # LOAD / UNLOAD
     # =====================================================
@@ -512,7 +518,7 @@ class AI(commands.Cog):
 
         async with self.activity_lock:
 
-            await asyncio.to_thread(
+            await self._run_blocking(
                 save_activity,
                 self.activity
             )
@@ -532,7 +538,7 @@ class AI(commands.Cog):
                 if pairs
             }
 
-            await asyncio.to_thread(
+            await self._run_blocking(
                 save_history_raw,
                 serializable
             )
@@ -899,7 +905,7 @@ class AI(commands.Cog):
 
             async with self.activity_lock:
 
-                await asyncio.to_thread(
+                await self._run_blocking(
                     save_activity,
                     self.activity
                 )
@@ -1421,7 +1427,7 @@ class AI(commands.Cog):
 
         async with self.activity_lock:
 
-            await asyncio.to_thread(
+            await self._run_blocking(
                 save_activity,
                 self.activity
             )
