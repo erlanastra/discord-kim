@@ -318,6 +318,7 @@ class StaffAttendance(commands.Cog):
                 reverse=True
             )
 
+            # Buat satu blok data untuk setiap staff.
             result_lines = []
 
             for rank, (m_id, data) in enumerate(ranked, start=1):
@@ -339,18 +340,64 @@ class StaffAttendance(commands.Cog):
                     f"   > 🟤 Izin Seharian: **{data['izin_seharian']}**"
                 )
 
-            full_text = embed.description + "\n\n" + "\n\n".join(result_lines)
+            # Discord membatasi description embed sekitar 4096 karakter.
+            # Pecah otomatis agar SEMUA staff tetap tampil.
+            MAX_CHARS = 3800
+            chunks = []
+            current_chunk = ""
 
-            # Discord embed description maksimal 4096 karakter.
-            if len(full_text) > 4000:
-                full_text = full_text[:3997] + "..."
+            for line in result_lines:
+                separator = "\n\n" if current_chunk else ""
 
-            embed.description = full_text
+                if len(current_chunk) + len(separator) + len(line) > MAX_CHARS:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    current_chunk = line
+                else:
+                    current_chunk += separator + line
 
-        embed.set_footer(
-            text="Nilai lebih tinggi = aktivitas absensi lebih baik | Gunakan untuk evaluasi akhir bulan nanZ."
-        )
-        await ctx.send(embed=embed)
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            total_pages = len(chunks)
+
+            # Embed pertama: informasi rekap + halaman pertama.
+            first_embed = discord.Embed(
+                title=f"📈 Rekap Evaluasi Bulanan Staff ({target_prefix})",
+                description=(
+                    f"Akumulasi absensi bulan **{bulan}/{tahun}**.\n\n"
+                    f"**Sistem Poin:**\n"
+                    f"🟢 Tepat Waktu `{POINTS['tepat_waktu']}`\n"
+                    f"🟠 Telat `{POINTS['telat']}`\n"
+                    f"🟡 Izin Setengah Hari `{POINTS['izin_sebagian']}`\n"
+                    f"🟤 Izin Seharian `{POINTS['izin_seharian']}`\n\n"
+                    f"👥 **Total Staff Tercatat: {len(ranked)} orang**\n\n"
+                    f"{chunks[0]}"
+                ),
+                color=discord.Color.dark_blue()
+            )
+
+            first_embed.set_footer(
+                text=f"Halaman 1/{total_pages} • Nilai lebih tinggi = aktivitas absensi lebih baik"
+            )
+
+            await ctx.send(embed=first_embed)
+
+            # Embed berikutnya untuk staff yang belum tertampung di halaman pertama.
+            for page, chunk in enumerate(chunks[1:], start=2):
+                next_embed = discord.Embed(
+                    title=f"📈 Rekap Evaluasi Bulanan Staff ({target_prefix})",
+                    description=chunk,
+                    color=discord.Color.dark_blue()
+                )
+
+                next_embed.set_footer(
+                    text=f"Halaman {page}/{total_pages} • Nilai lebih tinggi = aktivitas absensi lebih baik"
+                )
+
+                await ctx.send(embed=next_embed)
+
+        return
 
     # ==========================================
     # COMMAND: HELP ABSENSI
