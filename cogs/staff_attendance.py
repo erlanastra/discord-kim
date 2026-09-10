@@ -209,6 +209,7 @@ class StaffAttendance(commands.Cog):
     # ==========================================
     # COMMAND: REKAP BULANAN (EVALUASI)
     # ==========================================
+
     @commands.command(name="rekapbulanan")
     async def rekap_bulanan(self, ctx, bulan: str = None, tahun: str = None):
         if not await self.check_channel(ctx):
@@ -222,13 +223,20 @@ class StaffAttendance(commands.Cog):
         now = self.get_wib_time()
         if not bulan:
             bulan = now.strftime("%m")
+        else:
+            bulan = bulan.zfill(2) # Memastikan input "9" menjadi "09"
+
         if not tahun:
             tahun = now.strftime("%Y")
 
         target_prefix = f"{tahun}-{bulan}"
+        
+        # Muat ulang data terbaru langsung dari file JSON agar terbaca real-time
+        attendance_data = self.load_data() if hasattr(self, 'load_data') else self.attendance_data
+        
         summary = {}
 
-        for date_str, records in self.attendance_data.items():
+        for date_str, records in attendance_data.items():
             if date_str.startswith(target_prefix):
                 for m_id, info in records.items():
                     if m_id not in summary:
@@ -249,24 +257,30 @@ class StaffAttendance(commands.Cog):
 
         embed = discord.Embed(
             title=f"📈 Rekap Evaluasi Bulanan Staff ({target_prefix})",
-            description=f"Akumulasi data absensi untuk bulan **{bulan}** tahun **{tahun}**.",
             color=discord.Color.dark_blue()
         )
 
         if not summary:
-            embed.description += "\n\n*Tidak ada data absensi yang tercatat pada periode tersebut.*"
+            embed.description = f"Akumulasi data absensi untuk bulan **{bulan}** tahun **{tahun}**.\n\n*Tidak ada data absensi yang tercatat pada periode tersebut.*"
         else:
             result_lines = []
             for m_id, data in summary.items():
                 line = (
                     f"👤 <@{m_id}> (`{data['name']}`)\n"
-                    f" 🟢 Tepat Waktu: **{data['tepat_waktu']}** | "
-                    f" 🟠 Telat: **{data['telat']}** | "
-                    f" 🟡 Izin: **{data['izin']}**"
+                    f"🟢 Tepat Waktu: **{data['tepat_waktu']}** | "
+                    f"🟠 Telat: **{data['telat']}** | "
+                    f"🟡 Izin: **{data['izin']}**\n"
                 )
                 result_lines.append(line)
             
-            embed.add_field(name="Ringkasan Performa Staff", value="\n\n".join(result_lines), inline=False)
+            # Masukkan ke description agar muat hingga 4096 karakter
+            full_text = f"Akumulasi data absensi untuk bulan **{bulan}** tahun **{tahun}**.\n\n" + "\n".join(result_lines)
+            
+            # Jika teksnya masih sangat panjang (di atas 4000 karakter), potong otomatis
+            if len(full_text) > 4000:
+                full_text = full_text[:3997] + "..."
+                
+            embed.description = full_text
 
         embed.set_footer(text="Gunakan data ini untuk evaluasi akhir bulan nanZ.")
         await ctx.send(embed=embed)
