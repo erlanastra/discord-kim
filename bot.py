@@ -2,49 +2,65 @@ import os
 import asyncio
 from discord.ext import commands
 import discord
+
 from cogs.verifysystem import VerifyButton
 from cogs.setupquote import QuoteView
 from cogs.ticket import TicketView
-from cogs.ticket import DecisionView
 from cogs.setup_murid import MuridView
 from cogs.setup_minat import MinatView
 from cogs.setup_game import GameView
+from cogs.role_request import RoleRequestView
+
 from dotenv import load_dotenv
 from database import db
 
-load_dotenv() 
+
+load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-print("DEBUG: TOKEN =", TOKEN if TOKEN else "TOKEN TIDAK DITEMUKAN")
+print(
+    "DEBUG: TOKEN =",
+    TOKEN if TOKEN else "TOKEN TIDAK DITEMUKAN"
+)
 
 if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN tidak ditemukan di environment variable")
+    raise RuntimeError(
+        "DISCORD_TOKEN tidak ditemukan di environment variable"
+    )
+
+
+# ==========================================================
+# BOT
+# ==========================================================
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
+
+
+# ==========================================================
+# READY
+# ==========================================================
 
 @bot.event
 async def on_ready():
 
-    try:
-        bot.add_view(VerifyButton(bot))
-        bot.add_view(QuoteView(bot))
-        bot.add_view(TicketView())
-        bot.add_view(MuridView())
-        bot.add_view(MinatView())
-        bot.add_view(GameView())
+    print("=" * 50)
+    print(f"Bot online sebagai {bot.user}")
+    print("Persistent Views Loaded")
+    print("=" * 50)
 
-        print("=" * 50)
-        print(f"Bot online sebagai {bot.user}")
-        print("Persistent Views Loaded")
-        print("=" * 50)
 
-    except Exception as e:
-
-        print(f"ERROR ON_READY: {e}")
+# ==========================================================
+# LOAD COGS
+# ==========================================================
 
 async def load_cogs():
+
     cogs = [
         "cogs.post",
         "cogs.ai",
@@ -64,6 +80,7 @@ async def load_cogs():
         "cogs.nanzquiz",
         "cogs.autoreply",
         "cogs.top_stats",
+        "cogs.role_request",
         "cogs.staff_attendance",
         "cogs.staff_directory",
         "cogs.verif_reminder",
@@ -75,14 +92,75 @@ async def load_cogs():
         "cogs.about",
         "cogs.welcome"
     ]
-    for cog in cogs:
-        try:
-            await bot.load_extension(cog)
-            print(f"Loaded: {cog.split('.')[-1]}.py")
-        except Exception as e:
-            print(f"Gagal load {cog.split('.')[-1]}.py: {e}")
 
-# --- Main loop ---
+    for cog in cogs:
+
+        try:
+
+            await bot.load_extension(cog)
+
+            print(
+                f"Loaded: {cog.split('.')[-1]}.py"
+            )
+
+        except Exception as e:
+
+            print(
+                f"Gagal load {cog.split('.')[-1]}.py: {e}"
+            )
+
+
+# ==========================================================
+# REGISTER PERSISTENT VIEWS
+# ==========================================================
+
+def register_persistent_views():
+
+    # Verification
+    bot.add_view(
+        VerifyButton(bot)
+    )
+
+    # Quote
+    bot.add_view(
+        QuoteView(bot)
+    )
+
+    # Ticket
+    bot.add_view(
+        TicketView()
+    )
+
+    # Murid
+    bot.add_view(
+        MuridView()
+    )
+
+    # Minat
+    bot.add_view(
+        MinatView()
+    )
+
+    # Game
+    bot.add_view(
+        GameView()
+    )
+
+    # ======================================================
+    # CUSTOM ROLE REQUEST
+    # ======================================================
+
+    bot.add_view(
+        RoleRequestView()
+    )
+
+    print("Persistent Views berhasil didaftarkan.")
+
+
+# ==========================================================
+# MAIN
+# ==========================================================
+
 async def main():
 
     await db.connect()
@@ -91,13 +169,22 @@ async def main():
 
         async with bot:
 
+            # Load semua cog
             await load_cogs()
 
+            # Register semua persistent view
+            register_persistent_views()
+
+            # Start bot
             await bot.start(TOKEN)
 
     finally:
 
         await db.close()
 
-# --- Run bot ---
+
+# ==========================================================
+# RUN
+# ==========================================================
+
 asyncio.run(main())
