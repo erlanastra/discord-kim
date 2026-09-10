@@ -1,4 +1,4 @@
-\import discord
+import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timezone, timedelta
 import json
@@ -15,7 +15,6 @@ class StaffAttendance(commands.Cog):
         
         # Sinkronisasi role ID staff
         self.STAFF_ROLE_IDS = [
-            1417582562100117584, # Guru Besar
             1453103644244316343, # Moderator
             1467360501745844446, # Pembina OSIS
             1427276194876751902  # OSIS
