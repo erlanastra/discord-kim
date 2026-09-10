@@ -248,6 +248,41 @@ class StaffAttendance(commands.Cog):
 
         summary = {}
 
+        # ==========================================
+        # DAFTARKAN SEMUA STAFF DARI SERVER
+        # ==========================================
+        # Sebelumnya summary hanya berisi staff yang pernah
+        # melakukan absen/izin. Akibatnya staff yang belum
+        # punya catatan pada bulan tersebut tidak ikut tampil.
+        #
+        # Sekarang semua member yang memiliki salah satu
+        # STAFF_ROLE_IDS dimasukkan terlebih dahulu dengan
+        # nilai 0. Data absensi kemudian ditambahkan di bawah.
+        guild = ctx.guild
+
+        if guild is not None:
+            for member in guild.members:
+                if member.bot:
+                    continue
+
+                is_member_staff = any(
+                    role.id in self.STAFF_ROLE_IDS
+                    for role in member.roles
+                )
+
+                if is_member_staff:
+                    member_id = str(member.id)
+
+                    summary[member_id] = {
+                        "name": member.display_name,
+                        "tepat_waktu": 0,
+                        "telat": 0,
+                        "izin_sebagian": 0,
+                        "izin_seharian": 0,
+                        "nilai": 0,
+                        "total_hari": 0
+                    }
+
         # Gunakan data yang sudah dimuat oleh Cog.
         attendance_data = self.attendance_data
 
@@ -257,6 +292,8 @@ class StaffAttendance(commands.Cog):
 
             for m_id, info in records.items():
                 if m_id not in summary:
+                    # Jaga kompatibilitas dengan data lama jika ada
+                    # ID staff yang sudah tidak terdeteksi dari guild.
                     summary[m_id] = {
                         "name": info.get("name", "Unknown"),
                         "tepat_waktu": 0,
@@ -266,6 +303,12 @@ class StaffAttendance(commands.Cog):
                         "nilai": 0,
                         "total_hari": 0
                     }
+                else:
+                    # Gunakan nama terbaru dari database jika tersedia.
+                    summary[m_id]["name"] = info.get(
+                        "name",
+                        summary[m_id]["name"]
+                    )
 
                 status = info.get("status", "")
                 summary[m_id]["total_hari"] += 1
@@ -342,7 +385,9 @@ class StaffAttendance(commands.Cog):
 
             # Discord membatasi description embed sekitar 4096 karakter.
             # Pecah otomatis agar SEMUA staff tetap tampil.
-            MAX_CHARS = 3800
+            # Sisakan ruang untuk header/info pada embed pertama.
+            # Embed berikutnya tetap memakai batas aman 3800 karakter.
+            MAX_CHARS = 3000
             chunks = []
             current_chunk = ""
 
@@ -371,7 +416,8 @@ class StaffAttendance(commands.Cog):
                     f"🟠 Telat `{POINTS['telat']}`\n"
                     f"🟡 Izin Setengah Hari `{POINTS['izin_sebagian']}`\n"
                     f"🟤 Izin Seharian `{POINTS['izin_seharian']}`\n\n"
-                    f"👥 **Total Staff Tercatat: {len(ranked)} orang**\n\n"
+                    f"👥 **Total Staff: {len(ranked)} orang**\n"
+                    f"📋 Staff tanpa absensi bulan ini tetap ditampilkan dengan nilai **0**.\n\n"
                     f"{chunks[0]}"
                 ),
                 color=discord.Color.dark_blue()
