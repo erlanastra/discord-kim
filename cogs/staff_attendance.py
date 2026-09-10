@@ -290,10 +290,11 @@ class StaffAttendance(commands.Cog):
             title=f"📈 Rekap Evaluasi Bulanan Staff ({target_prefix})",
             description=(
                 f"Akumulasi absensi bulan **{bulan}/{tahun}**.\n"
-                f"**Sistem Poin:** 🟢 Tepat Waktu `{POINTS['tepat_waktu']}` • "
-                f"🟠 Telat `{POINTS['telat']}` • "
-                f"🟡 Izin Setengah Hari `{POINTS['izin_sebagian']}` • "
-                f"🟤 Izin Seharian `{POINTS['izin_seharian']}`"
+                f"**Sistem Poin:**\n"
+                f" 🟢 Tepat Waktu `{POINTS['tepat_waktu']}`\n"
+                f" 🟠 Telat `{POINTS['telat']}`\n "
+                f" 🟡 Izin Setengah Hari `{POINTS['izin_sebagian']}`\n"
+                f" 🟤 Izin Seharian `{POINTS['izin_seharian']}`"
             ),
             color=discord.Color.dark_blue()
         )
