@@ -154,7 +154,9 @@ class StaffAttendance(commands.Cog):
             description=f"Staff **{ctx.author.mention}** mengajukan **{status_label}**.",
             color=discord.Color.gold()
         )
+        poin_izin = 5 if is_partial else 2
         embed.add_field(name="Keterangan / Alasan", value=keterangan, inline=False)
+        embed.add_field(name="Nilai Absensi", value=f"**{poin_izin} poin**", inline=True)
         embed.set_footer(text=f"Dicatat pada pukul {time_str} WIB | {date_str}")
         await ctx.send(embed=embed)
 
@@ -221,68 +223,133 @@ class StaffAttendance(commands.Cog):
             return
 
         now = self.get_wib_time()
+
         if not bulan:
             bulan = now.strftime("%m")
         else:
-            bulan = bulan.zfill(2) # Memastikan input "9" menjadi "09"
+            bulan = bulan.zfill(2)
 
         if not tahun:
             tahun = now.strftime("%Y")
 
         target_prefix = f"{tahun}-{bulan}"
-        
-        # Muat ulang data terbaru langsung dari file JSON agar terbaca real-time
-        attendance_data = self.load_data() if hasattr(self, 'load_data') else self.attendance_data
-        
+
+        # Sistem poin absensi bulanan:
+        # Tepat Waktu = 10 poin
+        # Telat       = 7 poin
+        # Izin Setengah Hari = 5 poin
+        # Izin Seharian      = 2 poin
+        POINTS = {
+            "tepat_waktu": 10,
+            "telat": 7,
+            "izin_sebagian": 5,
+            "izin_seharian": 2
+        }
+
         summary = {}
 
+        # Gunakan data yang sudah dimuat oleh Cog.
+        attendance_data = self.attendance_data
+
         for date_str, records in attendance_data.items():
-            if date_str.startswith(target_prefix):
-                for m_id, info in records.items():
-                    if m_id not in summary:
-                        summary[m_id] = {
-                            "name": info.get("name", "Unknown"),
-                            "tepat_waktu": 0,
-                            "telat": 0,
-                            "izin": 0
-                        }
-                    
-                    status = info["status"]
-                    if "Tepat Waktu" in status:
-                        summary[m_id]["tepat_waktu"] += 1
-                    elif "Telat" in status:
-                        summary[m_id]["telat"] += 1
-                    elif "Izin" in status:
-                        summary[m_id]["izin"] += 1
+            if not date_str.startswith(target_prefix):
+                continue
+
+            for m_id, info in records.items():
+                if m_id not in summary:
+                    summary[m_id] = {
+                        "name": info.get("name", "Unknown"),
+                        "tepat_waktu": 0,
+                        "telat": 0,
+                        "izin_sebagian": 0,
+                        "izin_seharian": 0,
+                        "nilai": 0,
+                        "total_hari": 0
+                    }
+
+                status = info.get("status", "")
+                summary[m_id]["total_hari"] += 1
+
+                if "Tepat Waktu" in status:
+                    summary[m_id]["tepat_waktu"] += 1
+                    summary[m_id]["nilai"] += POINTS["tepat_waktu"]
+
+                elif "Telat" in status:
+                    summary[m_id]["telat"] += 1
+                    summary[m_id]["nilai"] += POINTS["telat"]
+
+                elif "Izin (Sebagian Waktu)" in status:
+                    summary[m_id]["izin_sebagian"] += 1
+                    summary[m_id]["nilai"] += POINTS["izin_sebagian"]
+
+                elif "Izin (Seharian)" in status:
+                    summary[m_id]["izin_seharian"] += 1
+                    summary[m_id]["nilai"] += POINTS["izin_seharian"]
 
         embed = discord.Embed(
             title=f"📈 Rekap Evaluasi Bulanan Staff ({target_prefix})",
+            description=(
+                f"Akumulasi absensi bulan **{bulan}/{tahun}**.\n"
+                f"Penilaian diurutkan dari staff paling aktif hingga paling tidak aktif.\n\n"
+                f"**Sistem Poin:** 🟢 Tepat Waktu `{POINTS['tepat_waktu']}` • "
+                f"🟠 Telat `{POINTS['telat']}` • "
+                f"🟡 Izin Setengah Hari `{POINTS['izin_sebagian']}` • "
+                f"🟤 Izin Seharian `{POINTS['izin_seharian']}`"
+            ),
             color=discord.Color.dark_blue()
         )
 
         if not summary:
-            embed.description = f"Akumulasi data absensi untuk bulan **{bulan}** tahun **{tahun}**.\n\n*Tidak ada data absensi yang tercatat pada periode tersebut.*"
+            embed.description += (
+                "\n\n*Tidak ada data absensi yang tercatat pada periode tersebut.*"
+            )
         else:
+            # Urutkan dari nilai tertinggi ke terendah.
+            # Jika nilai sama, yang memiliki jumlah kehadiran/aktivitas
+            # lebih banyak ditempatkan lebih atas.
+            ranked = sorted(
+                summary.items(),
+                key=lambda item: (
+                    item[1]["nilai"],
+                    item[1]["total_hari"],
+                    item[1]["tepat_waktu"],
+                    -item[1]["telat"]
+                ),
+                reverse=True
+            )
+
             result_lines = []
-            for m_id, data in summary.items():
-                line = (
-                    f"👤 <@{m_id}> (`{data['name']}`)\n"
-                    f"🟢 Tepat Waktu: **{data['tepat_waktu']}** | "
-                    f"🟠 Telat: **{data['telat']}** | "
-                    f"🟡 Izin: **{data['izin']}**\n"
+
+            for rank, (m_id, data) in enumerate(ranked, start=1):
+                if rank == 1:
+                    medal = "🥇"
+                elif rank == 2:
+                    medal = "🥈"
+                elif rank == 3:
+                    medal = "🥉"
+                else:
+                    medal = f"`#{rank}`"
+
+                result_lines.append(
+                    f"{medal} <@{m_id}> (`{data['name']}`)\n"
+                    f"   💯 Nilai Bulanan: **{data['nilai']} poin**\n"
+                    f"   🟢 Tepat Waktu: **{data['tepat_waktu']}** | "
+                    f"🟠 Telat: **{data['telat']}**\n"
+                    f"   🟡 Izin Setengah Hari: **{data['izin_sebagian']}** | "
+                    f"🟤 Izin Seharian: **{data['izin_seharian']}**"
                 )
-                result_lines.append(line)
-            
-            # Masukkan ke description agar muat hingga 4096 karakter
-            full_text = f"Akumulasi data absensi untuk bulan **{bulan}** tahun **{tahun}**.\n\n" + "\n".join(result_lines)
-            
-            # Jika teksnya masih sangat panjang (di atas 4000 karakter), potong otomatis
+
+            full_text = embed.description + "\n\n" + "\n\n".join(result_lines)
+
+            # Discord embed description maksimal 4096 karakter.
             if len(full_text) > 4000:
                 full_text = full_text[:3997] + "..."
-                
+
             embed.description = full_text
 
-        embed.set_footer(text="Gunakan data ini untuk evaluasi akhir bulan nanZ.")
+        embed.set_footer(
+            text="Nilai lebih tinggi = aktivitas absensi lebih baik | Gunakan untuk evaluasi akhir bulan nanZ."
+        )
         await ctx.send(embed=embed)
 
     # ==========================================
@@ -310,7 +377,7 @@ class StaffAttendance(commands.Cog):
         )
         embed.add_field(
             name="`!izin [keterangan]`",
-            value="Mengajukan izin (seharian penuh atau sebagian waktu).\n• *Contoh Seharian:* `!izin Sakit demam`\n• *Contoh Sebagian:* `!izin Sampai pulang sekolah - Urusan keluarga`",
+            value="Mengajukan izin (seharian penuh atau sebagian waktu).\n• *Seharian:* `!izin Sakit demam` → **2 poin**\n• *Setengah/sebagian:* `!izin Sampai pulang sekolah - Urusan keluarga` → **5 poin**",
             inline=False
         )
         embed.add_field(
@@ -320,7 +387,7 @@ class StaffAttendance(commands.Cog):
         )
         embed.add_field(
             name="`!rekapbulanan [bulan] [tahun]`",
-            value="Melihat rekap akumulasi bulanan untuk bahan evaluasi akhir bulan.\n• *Contoh:* `!rekapbulanan 09 2026`",
+            value="Melihat nilai dan peringkat keaktifan bulanan, dari paling aktif hingga paling tidak aktif.\n• *Contoh:* `!rekapbulanan 09 2026`",
             inline=False
         )
         embed.set_footer(text="Zona Waktu: WIB | Khusus Staff nanZ")
