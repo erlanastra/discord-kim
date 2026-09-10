@@ -1,4 +1,4 @@
-import discord
+\import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timezone, timedelta
 import json
@@ -14,9 +14,10 @@ class StaffAttendance(commands.Cog):
         self.ATTENDANCE_CHANNEL_ID = 1528025859792044082
         
         # Sinkronisasi role ID staff
-        # HANYA member dengan role Crew nanZ yang dihitung
         self.STAFF_ROLE_IDS = [
-            1515023431815528468  # Crew nanZ
+            1453103644244316343, # Moderator
+            1467360501745844446, # Pembina OSIS
+            1427276194876751902  # OSIS
         ]
 
     def load_db(self):
@@ -342,7 +343,7 @@ class StaffAttendance(commands.Cog):
 
         if not summary:
             embed.description += (
-                "\n\n*Tidak ada Crew nanZ yang terdeteksi pada periode tersebut.*"
+                "\n\n*Tidak ada data absensi yang tercatat pada periode tersebut.*"
             )
         else:
             # Urutkan dari nilai tertinggi ke terendah.
@@ -373,19 +374,22 @@ class StaffAttendance(commands.Cog):
                     medal = f"`#{rank}`"
 
                 result_lines.append(
-                    f"{medal} <@{m_id}> (`{data['name']}`)\\n"
-                    f"   > 💯 Nilai Bulanan: **{data['nilai']} poin**\\n"
-                    f"   > 🟢 Tepat Waktu: **{data['tepat_waktu']}**\\n"
-                    f"   > 🟠 Telat: **{data['telat']}**\\n"
-                    f"   > 🟡 Izin Setengah Hari: **{data['izin_sebagian']}**\\n"
+                    f"{medal} <@{m_id}> (`{data['name']}`)\n"
+                    f"   > 💯 Nilai Bulanan: **{data['nilai']} poin**\n"
+                    f"   > 🟢 Tepat Waktu: **{data['tepat_waktu']}**\n"
+                    f"   > 🟠 Telat: **{data['telat']}**\n"
+                    f"   > 🟡 Izin Setengah Hari: **{data['izin_sebagian']}**\n"
                     f"   > 🟤 Izin Seharian: **{data['izin_seharian']}**"
                 )
 
-            # ==================================================
-            # BAGI TEPAT 10 STAFF PER EMBED
-            # ==================================================
+            # ==========================================
+            # BAGI REKAP: MAKSIMAL 10 STAFF PER EMBED
+            # ==========================================
+
             STAFF_PER_EMBED = 10
 
+            # Pecah data menjadi beberapa halaman,
+            # masing-masing maksimal 10 staff.
             chunks = [
                 result_lines[i:i + STAFF_PER_EMBED]
                 for i in range(0, len(result_lines), STAFF_PER_EMBED)
@@ -393,42 +397,38 @@ class StaffAttendance(commands.Cog):
 
             total_pages = len(chunks)
 
-            # Kirim 1 embed untuk setiap 10 staff.
-            # Tidak ada lagi pembagian berdasarkan jumlah karakter,
-            # sehingga halaman selalu konsisten: 1-10, 11-20, 21-30, dst.
+            # Kirim setiap halaman/embed
             for page, staff_chunk in enumerate(chunks, start=1):
 
+                # Gabungkan maksimal 10 staff dalam satu embed
+                staff_text = "\n\n".join(staff_chunk)
+
+                # Embed halaman pertama memiliki informasi sistem poin
                 if page == 1:
-                    header = (
-                        f"Akumulasi absensi bulan **{bulan}/{tahun}**.\\n\\n"
-                        f"**Sistem Poin:**\\n"
-                        f"🟢 Tepat Waktu `{POINTS['tepat_waktu']}`\\n"
-                        f"🟠 Telat `{POINTS['telat']}`\\n"
-                        f"🟡 Izin Setengah Hari `{POINTS['izin_sebagian']}`\\n"
-                        f"🟤 Izin Seharian `{POINTS['izin_seharian']}`\\n\\n"
-                        f"👥 **Total Crew nanZ: {len(ranked)} orang**\\n"
-                        f"📋 **10 crew per embed**"
+                    description = (
+                        f"Akumulasi absensi bulan **{bulan}/{tahun}**.\n\n"
+                        f"**Sistem Poin:**\n"
+                        f"🟢 Tepat Waktu `{POINTS['tepat_waktu']}`\n"
+                        f"🟠 Telat `{POINTS['telat']}`\n"
+                        f"🟡 Izin Setengah Hari `{POINTS['izin_sebagian']}`\n"
+                        f"🟤 Izin Seharian `{POINTS['izin_seharian']}`\n\n"
+                        f"👥 **Total Staff: {len(ranked)} orang**\n"
+                        f"📋 Staff tanpa absensi bulan ini tetap ditampilkan dengan nilai **0**.\n\n"
+                        f"{staff_text}"
                     )
                 else:
-                    header = (
-                        f"Rekap Crew nanZ bulan **{bulan}/{tahun}**\\n"
-                        f"👥 **Total Crew nanZ: {len(ranked)} orang**"
-                    )
+                    description = staff_text
 
                 embed_page = discord.Embed(
-                    title=f"📈 Rekap Crew nanZ ({target_prefix}) — {page}/{total_pages}",
-                    description=header + "\\n\\n" + "\\n\\n".join(staff_chunk),
+                    title=f"📈 Rekap Evaluasi Bulanan Staff ({target_prefix})",
+                    description=description,
                     color=discord.Color.dark_blue()
                 )
 
-                first_rank = ((page - 1) * STAFF_PER_EMBED) + 1
-                last_rank = first_rank + len(staff_chunk) - 1
-
                 embed_page.set_footer(
                     text=(
-                        f"Crew #{first_rank}-#{last_rank} • "
                         f"Halaman {page}/{total_pages} • "
-                        f"Nilai lebih tinggi = aktivitas absensi lebih baik"
+                        f"Menampilkan maksimal {STAFF_PER_EMBED} staff per halaman"
                     )
                 )
 
