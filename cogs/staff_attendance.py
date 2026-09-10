@@ -290,7 +290,6 @@ class StaffAttendance(commands.Cog):
             title=f"📈 Rekap Evaluasi Bulanan Staff ({target_prefix})",
             description=(
                 f"Akumulasi absensi bulan **{bulan}/{tahun}**.\n"
-                f"Penilaian diurutkan dari staff paling aktif hingga paling tidak aktif.\n\n"
                 f"**Sistem Poin:** 🟢 Tepat Waktu `{POINTS['tepat_waktu']}` • "
                 f"🟠 Telat `{POINTS['telat']}` • "
                 f"🟡 Izin Setengah Hari `{POINTS['izin_sebagian']}` • "
@@ -333,9 +332,9 @@ class StaffAttendance(commands.Cog):
                 result_lines.append(
                     f"{medal} <@{m_id}> (`{data['name']}`)\n"
                     f"   💯 Nilai Bulanan: **{data['nilai']} poin**\n"
-                    f"   🟢 Tepat Waktu: **{data['tepat_waktu']}** | "
+                    f"   🟢 Tepat Waktu: **{data['tepat_waktu']}**\n"
                     f"🟠 Telat: **{data['telat']}**\n"
-                    f"   🟡 Izin Setengah Hari: **{data['izin_sebagian']}** | "
+                    f"   🟡 Izin Setengah Hari: **{data['izin_sebagian']}**\n"
                     f"🟤 Izin Seharian: **{data['izin_seharian']}**"
                 )
 
