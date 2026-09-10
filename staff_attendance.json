@@ -1,0 +1,598 @@
+{
+    "2026-09-04": {
+        "1169643619049799740": {
+            "name": "iTom",
+            "time": "22:49:04",
+            "status": "Telat",
+            "reason": "-"
+        }
+    },
+    "2026-09-05": {
+        "1156500606702329917": {
+            "name": "Kalluto Zoldyck",
+            "time": "05:44:49",
+            "status": "Izin (Seharian)",
+            "reason": "sekola + latian + les"
+        },
+        "1453629798579699724": {
+            "name": "cimitt",
+            "time": "05:45:25",
+            "status": "Izin (Seharian)",
+            "reason": "kuliah-sore aktif"
+        },
+        "1186683431254495235": {
+            "name": "DanN",
+            "time": "06:03:03",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1287779500964188243": {
+            "name": "[AFK] tecca",
+            "time": "06:22:08",
+            "status": "Izin (Seharian)",
+            "reason": "pergi slowresp"
+        },
+        "1430372054116470799": {
+            "name": "kariinn",
+            "time": "06:27:17",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1525707706806046861": {
+            "name": "𖠦 𝑶𝒔𝒌𝒚𝒓𝒂",
+            "time": "06:27:20",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "971666609649352754": {
+            "name": "Alluka Zoldyck^^",
+            "time": "06:30:38",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1464970326642524326": {
+            "name": "💫",
+            "time": "06:32:33",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1169643619049799740": {
+            "name": "iTom",
+            "time": "06:43:51",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1426145183766155345": {
+            "name": "meymeii china promax real no pek",
+            "time": "07:11:11",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1358636550333792459": {
+            "name": "[AFK] ✰๋࣭ ⭑vani home for amy",
+            "time": "07:37:28",
+            "status": "Izin (Seharian)",
+            "reason": "latihan"
+        },
+        "1384068094179278908": {
+            "name": "zezen preman bogor",
+            "time": "09:00:36",
+            "status": "Izin (Seharian)",
+            "reason": "acara"
+        },
+        "1492162993469919253": {
+            "name": "[AFK] almak",
+            "time": "09:58:00",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1524526939711471746": {
+            "name": "ALFI..!",
+            "time": "10:30:34",
+            "status": "Izin (Seharian)",
+            "reason": "gawe"
+        },
+        "962334126629859378": {
+            "name": "[AFK] iBob",
+            "time": "11:22:28",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1543286708798230729": {
+            "name": "!SEAN",
+            "time": "18:03:15",
+            "status": "Telat",
+            "reason": "-"
+        }
+    },
+    "2026-09-06": {
+        "1453629798579699724": {
+            "name": "cimitt",
+            "time": "05:20:59",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1430372054116470799": {
+            "name": "kariinn",
+            "time": "05:42:07",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1287779500964188243": {
+            "name": "Levi Ackerman",
+            "time": "05:56:07",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "962334126629859378": {
+            "name": "iBob",
+            "time": "06:13:32",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1156500606702329917": {
+            "name": "Kalluto Zoldyck",
+            "time": "06:14:17",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1358636550333792459": {
+            "name": "[AFK] ✰๋࣭ ⭑vani home for amy",
+            "time": "06:21:38",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1169643619049799740": {
+            "name": "iTom",
+            "time": "06:22:24",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1186683431254495235": {
+            "name": "DanN",
+            "time": "06:40:39",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "971666609649352754": {
+            "name": "Alluka Zoldyck^^",
+            "time": "07:01:43",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1426145183766155345": {
+            "name": "meymeii china promax real no pek",
+            "time": "08:09:21",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1543286708798230729": {
+            "name": "!SEAN",
+            "time": "08:18:41",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1464970326642524326": {
+            "name": "Shizuku Murasaki💫",
+            "time": "09:12:41",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "nyonde mencit sampai sore"
+        },
+        "1492162993469919253": {
+            "name": "almak",
+            "time": "10:08:46",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1384068094179278908": {
+            "name": "zezen preman bogor",
+            "time": "11:34:39",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1524526939711471746": {
+            "name": "ALFI..!",
+            "time": "14:51:57",
+            "status": "Izin (Seharian)",
+            "reason": "gawe tadi gaada kuota uy"
+        }
+    },
+    "2026-09-07": {
+        "1543286708798230729": {
+            "name": "!SEAN",
+            "time": "04:08:10",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "971666609649352754": {
+            "name": "Alluka Zoldyck^^",
+            "time": "05:23:38",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1287779500964188243": {
+            "name": "Levi Ackerman",
+            "time": "05:24:22",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1430372054116470799": {
+            "name": "kariinn",
+            "time": "05:30:38",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "kerja sampai sore"
+        },
+        "1464970326642524326": {
+            "name": "Shizuku Murasaki💫",
+            "time": "05:54:17",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "kuliah sampai sore"
+        },
+        "1384068094179278908": {
+            "name": "zezen preman bogor",
+            "time": "06:34:02",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1453629798579699724": {
+            "name": "cimitt",
+            "time": "06:46:29",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "kuliah sampai siang"
+        },
+        "1186683431254495235": {
+            "name": "DanN",
+            "time": "06:46:32",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1525707706806046861": {
+            "name": "𖠦 𝑶𝒔𝒌𝒚𝒓𝒂",
+            "time": "06:58:21",
+            "status": "Izin (Seharian)",
+            "reason": "sakit masih di rs"
+        },
+        "1156500606702329917": {
+            "name": "Kalluto Zoldyck",
+            "time": "07:06:15",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "sekola + latian + les sampai malam"
+        },
+        "1358636550333792459": {
+            "name": "✰๋࣭ ⭑vani home for amy",
+            "time": "07:24:58",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "kuliah sampai sore"
+        },
+        "1492162993469919253": {
+            "name": "almak",
+            "time": "07:25:53",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1488167038261133393": {
+            "name": "ᥴһᥱᥣᥡᥒᶻ 𝘇 𐰁",
+            "time": "07:31:55",
+            "status": "Izin (Seharian)",
+            "reason": "sekolah"
+        },
+        "1426145183766155345": {
+            "name": "meymeii liuuliuuliu papalek",
+            "time": "07:41:26",
+            "status": "Izin (Seharian)",
+            "reason": "sekolah+latihan aktif sorean"
+        },
+        "1289268452435169281": {
+            "name": "orgsuksesmieayam",
+            "time": "08:19:35",
+            "status": "Izin (Seharian)",
+            "reason": "sekolah+ bimbel,tp pjj"
+        },
+        "1524526939711471746": {
+            "name": "WANG LIN",
+            "time": "08:32:55",
+            "status": "Izin (Seharian)",
+            "reason": "gawe mlam on"
+        },
+        "1169643619049799740": {
+            "name": "[AFK] iTom",
+            "time": "09:25:24",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "962334126629859378": {
+            "name": "iBob",
+            "time": "09:36:01",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        }
+    },
+    "2026-09-08": {
+        "1543286708798230729": {
+            "name": "!SEAN",
+            "time": "04:48:47",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1358636550333792459": {
+            "name": "[AFK] ✰๋࣭ ⭑vani home for amy",
+            "time": "05:30:45",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "kuliah sampai sore"
+        },
+        "1430372054116470799": {
+            "name": "kariinn",
+            "time": "05:37:36",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "kerja sampai sore"
+        },
+        "1186683431254495235": {
+            "name": "DanN",
+            "time": "05:49:53",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1169643619049799740": {
+            "name": "iTom",
+            "time": "05:52:21",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1453629798579699724": {
+            "name": "cimitt",
+            "time": "05:54:44",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "kuliah sampai siang di lanjut kerja sampe sore"
+        },
+        "1488167038261133393": {
+            "name": "ᥴһᥱᥣᥡᥒᶻ 𝘇 𐰁",
+            "time": "06:05:47",
+            "status": "Izin (Seharian)",
+            "reason": "sekolah sampe sore"
+        },
+        "1464970326642524326": {
+            "name": "Shizuku Murasaki💫",
+            "time": "06:13:45",
+            "status": "Izin (Seharian)",
+            "reason": "full prak sampe sore"
+        },
+        "1156500606702329917": {
+            "name": "Kalluto Zoldyck",
+            "time": "06:15:56",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "sekola + latian + les sampai malam"
+        },
+        "971666609649352754": {
+            "name": "Alluka Zoldyck^^",
+            "time": "06:39:52",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1287779500964188243": {
+            "name": "[AFK] Levi Ackerman",
+            "time": "07:04:34",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1426145183766155345": {
+            "name": "meymeii liuuliuuliu papalek",
+            "time": "07:23:35",
+            "status": "Izin (Seharian)",
+            "reason": "sekolah+latihan aktif sorean"
+        },
+        "1492162993469919253": {
+            "name": "[AFK] almak",
+            "time": "07:26:06",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "ke kampus sampai siang/sore"
+        },
+        "1524526939711471746": {
+            "name": "WANG LIN",
+            "time": "07:26:48",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1384068094179278908": {
+            "name": "zezen preman bogor",
+            "time": "08:00:50",
+            "status": "Izin (Seharian)",
+            "reason": "ada acara sampe sore"
+        },
+        "1525707706806046861": {
+            "name": "𖠦 𝑶𝒔𝒌𝒚𝒓𝒂",
+            "time": "08:13:39",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "962334126629859378": {
+            "name": "iBob",
+            "time": "09:00:05",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1289268452435169281": {
+            "name": "orgsuksesmieayam",
+            "time": "12:56:49",
+            "status": "Telat",
+            "reason": "-"
+        }
+    },
+    "2026-09-09": {
+        "1464970326642524326": {
+            "name": "[AFK] Shizuku Murasaki💫",
+            "time": "04:11:24",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "sampai sore praktikum"
+        },
+        "1358636550333792459": {
+            "name": "[AFK] ✰๋࣭ ⭑vani home for amy",
+            "time": "04:23:42",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "ngampus sampai sore bgt"
+        },
+        "1543286708798230729": {
+            "name": "!SEAN",
+            "time": "04:25:32",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1169643619049799740": {
+            "name": "iTom",
+            "time": "05:34:40",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1430372054116470799": {
+            "name": "kariinn",
+            "time": "05:40:33",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "gawe sampai sore"
+        },
+        "1384068094179278908": {
+            "name": "zezen preman bogor",
+            "time": "05:41:45",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "sekolah sampai sore"
+        },
+        "1287779500964188243": {
+            "name": "Levi Ackerman",
+            "time": "06:04:56",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1525707706806046861": {
+            "name": "𖠦 𝑶𝒔𝒌𝒚𝒓𝒂",
+            "time": "06:07:09",
+            "status": "Izin (Seharian)",
+            "reason": "sekolah sampe sore, on kadang\""
+        },
+        "1492162993469919253": {
+            "name": "almak",
+            "time": "06:39:05",
+            "status": "Izin (Seharian)",
+            "reason": "dari siang sampe sore/malem ke kampus + maulid dirumah"
+        },
+        "1488167038261133393": {
+            "name": "ᥴһᥱᥣᥡᥒᶻ 𝘇 𐰁",
+            "time": "07:19:25",
+            "status": "Izin (Seharian)",
+            "reason": "sekolah,aktif sore"
+        },
+        "1524526939711471746": {
+            "name": "WANG LIN",
+            "time": "07:36:51",
+            "status": "Izin (Seharian)",
+            "reason": "gawe"
+        },
+        "1156500606702329917": {
+            "name": "Kalluto Zoldyck",
+            "time": "07:50:52",
+            "status": "Izin (Seharian)",
+            "reason": "sekola + latian + les"
+        },
+        "1426145183766155345": {
+            "name": "meymeii liuuliuuliu papalek",
+            "time": "07:56:46",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "971666609649352754": {
+            "name": "Alluka Zoldyck^^",
+            "time": "08:56:48",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1186683431254495235": {
+            "name": "DanN",
+            "time": "09:02:19",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1453629798579699724": {
+            "name": "cimitt",
+            "time": "10:46:39",
+            "status": "Izin (Seharian)",
+            "reason": "kampus+kerja"
+        },
+        "962334126629859378": {
+            "name": "iBob",
+            "time": "11:56:46",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        }
+    },
+    "2026-09-10": {
+        "1464970326642524326": {
+            "name": "Shizuku Murasaki💫",
+            "time": "05:17:53",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "sampai sore prak"
+        },
+        "1186683431254495235": {
+            "name": "DanN",
+            "time": "05:18:40",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1169643619049799740": {
+            "name": "iTom",
+            "time": "05:19:37",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1430372054116470799": {
+            "name": "kariinn",
+            "time": "05:39:29",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "gawe sampai sore"
+        },
+        "971666609649352754": {
+            "name": "Alluka Zoldyck^^",
+            "time": "05:43:52",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1156500606702329917": {
+            "name": "Kalluto Zoldyck",
+            "time": "05:55:17",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "1358636550333792459": {
+            "name": "[AFK] ✰๋࣭ ⭑vani home for amy",
+            "time": "06:09:16",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "ngampus sampai malam"
+        },
+        "1453629798579699724": {
+            "name": "cimitt",
+            "time": "06:14:55",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "kuliah,gawe sampai sore"
+        },
+        "1287779500964188243": {
+            "name": "[AFK] Levi Ackerman",
+            "time": "06:51:56",
+            "status": "Tepat Waktu",
+            "reason": "-"
+        },
+        "962334126629859378": {
+            "name": "iBob",
+            "time": "06:55:22",
+            "status": "Izin (Sebagian Waktu)",
+            "reason": "gawe sampai sore"
+        },
+        "1525707706806046861": {
+            "name": "𖠦 𝑶𝒔𝒌𝒚𝒓𝒂",
+            "time": "07:04:36",
+            "status": "Izin (Seharian)",
+            "reason": "off selama 18/19 hari"
+        },
+        "1488167038261133393": {
+            "name": "ᥴһᥱᥣᥡᥒᶻ 𝘇 𐰁",
+            "time": "07:15:01",
+            "status": "Izin (Seharian)",
+            "reason": "sekolah + ada acara,aktif malem"
+        }
+    }
+}
