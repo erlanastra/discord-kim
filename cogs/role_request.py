@@ -1,13 +1,78 @@
 import discord
 from discord.ext import commands
+from urllib.parse import urlparse
 
+
+# ==========================================================
+# CONFIG
+# ==========================================================
 
 TARGET_CHANNEL_ID = 1547540103117803520
 
+# Maksimal member yang bisa menerima role sekaligus
+MAX_RECIPIENTS = 25
+
+# Batas ukuran icon: 256 KB
+MAX_ICON_SIZE = 256 * 1024
+
+
+# ==========================================================
+# HELPER
+# ==========================================================
+
+def parse_hex_color(value: str):
+    """
+    Mengubah #RRGGBB menjadi discord.Color.
+    """
+
+    value = value.strip().replace("#", "")
+
+    if len(value) != 6:
+        raise ValueError(
+            "Warna harus menggunakan format #RRGGBB."
+        )
+
+    try:
+        number = int(value, 16)
+    except ValueError:
+        raise ValueError(
+            "Kode warna Hex tidak valid."
+        )
+
+    if not 0 <= number <= 0xFFFFFF:
+        raise ValueError(
+            "Kode warna berada di luar range."
+        )
+
+    return discord.Color(number)
+
+
+def is_valid_image_url(url: str):
+    """
+    Validasi sederhana URL icon.
+    """
+
+    if not url:
+        return False
+
+    parsed = urlparse(url)
+
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    if not parsed.netloc:
+        return False
+
+    return True
+
+
+# ==========================================================
+# MODAL INPUT
+# ==========================================================
 
 class RoleRequestModal(
     discord.ui.Modal,
-    title="Form Request Role Kustom"
+    title="🎨 Custom Role"
 ):
 
     role_name = discord.ui.TextInput(
@@ -17,11 +82,25 @@ class RoleRequestModal(
         required=True
     )
 
-    role_color = discord.ui.TextInput(
-        label="Kode Warna Hex",
-        placeholder="Contoh: #FF5733",
+    primary_color = discord.ui.TextInput(
+        label="Warna Utama",
+        placeholder="Contoh: #FF0000",
         max_length=7,
         required=True
+    )
+
+    secondary_color = discord.ui.TextInput(
+        label="Warna Kedua / Gradient",
+        placeholder="Contoh: #0000FF",
+        max_length=7,
+        required=False
+    )
+
+    icon = discord.ui.TextInput(
+        label="Icon Role",
+        placeholder="Emoji 👑 atau URL PNG/JPG",
+        max_length=500,
+        required=False
     )
 
     async def on_submit(
@@ -29,121 +108,629 @@ class RoleRequestModal(
         interaction: discord.Interaction
     ):
 
+        # ==================================================
+        # CHANNEL CHECK
+        # ==================================================
+
         if interaction.channel_id != TARGET_CHANNEL_ID:
 
             await interaction.response.send_message(
-                f"❌ Request role hanya bisa dilakukan di "
-                f"<#{TARGET_CHANNEL_ID}>!",
+                f"❌ Custom role hanya bisa dibuat di "
+                f"<#{TARGET_CHANNEL_ID}>.",
                 ephemeral=True
             )
 
             return
 
-        await interaction.response.defer(
-            ephemeral=True
-        )
+        # ==================================================
+        # ADMIN CHECK
+        # ==================================================
 
-        guild = interaction.guild
-        member = interaction.user
+        if not interaction.user.guild_permissions.administrator:
+
+            await interaction.response.send_message(
+                "❌ Hanya **Administrator** yang dapat "
+                "membuat custom role melalui sistem ini.",
+                ephemeral=True
+            )
+
+            return
+
+        # ==================================================
+        # PARSE DATA
+        # ==================================================
 
         name = self.role_name.value.strip()
-        color_code = self.role_color.value.strip()
 
-        # ==============================================
-        # VALIDASI HEX
-        # ==============================================
+        primary_hex = self.primary_color.value.strip()
 
-        if color_code.startswith("#"):
-            hex_code = color_code[1:]
-        else:
-            hex_code = color_code
+        secondary_hex = self.secondary_color.value.strip()
 
-        if len(hex_code) != 6:
+        icon_value = self.icon.value.strip()
 
-            await interaction.followup.send(
-                "❌ Kode warna harus 6 digit Hex.\n"
-                "Contoh: `#FF5733`",
-                ephemeral=True
-            )
-
-            return
+        # ==================================================
+        # VALIDATE PRIMARY COLOR
+        # ==================================================
 
         try:
 
-            color_value = int(hex_code, 16)
-
-            discord_color = discord.Color(
-                color_value
+            primary_color = parse_hex_color(
+                primary_hex
             )
 
-        except ValueError:
+        except ValueError as e:
 
-            await interaction.followup.send(
-                "❌ Kode warna tidak valid!\n"
-                "Gunakan format seperti `#FF5733`.",
+            await interaction.response.send_message(
+                f"❌ {e}",
                 ephemeral=True
             )
 
             return
 
-        # ==============================================
-        # BUAT ROLE
-        # ==============================================
+        # ==================================================
+        # VALIDATE SECONDARY COLOR
+        # ==================================================
+
+        secondary_color = None
+
+        if secondary_hex:
+
+            try:
+
+                secondary_color = parse_hex_color(
+                    secondary_hex
+                )
+
+            except ValueError as e:
+
+                await interaction.response.send_message(
+                    f"❌ Warna kedua tidak valid: {e}",
+                    ephemeral=True
+                )
+
+                return
+
+        # ==================================================
+        # VALIDATE ICON
+        # ==================================================
+
+        icon_data = None
+
+        if icon_value:
+
+            # ----------------------------------------------
+            # DISCORD UNICODE EMOJI
+            # ----------------------------------------------
+
+            if not is_valid_image_url(icon_value):
+
+                # Kita anggap sebagai Unicode emoji.
+                # Discord akan memvalidasinya saat create_role.
+                icon_data = icon_value
+
+            else:
+
+                # ------------------------------------------
+                # DOWNLOAD IMAGE
+                # ------------------------------------------
+
+                try:
+
+                    async with interaction.client.http_session.get(
+                        icon_value,
+                        timeout=10
+                    ) as response:
+
+                        if response.status != 200:
+
+                            raise ValueError(
+                                f"HTTP {response.status}"
+                            )
+
+                        content_type = response.headers.get(
+                            "Content-Type",
+                            ""
+                        ).lower()
+
+                        if (
+                            "image/png" not in content_type
+                            and "image/jpeg" not in content_type
+                            and "image/jpg" not in content_type
+                        ):
+
+                            raise ValueError(
+                                "Icon harus PNG atau JPEG."
+                            )
+
+                        data = await response.read()
+
+                        if len(data) > MAX_ICON_SIZE:
+
+                            raise ValueError(
+                                "Ukuran icon maksimal 256 KB."
+                            )
+
+                        icon_data = data
+
+                except Exception as e:
+
+                    await interaction.response.send_message(
+                        "❌ Gagal mengambil icon.\n"
+                        f"Pastikan URL merupakan gambar PNG/JPEG "
+                        f"yang bisa diakses publik.\n\n"
+                        f"Detail: `{e}`",
+                        ephemeral=True
+                    )
+
+                    return
+
+        # ==================================================
+        # SIMPAN DATA SEMENTARA
+        # ==================================================
+
+        await interaction.response.send_message(
+            "### 🎨 Custom Role\n\n"
+            "Data role sudah diterima.\n\n"
+            "Sekarang pilih **style role** dan **member yang "
+            "akan menerima role**.",
+            view=RoleConfigurationView(
+                requester=interaction.user,
+                role_name=name,
+                primary_color=primary_color,
+                secondary_color=secondary_color,
+                icon_data=icon_data
+            ),
+            ephemeral=True
+        )
+
+
+# ==========================================================
+# STYLE SELECT
+# ==========================================================
+
+class RoleStyleSelect(
+    discord.ui.Select
+):
+
+    def __init__(self):
+
+        options = [
+
+            discord.SelectOption(
+                label="Solid",
+                description="Satu warna solid",
+                emoji="🎨",
+                value="solid"
+            ),
+
+            discord.SelectOption(
+                label="Gradient",
+                description="Gradient menggunakan 2 warna",
+                emoji="🌈",
+                value="gradient"
+            ),
+
+            discord.SelectOption(
+                label="Holographic",
+                description="Style holographic Discord",
+                emoji="✨",
+                value="holographic"
+            )
+
+        ]
+
+        super().__init__(
+            placeholder="🎨 Pilih style role...",
+            options=options,
+            min_values=1,
+            max_values=1,
+            custom_id="nanz_role_style_select"
+        )
+
+    async def callback(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        self.view.selected_style = self.values[0]
+
+        await interaction.response.edit_message(
+            content=(
+                "### 🎨 Custom Role\n\n"
+                f"**Style:** `{self.values[0].title()}`\n\n"
+                "Sekarang pilih member yang akan "
+                "menerima role."
+            ),
+            view=self.view
+        )
+
+
+# ==========================================================
+# USER SELECT
+# ==========================================================
+
+class RoleRecipientSelect(
+    discord.ui.UserSelect
+):
+
+    def __init__(self):
+
+        super().__init__(
+            placeholder="👥 Pilih member penerima role...",
+            min_values=1,
+            max_values=MAX_RECIPIENTS,
+            custom_id="nanz_role_recipient_select"
+        )
+
+    async def callback(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        self.view.selected_members = self.values
+
+        names = [
+            member.display_name
+            for member in self.values
+        ]
+
+        preview = ", ".join(names)
+
+        if len(preview) > 500:
+
+            preview = preview[:500] + "..."
+
+        await interaction.response.edit_message(
+            content=(
+                "### 🎨 Custom Role\n\n"
+                f"**Style:** "
+                f"`{self.view.selected_style.title()}`\n\n"
+                f"**Penerima:**\n"
+                f"{preview}\n\n"
+                "Jika sudah benar, klik **Buat & Berikan Role**."
+            ),
+            view=self.view
+        )
+
+
+# ==========================================================
+# CONFIGURATION VIEW
+# ==========================================================
+
+class RoleConfigurationView(
+    discord.ui.View
+):
+
+    def __init__(
+        self,
+        requester,
+        role_name,
+        primary_color,
+        secondary_color,
+        icon_data
+    ):
+
+        super().__init__(
+            timeout=300
+        )
+
+        self.requester = requester
+
+        self.role_name = role_name
+
+        self.primary_color = primary_color
+
+        self.secondary_color = secondary_color
+
+        self.icon_data = icon_data
+
+        self.selected_style = "solid"
+
+        self.selected_members = []
+
+        # ----------------------------------------------
+        # STYLE
+        # ----------------------------------------------
+
+        self.add_item(
+            RoleStyleSelect()
+        )
+
+        # ----------------------------------------------
+        # MEMBER SELECT
+        # ----------------------------------------------
+
+        self.add_item(
+            RoleRecipientSelect()
+        )
+
+    # ==================================================
+    # CREATE ROLE
+    # ==================================================
+
+    @discord.ui.button(
+        label="Buat & Berikan Role",
+        emoji="✅",
+        style=discord.ButtonStyle.success,
+        custom_id="nanz_create_custom_role",
+        row=3
+    )
+    async def create_role_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        # ==================================================
+        # USER CHECK
+        # ==================================================
+
+        if interaction.user.id != self.requester.id:
+
+            await interaction.response.send_message(
+                "❌ Kamu tidak bisa menggunakan konfigurasi "
+                "milik orang lain.",
+                ephemeral=True
+            )
+
+            return
+
+        # ==================================================
+        # MEMBER CHECK
+        # ==================================================
+
+        if not self.selected_members:
+
+            await interaction.response.send_message(
+                "❌ Pilih minimal satu member penerima role.",
+                ephemeral=True
+            )
+
+            return
+
+        # ==================================================
+        # STYLE VALIDATION
+        # ==================================================
+
+        if self.selected_style == "gradient":
+
+            if self.secondary_color is None:
+
+                await interaction.response.send_message(
+                    "❌ Gradient membutuhkan **Warna Kedua**.",
+                    ephemeral=True
+                )
+
+                return
+
+        # ==================================================
+        # DISABLE BUTTON
+        # ==================================================
+
+        button.disabled = True
+
+        await interaction.response.edit_message(
+            content="⏳ Sedang membuat role...",
+            view=self
+        )
+
+        guild = interaction.guild
+
+        # ==================================================
+        # CREATE ROLE PARAMETERS
+        # ==================================================
+
+        create_kwargs = {
+            "name": self.role_name,
+            "colour": self.primary_color,
+            "reason": (
+                f"Custom role dibuat oleh "
+                f"{interaction.user} ({interaction.user.id})"
+            )
+        }
+
+        # ==================================================
+        # GRADIENT
+        # ==================================================
+
+        if self.selected_style == "gradient":
+
+            create_kwargs[
+                "secondary_colour"
+            ] = self.secondary_color
+
+        # ==================================================
+        # HOLOGRAPHIC
+        # ==================================================
+
+        elif self.selected_style == "holographic":
+
+            # Discord holographic preset
+            create_kwargs[
+                "secondary_colour"
+            ] = discord.Color(
+                0xA9B3FF
+            )
+
+            create_kwargs[
+                "tertiary_colour"
+            ] = discord.Color(
+                0xFFA8DC
+            )
+
+        # ==================================================
+        # ICON
+        # ==================================================
+
+        if self.icon_data:
+
+            create_kwargs[
+                "display_icon"
+            ] = self.icon_data
+
+        # ==================================================
+        # CREATE
+        # ==================================================
 
         try:
 
             new_role = await guild.create_role(
-                name=name,
-                color=discord_color,
-                reason=(
-                    f"Custom role request oleh "
-                    f"{member} ({member.id})"
-                )
-            )
-
-            # ==========================================
-            # BERIKAN ROLE
-            # ==========================================
-
-            await member.add_roles(
-                new_role,
-                reason="Custom role otomatis"
-            )
-
-            await interaction.followup.send(
-                f"✅ **Role berhasil dibuat!**\n\n"
-                f"**Nama:** {new_role.mention}\n"
-                f"**Warna:** `#{hex_code.upper()}`\n\n"
-                f"Role sudah otomatis diberikan kepada kamu.",
-                ephemeral=True
+                **create_kwargs
             )
 
         except discord.Forbidden:
 
-            await interaction.followup.send(
-                "❌ Bot tidak memiliki izin **Manage Roles** "
-                "atau posisi role bot terlalu rendah.",
-                ephemeral=True
+            await interaction.edit_original_response(
+                content=(
+                    "❌ **Gagal membuat role.**\n\n"
+                    "Pastikan bot mempunyai permission "
+                    "**Manage Roles** dan role bot berada "
+                    "di posisi yang cukup tinggi."
+                ),
+                view=None
             )
+
+            return
+
+        except discord.HTTPException as e:
+
+            await interaction.edit_original_response(
+                content=(
+                    "❌ Discord menolak pembuatan role.\n\n"
+                    f"```{e}```"
+                ),
+                view=None
+            )
+
+            return
 
         except Exception as e:
 
-            await interaction.followup.send(
-                f"❌ Terjadi kesalahan:\n```{e}```",
-                ephemeral=True
+            await interaction.edit_original_response(
+                content=(
+                    "❌ Terjadi error saat membuat role.\n\n"
+                    f"```{e}```"
+                ),
+                view=None
             )
 
+            return
+
+        # ==================================================
+        # ASSIGN ROLE
+        # ==================================================
+
+        success_members = []
+
+        failed_members = []
+
+        for member in self.selected_members:
+
+            try:
+
+                # Jangan berikan kepada bot
+                if member.bot:
+
+                    failed_members.append(
+                        f"{member.mention} (bot)"
+                    )
+
+                    continue
+
+                # Pastikan role dapat diberikan
+                if not new_role.is_assignable():
+
+                    failed_members.append(
+                        f"{member.mention} (role tidak assignable)"
+                    )
+
+                    continue
+
+                await member.add_roles(
+                    new_role,
+                    reason=(
+                        f"Custom role assignment oleh "
+                        f"{interaction.user}"
+                    )
+                )
+
+                success_members.append(
+                    member.mention
+                )
+
+            except discord.Forbidden:
+
+                failed_members.append(
+                    f"{member.mention} (Forbidden)"
+                )
+
+            except Exception as e:
+
+                failed_members.append(
+                    f"{member.mention} ({e})"
+                )
+
+        # ==================================================
+        # RESULT
+        # ==================================================
+
+        result = (
+            "## ✅ Custom Role Berhasil Dibuat!\n\n"
+            f"**Role:** {new_role.mention}\n"
+            f"**Style:** `{self.selected_style.title()}`\n"
+            f"**Warna utama:** `{self.primary_color}`\n"
+        )
+
+        if self.secondary_color:
+
+            result += (
+                f"**Warna kedua:** "
+                f"`{self.secondary_color}`\n"
+            )
+
+        result += "\n### 👥 Berhasil diberikan kepada:\n"
+
+        if success_members:
+
+            result += "\n".join(
+                f"• {member}"
+                for member in success_members
+            )
+
+        else:
+
+            result += "Tidak ada."
+
+        if failed_members:
+
+            result += (
+                "\n\n### ⚠️ Gagal diberikan kepada:\n"
+                + "\n".join(
+                    f"• {member}"
+                    for member in failed_members
+                )
+            )
+
+        await interaction.edit_original_response(
+            content=result,
+            view=None
+        )
+
 
 # ==========================================================
-# PERSISTENT VIEW
+# PERSISTENT PANEL VIEW
 # ==========================================================
 
-class RoleRequestView(discord.ui.View):
+class RoleRequestView(
+    discord.ui.View
+):
 
     def __init__(self):
 
-        # WAJIB NONE
-        super().__init__(timeout=None)
+        # WAJIB None untuk persistent view
+        super().__init__(
+            timeout=None
+        )
 
     @discord.ui.button(
         label="Request Role Kustom",
@@ -157,11 +744,29 @@ class RoleRequestView(discord.ui.View):
         button: discord.ui.Button
     ):
 
+        # ==================================================
+        # CHANNEL
+        # ==================================================
+
         if interaction.channel_id != TARGET_CHANNEL_ID:
 
             await interaction.response.send_message(
-                f"❌ Silakan gunakan tombol di "
-                f"<#{TARGET_CHANNEL_ID}>!",
+                f"❌ Gunakan tombol ini di "
+                f"<#{TARGET_CHANNEL_ID}>.",
+                ephemeral=True
+            )
+
+            return
+
+        # ==================================================
+        # ADMIN
+        # ==================================================
+
+        if not interaction.user.guild_permissions.administrator:
+
+            await interaction.response.send_message(
+                "❌ Hanya **Administrator** yang dapat "
+                "menggunakan sistem Custom Role.",
                 ephemeral=True
             )
 
@@ -176,11 +781,28 @@ class RoleRequestView(discord.ui.View):
 # COG
 # ==========================================================
 
-class RoleRequestCog(commands.Cog):
+class RoleRequestCog(
+    commands.Cog
+):
 
-    def __init__(self, bot):
+    def __init__(
+        self,
+        bot
+    ):
 
         self.bot = bot
+
+        # Session HTTP untuk download icon
+        # Dibuat setelah bot siap
+        if not hasattr(bot, "http_session"):
+
+            import aiohttp
+
+            bot.http_session = aiohttp.ClientSession()
+
+    # ======================================================
+    # SETUP PANEL
+    # ======================================================
 
     @commands.command(
         name="setup-role-panel",
@@ -194,43 +816,38 @@ class RoleRequestCog(commands.Cog):
         ctx: commands.Context
     ):
 
-        # Hanya channel khusus
         if ctx.channel.id != TARGET_CHANNEL_ID:
 
             await ctx.reply(
-                f"❌ Command ini hanya bisa digunakan "
-                f"di <#{TARGET_CHANNEL_ID}>!",
+                f"❌ Command hanya bisa digunakan di "
+                f"<#{TARGET_CHANNEL_ID}>.",
                 mention_author=False
             )
 
             return
 
-        # ==============================================
+        # ==================================================
         # EMBED
-        # ==============================================
+        # ==================================================
 
         embed = discord.Embed(
-            title="🎨 Request Role Kustom nanZ Server",
-
+            title="🎨 Custom Role System",
             description=(
-                "Mau punya role eksklusif dengan warna "
-                "pilihanmu sendiri?\n\n"
+                "Buat custom role dengan tampilan sendiri!\n\n"
 
-                "Klik tombol **Request Role Kustom** "
-                "di bawah untuk membuat role.\n\n"
+                "### ✨ Fitur\n"
+                "• 🎨 Solid Color\n"
+                "• 🌈 Gradient\n"
+                "• ✨ Holographic\n"
+                "• 🖼️ Role Icon\n"
+                "• 👥 Pilih member penerima\n"
+                "• 👥 Bisa diberikan ke hingga 25 member\n\n"
 
-                "📝 **Nama Role**\n"
-                "🎨 **Warna Role**\n\n"
+                "Klik tombol di bawah untuk memulai.\n\n"
 
-                "Gunakan kode warna Hex:\n"
-                "`#FF0000` → Merah\n"
-                "`#00FF00` → Hijau\n"
-                "`#0000FF` → Biru\n"
-                "`#FF00FF` → Ungu/Pink\n\n"
-
-                "⚠️ Format warna harus `#RRGGBB`."
+                "⚠️ Hanya Administrator yang dapat "
+                "menggunakan sistem ini."
             ),
-
             color=discord.Color.blurple()
         )
 
@@ -238,16 +855,11 @@ class RoleRequestCog(commands.Cog):
             text="nanZ Server • Custom Role System"
         )
 
-        # ==============================================
-        # KIRIM PANEL
-        # ==============================================
-
         await ctx.send(
             embed=embed,
             view=RoleRequestView()
         )
 
-        # Hapus command setelah panel dikirim
         try:
 
             await ctx.message.delete()
@@ -256,6 +868,40 @@ class RoleRequestCog(commands.Cog):
 
             pass
 
+    # ======================================================
+    # ERROR
+    # ======================================================
+
+    @setup_role_panel.error
+    async def setup_role_panel_error(
+        self,
+        ctx,
+        error
+    ):
+
+        if isinstance(
+            error,
+            commands.MissingPermissions
+        ):
+
+            await ctx.reply(
+                "❌ Hanya Administrator yang dapat "
+                "menggunakan command ini.",
+                mention_author=False,
+                delete_after=5
+            )
+
+        else:
+
+            await ctx.reply(
+                f"❌ Error:\n```{error}```",
+                mention_author=False
+            )
+
+
+# ==========================================================
+# SETUP
+# ==========================================================
 
 async def setup(bot):
 
