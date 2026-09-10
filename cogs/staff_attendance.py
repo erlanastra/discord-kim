@@ -331,11 +331,11 @@ class StaffAttendance(commands.Cog):
 
                 result_lines.append(
                     f"{medal} <@{m_id}> (`{data['name']}`)\n"
-                    f"   💯 Nilai Bulanan: **{data['nilai']} poin**\n"
-                    f"   🟢 Tepat Waktu: **{data['tepat_waktu']}**\n"
-                    f"🟠 Telat: **{data['telat']}**\n"
-                    f"   🟡 Izin Setengah Hari: **{data['izin_sebagian']}**\n"
-                    f"🟤 Izin Seharian: **{data['izin_seharian']}**"
+                    f"   > 💯 Nilai Bulanan: **{data['nilai']} poin**\n"
+                    f"   > 🟢 Tepat Waktu: **{data['tepat_waktu']}**\n"
+                    f"   > 🟠 Telat: **{data['telat']}**\n"
+                    f"   > 🟡 Izin Setengah Hari: **{data['izin_sebagian']}**\n"
+                    f"   > 🟤 Izin Seharian: **{data['izin_seharian']}**"
                 )
 
             full_text = embed.description + "\n\n" + "\n\n".join(result_lines)
