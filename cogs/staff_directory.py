@@ -17,6 +17,10 @@ class StaffDirectory(commands.Cog):
 
         self.CHANNEL_ID = 1540754204161736915
 
+        # Emoji status server
+        self.ONLINE_EMOJI_ID = 1550516004096974888
+        self.OFFLINE_EMOJI_ID = 1550516157113434255
+
         # Role staff
         self.STAFF_ROLES = [
             {
@@ -181,6 +185,31 @@ class StaffDirectory(commands.Cog):
         )
 
         # ======================================
+        # AMBIL EMOJI DARI SERVER BERDASARKAN ID
+        # ======================================
+
+        online_emoji = member.guild.get_emoji(
+            self.ONLINE_EMOJI_ID
+        )
+
+        offline_emoji = member.guild.get_emoji(
+            self.OFFLINE_EMOJI_ID
+        )
+
+        # Fallback jika emoji tidak ditemukan
+        online_emoji = (
+            str(online_emoji)
+            if online_emoji
+            else "🟢"
+        )
+
+        offline_emoji = (
+            str(offline_emoji)
+            if offline_emoji
+            else "⚪"
+        )
+
+        # ======================================
         # STAFF SEDANG AKTIF
         # ======================================
 
@@ -202,7 +231,7 @@ class StaffDirectory(commands.Cog):
 
                 self.save_activity()
 
-            return "<:online:1550516004096974888> **Aktif**"
+            return f"{online_emoji} **Aktif**"
 
         # ======================================
         # STAFF SUDAH OFFLINE
@@ -211,14 +240,18 @@ class StaffDirectory(commands.Cog):
         if timestamp:
 
             return (
-                f"<:offline:1550516157113434255> **Aktif <t:{timestamp}:R>**"
+                f"{offline_emoji} "
+                f"**Aktif <t:{timestamp}:R>**"
             )
 
         # ======================================
         # BELUM ADA DATA
         # ======================================
 
-        return "<:offline:1550516157113434255> **Belum terdeteksi**"
+        return (
+            f"{offline_emoji} "
+            f"**Belum terdeteksi**"
+        )
 
     # ==========================================
     # GENERATE ROLE EMBED
