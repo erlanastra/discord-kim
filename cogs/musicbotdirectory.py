@@ -9,10 +9,10 @@ import asyncio
 #
 # Fitur:
 # - Hanya menampilkan member BOT yang memiliki MUSIC_ROLE_ID
-# - Maksimal 10 bot per embed
+# - Semua bot ditampilkan dalam satu embed/message
 # - Menampilkan apakah bot FREE / DIPAKAI di voice channel
 # - Menampilkan voice channel yang sedang digunakan
-# - Jarak antar bot dibuat rapat agar panel tidak terlalu panjang
+# - Jarak antar bot dibuat sangat rapat agar panel tetap pendek
 # - Auto refresh saat bot masuk/keluar/pindah voice
 # - Auto refresh saat bot mendapat / kehilangan role music
 # - Cache + debounce untuk mengurangi PATCH dan rate limit 429
@@ -36,8 +36,8 @@ class BotDirectory(commands.Cog):
         # Hanya BOT yang mempunyai role ini yang akan ditampilkan.
         self.MUSIC_ROLE_ID = 1473506596851159080
 
-        # Maksimal bot per embed.
-        self.BOTS_PER_EMBED = 10
+        # Semua Music Bot ditampilkan dalam SATU panel/message.
+        # Tidak ada pagination.
 
         # Jeda setelah event sebelum refresh.
         self.REFRESH_DELAY = 3
@@ -104,7 +104,7 @@ class BotDirectory(commands.Cog):
     # GENERATE EMBED
     # ==========================================================
 
-    def generate_bot_embed(self, guild, bots, page, total_pages):
+    def generate_bot_embed(self, guild, bots):
         """Membuat satu embed Music Bot Directory."""
 
         embed = discord.Embed(
@@ -166,12 +166,8 @@ class BotDirectory(commands.Cog):
 
         blocks = []
 
-        for index, member in enumerate(bots):
-            global_index = (
-                ((page - 1) * self.BOTS_PER_EMBED)
-                + index
-                + 1
-            )
+        for index, member in enumerate(bots, start=1):
+            global_index = index
 
             status = self.get_voice_status(member)
 
@@ -184,59 +180,25 @@ class BotDirectory(commands.Cog):
             blocks.append(block)
 
         # ------------------------------------------------------
-        # FIELD SPLITTER
-        # Discord field value maksimal 1024 karakter.
+        # SATU FIELD SAJA
+        # ------------------------------------------------------
+        # Semua bot dimasukkan ke satu field agar output hanya
+        # menjadi satu halaman/message. Jarak dibuat rapat.
         # ------------------------------------------------------
 
-        field_chunks = []
-        current = []
+        value = "\n".join(blocks)
 
-        for block in blocks:
-            candidate = "\n".join(current + [block])
-
-            if current and len(candidate) > 1024:
-                field_chunks.append(current)
-                current = [block]
-            else:
-                current.append(block)
-
-        if current:
-            field_chunks.append(current)
-
-        previous_count = 0
-
-        for chunk_index, chunk in enumerate(field_chunks, start=1):
-            start_number = (
-                ((page - 1) * self.BOTS_PER_EMBED)
-                + previous_count
-                + 1
-            )
-
-            end_number = start_number + len(chunk) - 1
-            previous_count += len(chunk)
-
-            if len(field_chunks) == 1:
-                field_name = f"🤖 Daftar Music Bot  •  {len(bots)} Bot"
-            else:
-                field_name = (
-                    f"🤖 Daftar Music Bot  •  "
-                    f"{start_number:02d}-{end_number:02d}"
-                )
-
-            embed.add_field(
-                name=field_name,
-                value="\n".join(chunk),
-                inline=False
-            )
-
-        # ------------------------------------------------------
-        # FOOTER
-        # ------------------------------------------------------
+        # Semua bot dibuat serapat mungkin dan diletakkan dalam
+        # description sehingga hanya ada SATU embed/message.
+        # Jika jumlah bot sangat banyak hingga melewati limit
+        # description, Discord tetap tidak memungkinkan satu embed
+        # memuat semuanya; lihat catatan setelah kode.
+        embed.description = embed.description + "\n\n" + value
 
         embed.set_footer(
             text=(
                 "nanZ Server  •  Music Bot  •  "
-                f"Halaman {page}/{total_pages}"
+                f"{len(bots)} Bot"
             )
         )
 
@@ -338,69 +300,38 @@ class BotDirectory(commands.Cog):
             bots = self.get_music_bots(guild)
 
             # --------------------------------------------------
-            # PAGINATION
+            # SATU PANEL / SATU MESSAGE
             # --------------------------------------------------
 
-            if bots:
-                pages = [
-                    bots[start:start + self.BOTS_PER_EMBED]
-                    for start in range(
-                        0,
-                        len(bots),
-                        self.BOTS_PER_EMBED
-                    )
-                ]
-            else:
-                pages = [[]]
+            embed = self.generate_bot_embed(guild, bots)
 
-            total_pages = len(pages)
+            embed_data = embed.to_dict()
 
-            # --------------------------------------------------
-            # CARI MESSAGE LAMA
-            # --------------------------------------------------
-
+            # Ambil panel lama yang ditemukan.
             if not self.message_ids:
                 self.message_ids = (
                     await self.find_existing_messages(channel)
                 )
 
+            message_id = (
+                self.message_ids[0]
+                if self.message_ids
+                else None
+            )
+
             new_message_ids = []
 
             # --------------------------------------------------
-            # UPDATE / CREATE
+            # UPDATE PANEL LAMA
             # --------------------------------------------------
 
-            for page_number, page_bots in enumerate(
-                pages,
-                start=1
-            ):
-                embed = self.generate_bot_embed(
-                    guild,
-                    page_bots,
-                    page_number,
-                    total_pages
-                )
+            if message_id:
+                old_embed_data = self.embed_cache.get("single")
 
-                embed_data = embed.to_dict()
-                old_embed_data = self.embed_cache.get(
-                    page_number
-                )
+                if old_embed_data == embed_data:
+                    new_message_ids.append(message_id)
 
-                message_id = (
-                    self.message_ids[page_number - 1]
-                    if page_number - 1 < len(self.message_ids)
-                    else None
-                )
-
-                # ------------------------------------------------
-                # MESSAGE SUDAH ADA
-                # ------------------------------------------------
-
-                if message_id:
-                    if old_embed_data == embed_data:
-                        new_message_ids.append(message_id)
-                        continue
-
+                else:
                     try:
                         message = channel.get_partial_message(
                             message_id
@@ -408,65 +339,57 @@ class BotDirectory(commands.Cog):
 
                         await message.edit(embed=embed)
 
-                        self.embed_cache[page_number] = embed_data
+                        self.embed_cache["single"] = embed_data
                         new_message_ids.append(message_id)
-                        continue
 
                     except discord.NotFound:
                         print(
-                            f"[MUSIC DIRECTORY] Message halaman "
-                            f"{page_number} sudah tidak ditemukan."
-                        )
-
-                        self.embed_cache.pop(
-                            page_number,
-                            None
+                            "[MUSIC DIRECTORY] Panel lama tidak ditemukan."
                         )
 
                     except discord.HTTPException as e:
                         print(
-                            f"[MUSIC DIRECTORY] Gagal edit halaman "
-                            f"{page_number}: {e}"
+                            f"[MUSIC DIRECTORY] Gagal edit panel: {e}"
                         )
-                        continue
 
-                # ------------------------------------------------
-                # MESSAGE BELUM ADA
-                # ------------------------------------------------
+            # --------------------------------------------------
+            # BUAT PANEL JIKA BELUM ADA
+            # --------------------------------------------------
 
+            if not new_message_ids:
                 try:
-                    new_message = await channel.send(
-                        embed=embed
+                    new_message = await channel.send(embed=embed)
+
+                    new_message_ids.append(new_message.id)
+                    self.embed_cache["single"] = embed_data
+
+                    print(
+                        "[MUSIC DIRECTORY] Satu panel berhasil dibuat."
                     )
 
                 except discord.HTTPException as e:
                     print(
-                        f"[MUSIC DIRECTORY] Gagal membuat halaman "
-                        f"{page_number}: {e}"
+                        f"[MUSIC DIRECTORY] Gagal membuat panel: {e}"
                     )
-                    continue
-
-                new_message_ids.append(new_message.id)
-                self.embed_cache[page_number] = embed_data
-
-                print(
-                    f"[MUSIC DIRECTORY] Panel halaman "
-                    f"{page_number} dibuat."
-                )
 
             # --------------------------------------------------
-            # HAPUS HALAMAN BERLEBIH
+            # HAPUS PANEL DUPLIKAT / PANEL LAMA BERLEBIH
             # --------------------------------------------------
 
-            old_message_ids = self.message_ids[
-                len(new_message_ids):
-            ]
+            old_message_ids = self.message_ids[1:]
 
-            for message_id in old_message_ids:
+            # Kalau message pertama ternyata sudah tidak valid,
+            # jangan hapus ID yang sedang dipakai.
+            if (
+                self.message_ids
+                and new_message_ids
+                and self.message_ids[0] == new_message_ids[0]
+            ):
+                old_message_ids = self.message_ids[1:]
+
+            for old_id in old_message_ids:
                 try:
-                    message = channel.get_partial_message(
-                        message_id
-                    )
+                    message = channel.get_partial_message(old_id)
                     await message.delete()
 
                 except (
@@ -474,14 +397,6 @@ class BotDirectory(commands.Cog):
                     discord.HTTPException
                 ):
                     pass
-
-            # Bersihkan cache halaman lama.
-            for page_number in list(self.embed_cache.keys()):
-                if page_number > total_pages:
-                    self.embed_cache.pop(
-                        page_number,
-                        None
-                    )
 
             self.message_ids = new_message_ids
 
