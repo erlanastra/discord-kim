@@ -96,22 +96,24 @@ class BotDirectory(commands.Cog):
         return fallback
 
     def get_online_offline_emoji(self, member):
-        """Mengambil emoji Online / Offline berdasarkan status bot."""
+        """Mengambil emoji berdasarkan apakah Music Bot sedang terpakai."""
 
-        # discord.py menggunakan status offline untuk member yang offline.
-        if member.status == discord.Status.offline:
+        # Konsep Online/Offline khusus panel Music Bot:
+        # Online  = sedang berada di voice channel / sedang terpakai
+        # Offline = tidak berada di voice channel / tidak terpakai
+        if member.voice and member.voice.channel:
             return self.get_custom_emoji(
-                self.OFFLINE_EMOJI_ID,
-                "⚫"
+                self.ONLINE_EMOJI_ID,
+                "🟢"
             )
 
         return self.get_custom_emoji(
-            self.ONLINE_EMOJI_ID,
-            "🟢"
+            self.OFFLINE_EMOJI_ID,
+            "⚫"
         )
 
     def get_voice_status(self, member):
-        """Menampilkan status Online/Offline dan status voice."""
+        """Menampilkan Terpakai / Tidak Terpakai berdasarkan voice channel."""
 
         status_emoji = self.get_online_offline_emoji(member)
 
@@ -119,19 +121,13 @@ class BotDirectory(commands.Cog):
             channel = member.voice.channel
 
             return (
-                f"{status_emoji} **Online**  •  "
+                f"{status_emoji} **Terpakai**  •  "
                 f"🎧 {channel.mention}"
             )
 
-        if member.status == discord.Status.offline:
-            return (
-                f"{status_emoji} **Offline**  •  "
-                "Tidak digunakan"
-            )
-
         return (
-            f"{status_emoji} **Online**  •  "
-            "⚪ Free"
+            f"{status_emoji} **Tidak Terpakai**  •  "
+            "Tidak sedang digunakan"
         )
 
     # ==========================================================
@@ -177,21 +173,15 @@ class BotDirectory(commands.Cog):
         # SUMMARY GLOBAL
         # ------------------------------------------------------
 
-        online_count = sum(
-            1
-            for member in bots
-            if member.status != discord.Status.offline
-        )
-
-        offline_count = len(bots) - online_count
-
+        # Online/Offline di panel ini berarti TERPAKAI/TIDAK TERPAKAI
+        # di voice channel, bukan status Discord bot.
         used_count = sum(
             1
             for member in bots
             if member.voice and member.voice.channel
         )
 
-        free_count = len(bots) - used_count
+        unused_count = len(bots) - used_count
 
         online_emoji = self.get_custom_emoji(
             self.ONLINE_EMOJI_ID,
@@ -204,10 +194,8 @@ class BotDirectory(commands.Cog):
         )
 
         embed.description = (
-            f"{online_emoji} **Online:** `{online_count}`  •  "
-            f"{offline_emoji} **Offline:** `{offline_count}`  •  "
-            f"🎧 **Dipakai:** `{used_count}`  •  "
-            f"⚪ **Free:** `{free_count}`  •  "
+            f"{online_emoji} **Terpakai:** `{used_count}`  •  "
+            f"{offline_emoji} **Tidak Terpakai:** `{unused_count}`  •  "
             f"📋 **Total:** `{len(bots)}`"
         )
 
@@ -485,24 +473,10 @@ class BotDirectory(commands.Cog):
     # ==========================================================
     # PRESENCE UPDATE
     # ==========================================================
-
-    @commands.Cog.listener()
-    async def on_presence_update(self, before, after):
-        """Refresh jika status online/idle/dnd/offline berubah."""
-
-        if not after.bot:
-            return
-
-        if before.status == after.status:
-            return
-
-        if not any(
-            role.id == self.MUSIC_ROLE_ID
-            for role in after.roles
-        ):
-            return
-
-        self.schedule_refresh(after.guild)
+    # Tidak digunakan.
+    # Status panel hanya mengikuti voice channel:
+    # Terpakai = bot ada di voice
+    # Tidak Terpakai = bot tidak ada di voice
 
     # ==========================================================
     # ROLE UPDATE
