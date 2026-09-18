@@ -122,8 +122,7 @@ class BotDirectory(commands.Cog):
             )
 
         return (
-            f"{status_emoji} **Tidak Terpakai**  •  "
-            "Tidak sedang digunakan"
+            f"{status_emoji} **Tidak Terpakai**"
         )
 
     # ==========================================================
