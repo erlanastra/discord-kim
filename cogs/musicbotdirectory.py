@@ -29,8 +29,8 @@ class BotDirectory(commands.Cog):
         #
         # Jika ID belum diisi / emoji tidak ditemukan, bot akan
         # memakai emoji fallback biasa.
-        self.ONLINE_EMOJI_ID = 1550516748409905165
-        self.OFFLINE_EMOJI_ID = 1550516891171160188
+        self.ONLINE_EMOJI_ID = 1550516004096974888
+        self.OFFLINE_EMOJI_ID = 1550516157113434255
 
         # Semua Music Bot ditampilkan dalam SATU panel/message.
         # Tidak ada pagination.
