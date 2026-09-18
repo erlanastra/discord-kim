@@ -202,7 +202,7 @@ class StaffDirectory(commands.Cog):
 
                 self.save_activity()
 
-            return "🟢 **Aktif**"
+            return "<:online:1550516004096974888> **Aktif**"
 
         # ======================================
         # STAFF SUDAH OFFLINE
@@ -211,14 +211,14 @@ class StaffDirectory(commands.Cog):
         if timestamp:
 
             return (
-                f"⚪ **Aktif <t:{timestamp}:R>**"
+                f"<:offline:1550516157113434255> **Aktif <t:{timestamp}:R>**"
             )
 
         # ======================================
         # BELUM ADA DATA
         # ======================================
 
-        return "⚪ **Belum terdeteksi**"
+        return "<:offline:1550516157113434255> **Belum terdeteksi**"
 
     # ==========================================
     # GENERATE ROLE EMBED
