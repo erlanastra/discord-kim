@@ -2,23 +2,6 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 
-
-# ============================================================
-# MUSIC BOT DIRECTORY
-# Konsep seperti Staff Directory, tetapi khusus MUSIC BOT.
-#
-# Fitur:
-# - Hanya menampilkan member BOT yang memiliki MUSIC_ROLE_ID
-# - Semua bot ditampilkan dalam satu embed/message
-# - Menampilkan apakah bot FREE / DIPAKAI di voice channel
-# - Menampilkan voice channel yang sedang digunakan
-# - Jarak antar bot dibuat sangat rapat agar panel tetap pendek
-# - Auto refresh saat bot masuk/keluar/pindah voice
-# - Auto refresh saat bot mendapat / kehilangan role music
-# - Cache + debounce untuk mengurangi PATCH dan rate limit 429
-# ============================================================
-
-
 class BotDirectory(commands.Cog):
 
     def __init__(self, bot):
@@ -30,11 +13,24 @@ class BotDirectory(commands.Cog):
 
         # Channel tempat panel Music Bot Directory ditampilkan.
         # Akan diisi otomatis oleh !setupbotdirectory
-        self.BOT_CHANNEL_ID = 0
+        self.BOT_CHANNEL_ID = 1550475918454030386
 
         # Role yang digunakan untuk menandai Music Bot.
         # Hanya BOT yang mempunyai role ini yang akan ditampilkan.
         self.MUSIC_ROLE_ID = 1473506596851159080
+
+        # ======================================================
+        # CUSTOM EMOJI
+        # ======================================================
+        # Masukkan ID custom emoji server di bawah ini.
+        # Contoh:
+        # self.ONLINE_EMOJI_ID = 123456789012345678
+        # self.OFFLINE_EMOJI_ID = 987654321098765432
+        #
+        # Jika ID belum diisi / emoji tidak ditemukan, bot akan
+        # memakai emoji fallback biasa.
+        self.ONLINE_EMOJI_ID = 1550516748409905165
+        self.OFFLINE_EMOJI_ID = 1550516891171160188
 
         # Semua Music Bot ditampilkan dalam SATU panel/message.
         # Tidak ada pagination.
@@ -87,18 +83,56 @@ class BotDirectory(commands.Cog):
     # VOICE STATUS
     # ==========================================================
 
+    def get_custom_emoji(self, emoji_id, fallback):
+        """Mengambil custom emoji server berdasarkan ID."""
+        if not emoji_id:
+            return fallback
+
+        emoji = self.bot.get_emoji(emoji_id)
+
+        if emoji:
+            return str(emoji)
+
+        return fallback
+
+    def get_online_offline_emoji(self, member):
+        """Mengambil emoji Online / Offline berdasarkan status bot."""
+
+        # discord.py menggunakan status offline untuk member yang offline.
+        if member.status == discord.Status.offline:
+            return self.get_custom_emoji(
+                self.OFFLINE_EMOJI_ID,
+                "⚫"
+            )
+
+        return self.get_custom_emoji(
+            self.ONLINE_EMOJI_ID,
+            "🟢"
+        )
+
     def get_voice_status(self, member):
-        """Menampilkan status FREE atau sedang digunakan."""
+        """Menampilkan status Online/Offline dan status voice."""
+
+        status_emoji = self.get_online_offline_emoji(member)
 
         if member.voice and member.voice.channel:
             channel = member.voice.channel
 
             return (
-                "🟢 **Dipakai**  •  "
+                f"{status_emoji} **Online**  •  "
                 f"🎧 {channel.mention}"
             )
 
-        return "⚪ **Free**  •  Tidak digunakan"
+        if member.status == discord.Status.offline:
+            return (
+                f"{status_emoji} **Offline**  •  "
+                "Tidak digunakan"
+            )
+
+        return (
+            f"{status_emoji} **Online**  •  "
+            "⚪ Free"
+        )
 
     # ==========================================================
     # GENERATE EMBED
@@ -143,6 +177,14 @@ class BotDirectory(commands.Cog):
         # SUMMARY GLOBAL
         # ------------------------------------------------------
 
+        online_count = sum(
+            1
+            for member in bots
+            if member.status != discord.Status.offline
+        )
+
+        offline_count = len(bots) - online_count
+
         used_count = sum(
             1
             for member in bots
@@ -151,10 +193,22 @@ class BotDirectory(commands.Cog):
 
         free_count = len(bots) - used_count
 
+        online_emoji = self.get_custom_emoji(
+            self.ONLINE_EMOJI_ID,
+            "🟢"
+        )
+
+        offline_emoji = self.get_custom_emoji(
+            self.OFFLINE_EMOJI_ID,
+            "⚫"
+        )
+
         embed.description = (
-            f"🟢 **Dipakai:** `{used_count}` bot  •  "
-            f"⚪ **Free:** `{free_count}` bot  •  "
-            f"📋 **Total:** `{len(bots)}` bot"
+            f"{online_emoji} **Online:** `{online_count}`  •  "
+            f"{offline_emoji} **Offline:** `{offline_count}`  •  "
+            f"🎧 **Dipakai:** `{used_count}`  •  "
+            f"⚪ **Free:** `{free_count}`  •  "
+            f"📋 **Total:** `{len(bots)}`"
         )
 
         # ------------------------------------------------------
@@ -172,9 +226,8 @@ class BotDirectory(commands.Cog):
             status = self.get_voice_status(member)
 
             block = (
-                f"**{global_index:02d}. {member.display_name}**\n"
-                f"　└ {member.mention}\n"
-                f"　　└ {status}"
+                f"**{global_index:02d}. {member.display_name}** "
+                f"• {member.mention} • {status}"
             )
 
             blocks.append(block)
