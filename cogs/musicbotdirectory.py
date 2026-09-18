@@ -4,15 +4,18 @@ import asyncio
 
 
 # ============================================================
-# BOT DIRECTORY
-# Konsep sama seperti Staff Directory, tetapi KHUSUS akun BOT.
-# - Semua member dengan member.bot == True
+# MUSIC BOT DIRECTORY
+# Konsep seperti Staff Directory, tetapi khusus MUSIC BOT.
+#
+# Fitur:
+# - Hanya menampilkan member BOT yang memiliki MUSIC_ROLE_ID
 # - Maksimal 10 bot per embed
-# - Otomatis membuat beberapa halaman jika bot > 10
-# - Status online/offline/idle/dnd
-# - Refresh saat bot/member berubah
-# - Cache agar tidak PATCH jika isi embed tidak berubah
-# - Debounce untuk mengurangi Discord HTTP 429
+# - Menampilkan apakah bot FREE / DIPAKAI di voice channel
+# - Menampilkan voice channel yang sedang digunakan
+# - Jarak antar bot dibuat rapat agar panel tidak terlalu panjang
+# - Auto refresh saat bot masuk/keluar/pindah voice
+# - Auto refresh saat bot mendapat / kehilangan role music
+# - Cache + debounce untuk mengurangi PATCH dan rate limit 429
 # ============================================================
 
 
@@ -25,32 +28,30 @@ class BotDirectory(commands.Cog):
         # CONFIG
         # ======================================================
 
+        # Channel tempat panel Music Bot Directory ditampilkan.
         # Akan diisi otomatis oleh !setupbotdirectory
         self.BOT_CHANNEL_ID = 0
 
-        # Maksimal bot per embed
+        # Role yang digunakan untuk menandai Music Bot.
+        # Hanya BOT yang mempunyai role ini yang akan ditampilkan.
+        self.MUSIC_ROLE_ID = 1473506596851159080
+
+        # Maksimal bot per embed.
         self.BOTS_PER_EMBED = 10
 
-        # Jeda refresh setelah event perubahan
-        self.REFRESH_DELAY = 5
+        # Jeda setelah event sebelum refresh.
+        self.REFRESH_DELAY = 3
 
-        # Auto refresh sebagai safety net
+        # Safety refresh.
         self.AUTO_REFRESH_MINUTES = 10
 
         # ======================================================
         # MESSAGE / CACHE
         # ======================================================
 
-        # Satu message = satu halaman
         self.message_ids = []
-
-        # Cache embed per halaman
         self.embed_cache = {}
-
-        # Mencegah refresh bersamaan
         self.refresh_lock = asyncio.Lock()
-
-        # Debounce task
         self.refresh_task = None
 
         # ======================================================
@@ -60,15 +61,20 @@ class BotDirectory(commands.Cog):
         self.update_directory.start()
 
     # ==========================================================
-    # GET BOTS
+    # GET MUSIC BOTS
     # ==========================================================
 
-    def get_bots(self, guild):
-        """Mengambil semua akun bot yang ada di guild."""
+    def get_music_bots(self, guild):
+        """Mengambil BOT yang memiliki role Music Bot."""
+
+        role = guild.get_role(self.MUSIC_ROLE_ID)
+
+        if not role:
+            return []
 
         bots = [
             member
-            for member in guild.members
+            for member in role.members
             if member.bot
         ]
 
@@ -78,31 +84,28 @@ class BotDirectory(commands.Cog):
         )
 
     # ==========================================================
-    # STATUS
+    # VOICE STATUS
     # ==========================================================
 
-    def get_status(self, member):
-        """Mengubah status Discord menjadi tampilan yang ringkas."""
+    def get_voice_status(self, member):
+        """Menampilkan status FREE atau sedang digunakan."""
 
-        status = member.status
+        if member.voice and member.voice.channel:
+            channel = member.voice.channel
 
-        if status == discord.Status.online:
-            return "🟢 **Online**"
+            return (
+                "🟢 **Dipakai**  •  "
+                f"🎧 {channel.mention}"
+            )
 
-        if status == discord.Status.idle:
-            return "🟡 **Idle**"
-
-        if status == discord.Status.dnd:
-            return "🔴 **Do Not Disturb**"
-
-        return "⚪ **Offline**"
+        return "⚪ **Free**  •  Tidak digunakan"
 
     # ==========================================================
     # GENERATE EMBED
     # ==========================================================
 
     def generate_bot_embed(self, guild, bots, page, total_pages):
-        """Membuat satu halaman Bot Directory."""
+        """Membuat satu embed Music Bot Directory."""
 
         embed = discord.Embed(
             color=discord.Color.blurple()
@@ -113,7 +116,7 @@ class BotDirectory(commands.Cog):
         # ------------------------------------------------------
 
         embed.set_author(
-            name="🤖  Bot Directory",
+            name="🎵  Music Bot Directory",
             icon_url=(
                 guild.icon.url
                 if guild.icon
@@ -127,35 +130,38 @@ class BotDirectory(commands.Cog):
 
         if not bots:
             embed.description = (
-                "╰─ *Belum ada bot yang terdeteksi di server.*"
+                "╰─ *Belum ada Music Bot yang terdeteksi.*"
             )
 
             embed.set_footer(
-                text="nanZ Server  •  Bot Directory  •  0 Bot"
+                text="nanZ Server  •  Music Bot  •  0 Bot"
             )
 
             return embed
 
         # ------------------------------------------------------
-        # SUMMARY
+        # SUMMARY GLOBAL
         # ------------------------------------------------------
 
-        online_count = sum(
+        used_count = sum(
             1
             for member in bots
-            if member.status != discord.Status.offline
+            if member.voice and member.voice.channel
         )
 
-        offline_count = len(bots) - online_count
+        free_count = len(bots) - used_count
 
         embed.description = (
-            f"🟢 **Online:** `{online_count}` bot\n"
-            f"⚪ **Offline:** `{offline_count}` bot\n"
+            f"🟢 **Dipakai:** `{used_count}` bot  •  "
+            f"⚪ **Free:** `{free_count}` bot  •  "
             f"📋 **Total:** `{len(bots)}` bot"
         )
 
         # ------------------------------------------------------
         # BOT LIST
+        # ------------------------------------------------------
+        # Dibuat RAPAT: tidak ada baris kosong antar bot.
+        # Setiap bot hanya 3 baris.
         # ------------------------------------------------------
 
         blocks = []
@@ -167,7 +173,7 @@ class BotDirectory(commands.Cog):
                 + 1
             )
 
-            status = self.get_status(member)
+            status = self.get_voice_status(member)
 
             block = (
                 f"**{global_index:02d}. {member.display_name}**\n"
@@ -180,14 +186,13 @@ class BotDirectory(commands.Cog):
         # ------------------------------------------------------
         # FIELD SPLITTER
         # Discord field value maksimal 1024 karakter.
-        # Tetap maksimal 10 bot per halaman.
         # ------------------------------------------------------
 
         field_chunks = []
         current = []
 
         for block in blocks:
-            candidate = "\n\n".join(current + [block])
+            candidate = "\n".join(current + [block])
 
             if current and len(candidate) > 1024:
                 field_chunks.append(current)
@@ -200,7 +205,7 @@ class BotDirectory(commands.Cog):
 
         previous_count = 0
 
-        for chunk in field_chunks:
+        for chunk_index, chunk in enumerate(field_chunks, start=1):
             start_number = (
                 ((page - 1) * self.BOTS_PER_EMBED)
                 + previous_count
@@ -211,18 +216,16 @@ class BotDirectory(commands.Cog):
             previous_count += len(chunk)
 
             if len(field_chunks) == 1:
-                field_name = (
-                    f"🤖 Daftar Bot  •  {len(blocks)} Bot"
-                )
+                field_name = f"🤖 Daftar Music Bot  •  {len(bots)} Bot"
             else:
                 field_name = (
-                    f"🤖 Daftar Bot  •  "
+                    f"🤖 Daftar Music Bot  •  "
                     f"{start_number:02d}-{end_number:02d}"
                 )
 
             embed.add_field(
                 name=field_name,
-                value="\n\n".join(chunk),
+                value="\n".join(chunk),
                 inline=False
             )
 
@@ -232,14 +235,10 @@ class BotDirectory(commands.Cog):
 
         embed.set_footer(
             text=(
-                f"nanZ Server  •  Bot Directory  •  "
+                "nanZ Server  •  Music Bot  •  "
                 f"Halaman {page}/{total_pages}"
             )
         )
-
-        # Jangan menggunakan datetime.now() di embed.
-        # Timestamp dinamis membuat cache selalu berbeda dan
-        # menyebabkan PATCH berulang.
 
         return embed
 
@@ -248,7 +247,7 @@ class BotDirectory(commands.Cog):
     # ==========================================================
 
     async def find_existing_messages(self, channel):
-        """Mencari panel Bot Directory yang sudah ada."""
+        """Mencari panel Music Bot Directory yang sudah ada."""
 
         found = []
 
@@ -265,14 +264,14 @@ class BotDirectory(commands.Cog):
                 if not author or not author.name:
                     continue
 
-                if "Bot Directory" not in author.name:
+                if "Music Bot Directory" not in author.name:
                     continue
 
                 found.append(message.id)
 
         except discord.HTTPException as e:
             print(
-                f"[BOT DIRECTORY] Gagal mencari message lama: {e}"
+                f"[MUSIC DIRECTORY] Gagal mencari message lama: {e}"
             )
 
         # History dari terbaru -> terlama.
@@ -284,7 +283,10 @@ class BotDirectory(commands.Cog):
     # ==========================================================
 
     def schedule_refresh(self, guild):
-        """Menjadwalkan satu refresh setelah debounce."""
+        """Debounce refresh supaya event beruntun tidak spam Discord."""
+
+        if not self.BOT_CHANNEL_ID:
+            return
 
         if (
             self.refresh_task
@@ -306,7 +308,7 @@ class BotDirectory(commands.Cog):
 
         except Exception as e:
             print(
-                f"[BOT DIRECTORY] Refresh task error: {e}"
+                f"[MUSIC DIRECTORY] Refresh task error: {e}"
             )
 
     # ==========================================================
@@ -315,6 +317,10 @@ class BotDirectory(commands.Cog):
 
     async def refresh_all_panels(self, guild):
 
+        if not self.BOT_CHANNEL_ID:
+            return
+
+        # Jangan menjalankan dua refresh bersamaan.
         if self.refresh_lock.locked():
             return
 
@@ -324,11 +330,17 @@ class BotDirectory(commands.Cog):
             )
 
             if not channel:
+                print(
+                    "[MUSIC DIRECTORY] Channel tidak ditemukan."
+                )
                 return
 
-            bots = self.get_bots(guild)
+            bots = self.get_music_bots(guild)
 
-            # Pecah menjadi maksimal 10 bot per halaman.
+            # --------------------------------------------------
+            # PAGINATION
+            # --------------------------------------------------
+
             if bots:
                 pages = [
                     bots[start:start + self.BOTS_PER_EMBED]
@@ -402,7 +414,7 @@ class BotDirectory(commands.Cog):
 
                     except discord.NotFound:
                         print(
-                            f"[BOT DIRECTORY] Message halaman "
+                            f"[MUSIC DIRECTORY] Message halaman "
                             f"{page_number} sudah tidak ditemukan."
                         )
 
@@ -413,7 +425,7 @@ class BotDirectory(commands.Cog):
 
                     except discord.HTTPException as e:
                         print(
-                            f"[BOT DIRECTORY] Gagal edit halaman "
+                            f"[MUSIC DIRECTORY] Gagal edit halaman "
                             f"{page_number}: {e}"
                         )
                         continue
@@ -429,7 +441,7 @@ class BotDirectory(commands.Cog):
 
                 except discord.HTTPException as e:
                     print(
-                        f"[BOT DIRECTORY] Gagal membuat halaman "
+                        f"[MUSIC DIRECTORY] Gagal membuat halaman "
                         f"{page_number}: {e}"
                     )
                     continue
@@ -438,7 +450,7 @@ class BotDirectory(commands.Cog):
                 self.embed_cache[page_number] = embed_data
 
                 print(
-                    f"[BOT DIRECTORY] Panel halaman "
+                    f"[MUSIC DIRECTORY] Panel halaman "
                     f"{page_number} dibuat."
                 )
 
@@ -463,36 +475,121 @@ class BotDirectory(commands.Cog):
                 ):
                     pass
 
-            # Bersihkan cache halaman yang sudah tidak ada.
+            # Bersihkan cache halaman lama.
             for page_number in list(self.embed_cache.keys()):
                 if page_number > total_pages:
-                    self.embed_cache.pop(page_number, None)
+                    self.embed_cache.pop(
+                        page_number,
+                        None
+                    )
 
             self.message_ids = new_message_ids
 
     # ==========================================================
-    # MEMBER / BOT EVENTS
+    # VOICE STATE UPDATE
     # ==========================================================
 
     @commands.Cog.listener()
-    async def on_member_join(self, member):
-        if member.bot:
-            self.schedule_refresh(member.guild)
+    async def on_voice_state_update(
+        self,
+        member,
+        before,
+        after
+    ):
+        """Refresh ketika Music Bot masuk, keluar, atau pindah voice."""
 
-    @commands.Cog.listener()
-    async def on_member_remove(self, member):
-        if member.bot:
-            self.schedule_refresh(member.guild)
+        if not member.bot:
+            return
+
+        # Tidak ada perubahan channel voice.
+        if before.channel == after.channel:
+            return
+
+        # Hanya Music Bot yang dipantau.
+        if not any(
+            role.id == self.MUSIC_ROLE_ID
+            for role in member.roles
+        ):
+            return
+
+        self.schedule_refresh(member.guild)
+
+    # ==========================================================
+    # PRESENCE UPDATE
+    # ==========================================================
 
     @commands.Cog.listener()
     async def on_presence_update(self, before, after):
+        """Refresh jika status online/idle/dnd/offline berubah."""
+
         if not after.bot:
             return
 
         if before.status == after.status:
             return
 
+        if not any(
+            role.id == self.MUSIC_ROLE_ID
+            for role in after.roles
+        ):
+            return
+
         self.schedule_refresh(after.guild)
+
+    # ==========================================================
+    # ROLE UPDATE
+    # ==========================================================
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before, after):
+        """Refresh jika role Music Bot berubah."""
+
+        if not after.bot:
+            return
+
+        if before.roles == after.roles:
+            return
+
+        before_has_role = any(
+            role.id == self.MUSIC_ROLE_ID
+            for role in before.roles
+        )
+
+        after_has_role = any(
+            role.id == self.MUSIC_ROLE_ID
+            for role in after.roles
+        )
+
+        if before_has_role == after_has_role:
+            return
+
+        self.schedule_refresh(after.guild)
+
+    # ==========================================================
+    # MEMBER JOIN / REMOVE
+    # ==========================================================
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member):
+        if not member.bot:
+            return
+
+        if any(
+            role.id == self.MUSIC_ROLE_ID
+            for role in member.roles
+        ):
+            self.schedule_refresh(member.guild)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member):
+        if not member.bot:
+            return
+
+        if any(
+            role.id == self.MUSIC_ROLE_ID
+            for role in member.roles
+        ):
+            self.schedule_refresh(member.guild)
 
     # ==========================================================
     # AUTO REFRESH
@@ -525,14 +622,11 @@ class BotDirectory(commands.Cog):
     @commands.command(name="setupbotdirectory")
     @commands.has_permissions(administrator=True)
     async def setup_bot_directory(self, ctx):
-        """
-        Jalankan !setupbotdirectory di channel yang ingin
-        digunakan sebagai Bot Directory.
-        """
+        """Jalankan !setupbotdirectory di channel panel."""
 
         self.BOT_CHANNEL_ID = ctx.channel.id
 
-        # Reset agar setup membuat / menemukan panel kembali.
+        # Reset cache supaya setup membaca panel lama / membuat baru.
         self.message_ids.clear()
         self.embed_cache.clear()
 
@@ -544,7 +638,7 @@ class BotDirectory(commands.Cog):
         await self.refresh_all_panels(ctx.guild)
 
         print(
-            f"[BOT DIRECTORY] Directory berhasil dibuat di "
+            f"[MUSIC DIRECTORY] Directory berhasil dibuat di "
             f"#{ctx.channel.name}."
         )
 
