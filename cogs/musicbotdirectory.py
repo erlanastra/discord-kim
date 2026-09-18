@@ -1542,11 +1542,6 @@ class MusicBotDirectory(commands.Cog):
 # ==============================================
 
 async def setup(bot):
-
-    await bot.add_cog(
-        StaffDirectory(bot)
-    )
-
     await bot.add_cog(
         MusicBotDirectory(bot)
     )
