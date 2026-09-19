@@ -1493,6 +1493,86 @@ class DonationControl(
         )
 
     # =====================================================
+    # MANUAL OWO NOTIFICATION
+    # =====================================================
+
+    async def send_manual_owo_notification(
+        self,
+        donor,
+        amount,
+        total,
+        staff,
+        donation_id,
+        permanent
+    ):
+
+        channel = self.bot.get_channel(
+            DONATION_NOTIFICATION_CHANNEL_ID
+        )
+
+        if not channel:
+
+            return
+
+        embed = discord.Embed(
+            title="🐮 DONASI OWO LAMA",
+            color=discord.Color.blurple(),
+            timestamp=utc_now()
+        )
+
+        embed.add_field(
+            name="👤 Donatur",
+            value=donor.mention,
+            inline=True
+        )
+
+        embed.add_field(
+            name="🐮 Nominal",
+            value=f"**{format_owo(amount)} cowoncy**",
+            inline=True
+        )
+
+        embed.add_field(
+            name="📊 Total Donasi OwO",
+            value=f"**{format_owo(total)} cowoncy**",
+            inline=True
+        )
+
+        embed.add_field(
+            name="📝 Dicatat Oleh",
+            value=staff.mention,
+            inline=True
+        )
+
+        embed.add_field(
+            name="🎖️ Status",
+            value=(
+                "👑 **PERMANEN**"
+                if permanent
+                else "⏳ **30 HARI**"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="🆔 Transaksi",
+            value=f"`#{donation_id}`",
+            inline=True
+        )
+
+        embed.set_thumbnail(
+            url=donor.display_avatar.url
+        )
+
+        embed.set_footer(
+            text="nanZ Donation System • Manual OwO Lama"
+        )
+
+        await channel.send(
+            embed=embed
+        )
+
+    # =====================================================
     # OWO NOTIFICATION
     # =====================================================
 
