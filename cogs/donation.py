@@ -38,11 +38,15 @@ OWO_BOT_ID = 408785106942164992
 
 
 # =========================================================
-# THRESHOLD PERMANEN
+# THRESHOLD DONASI
 # =========================================================
 
-RUPIAH_PERMANENT_THRESHOLD = 150_000
+# Minimum total kumulatif agar role donor diberikan.
+RUPIAH_ROLE_THRESHOLD = 25_000
+OWO_ROLE_THRESHOLD = 1_000_000
 
+# Minimum total kumulatif agar role berubah menjadi PERMANEN.
+RUPIAH_PERMANENT_THRESHOLD = 150_000
 OWO_PERMANENT_THRESHOLD = 10_000_000
 
 
@@ -730,17 +734,24 @@ class DonationAmountModal(
         # ROLE
         # -------------------------------------------------
 
-        permanent = (
-            total >= RUPIAH_PERMANENT_THRESHOLD
-        )
-
-        role_status = (
-            await self.cog.set_donor_role(
-                member=self.donor,
-                role_id=DONATUR_RUPIAH_ROLE_ID,
-                permanent=permanent
+        if total >= RUPIAH_ROLE_THRESHOLD:
+            permanent = (
+                total >= RUPIAH_PERMANENT_THRESHOLD
             )
-        )
+
+            role_status = (
+                await self.cog.set_donor_role(
+                    member=self.donor,
+                    role_id=DONATUR_RUPIAH_ROLE_ID,
+                    permanent=permanent
+                )
+            )
+        else:
+            permanent = False
+            role_status = (
+                f"⏳ Role Donatur Rupiah belum diberikan. "
+                f"Minimal total donasi: **{format_rupiah(RUPIAH_ROLE_THRESHOLD)}**."
+            )
 
         # -------------------------------------------------
         # NOTIFICATION
@@ -891,11 +902,18 @@ class ManualOwoAmountModal(discord.ui.Modal):
         # ROLE
         # -------------------------------------------------
 
-        role_status = await self.cog.set_donor_role(
-            member=self.donor,
-            role_id=DONATUR_OWO_ROLE_ID,
-            permanent=permanent
-        )
+        if total >= OWO_ROLE_THRESHOLD:
+            role_status = await self.cog.set_donor_role(
+                member=self.donor,
+                role_id=DONATUR_OWO_ROLE_ID,
+                permanent=permanent
+            )
+        else:
+            permanent = False
+            role_status = (
+                f"⏳ Role Donatur OwO belum diberikan. "
+                f"Minimal total donasi: **{format_owo(OWO_ROLE_THRESHOLD)} OwO**."
+            )
 
         # -------------------------------------------------
         # NOTIFICATION
@@ -1126,8 +1144,9 @@ class DonationControl(
                 "staff dapat memasukkan riwayat donasi melalui "
                 "tombol **Input Donasi OwO Lama**.\n\n"
 
-                "🎖️ Setiap donasi mendapatkan role "
-                "**Donatur Rupiah** selama **30 hari**.\n\n"
+                "🎖️ Role **Donatur Rupiah** diberikan jika total "
+                f"kumulatif mencapai minimal **{format_rupiah(RUPIAH_ROLE_THRESHOLD)}**.\n"
+                "Role aktif selama **30 hari**.\n\n"
 
                 "👑 Jika total kumulatif mencapai "
                 f"**{format_rupiah(RUPIAH_PERMANENT_THRESHOLD)}**, "
@@ -1138,8 +1157,9 @@ class DonationControl(
                 "dari transaksi resmi OwO Bot. Riwayat donasi lama "
                 "juga dapat ditambahkan secara manual melalui panel.\n\n"
 
-                "🎖️ Setiap donasi mendapatkan role "
-                "**Donatur OwO** selama **30 hari**.\n\n"
+                "🎖️ Role **Donatur OwO** diberikan jika total "
+                f"kumulatif mencapai minimal **{format_owo(OWO_ROLE_THRESHOLD)} OwO**.\n"
+                "Role aktif selama **30 hari**.\n\n"
 
                 "👑 Jika total kumulatif mencapai "
                 f"**{format_owo(OWO_PERMANENT_THRESHOLD)} OwO**, "
@@ -1460,11 +1480,18 @@ class DonationControl(
         # ROLE
         # -------------------------------------------------
 
-        role_status = await self.set_donor_role(
-            member=donor,
-            role_id=DONATUR_OWO_ROLE_ID,
-            permanent=permanent
-        )
+        if total >= OWO_ROLE_THRESHOLD:
+            role_status = await self.set_donor_role(
+                member=donor,
+                role_id=DONATUR_OWO_ROLE_ID,
+                permanent=permanent
+            )
+        else:
+            permanent = False
+            role_status = (
+                f"⏳ Role Donatur OwO belum diberikan. "
+                f"Minimal total donasi: **{format_owo(OWO_ROLE_THRESHOLD)} OwO**."
+            )
 
         # -------------------------------------------------
         # NOTIFICATION
@@ -2117,13 +2144,22 @@ class DonationControl(
         )
 
         embed.add_field(
+            name="📌 Minimum Role",
+            value=(
+                f"💵 Rupiah: **{format_rupiah(RUPIAH_ROLE_THRESHOLD)}**\n"
+                f"🐮 OwO: **{format_owo(OWO_ROLE_THRESHOLD)} cowoncy**"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
             name="💵 Status Rupiah",
             value=(
                 "👑 **PERMANEN**"
                 if rupiah_permanent
                 else "⏳ **30 HARI**"
-                if rupiah > 0
-                else "❌ Belum Donasi"
+                if rupiah >= RUPIAH_ROLE_THRESHOLD
+                else "❌ **Belum memenuhi minimum**"
             ),
             inline=False
         )
@@ -2134,8 +2170,8 @@ class DonationControl(
                 "👑 **PERMANEN**"
                 if owo_permanent
                 else "⏳ **30 HARI**"
-                if owo > 0
-                else "❌ Belum Donasi"
+                if owo >= OWO_ROLE_THRESHOLD
+                else "❌ **Belum memenuhi minimum**"
             ),
             inline=False
         )
