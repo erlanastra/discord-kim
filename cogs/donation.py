@@ -956,6 +956,45 @@ class DonationPanelView(
         style=discord.ButtonStyle.success,
         custom_id="nanz_donation_input_rupiah"
     )
+    async def donation_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        member = interaction.guild.get_member(
+            interaction.user.id
+        )
+
+        if not member:
+            await interaction.response.send_message(
+                "❌ Member tidak ditemukan.",
+                ephemeral=True
+            )
+            return
+
+        allowed = (
+            interaction.user.guild_permissions.administrator
+            or is_staff(member)
+        )
+
+        if not allowed:
+            await interaction.response.send_message(
+                "❌ Kamu tidak memiliki akses ke panel donasi.",
+                ephemeral=True
+            )
+            return
+
+        view = DonationMemberView(
+            cog=self.cog,
+            staff_id=interaction.user.id
+        )
+
+        await interaction.response.send_message(
+            "👤 **Pilih member yang melakukan donasi:**",
+            view=view,
+            ephemeral=True
+        )
 
     @discord.ui.button(
         label="Input Donasi OwO Lama",
@@ -1000,51 +1039,6 @@ class DonationPanelView(
         await interaction.response.send_message(
             "🐮 **Pilih member yang memiliki riwayat donasi OwO:**\n"
             "Masukkan total donasi OwO lama yang ingin ditambahkan.",
-            view=view,
-            ephemeral=True
-        )
-
-    async def donation_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-
-        member = interaction.guild.get_member(
-            interaction.user.id
-        )
-
-        if not member:
-
-            await interaction.response.send_message(
-                "❌ Member tidak ditemukan.",
-                ephemeral=True
-            )
-
-            return
-
-        allowed = (
-            interaction.user.guild_permissions.administrator
-            or is_staff(member)
-        )
-
-        if not allowed:
-
-            await interaction.response.send_message(
-                "❌ Kamu tidak memiliki akses "
-                "ke panel donasi.",
-                ephemeral=True
-            )
-
-            return
-
-        view = DonationMemberView(
-            cog=self.cog,
-            staff_id=interaction.user.id
-        )
-
-        await interaction.response.send_message(
-            "👤 **Pilih member yang melakukan donasi:**",
             view=view,
             ephemeral=True
         )
