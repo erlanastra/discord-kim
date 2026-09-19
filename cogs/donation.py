@@ -1,26 +1,33 @@
 import discord
 from discord.ext import commands
-from discord.ui import View, Button, Select, Modal, TextInput
+
 import sqlite3
 import os
+import json
 from datetime import datetime
 
 
+# ==========================================================
+# DATABASE
+# ==========================================================
+
 class DonationDatabase:
-    def __init__(self, db_path="donation.db"):
-        self.db_path = db_path
-        self.init_db()
+
+    def __init__(self, database_path="donation.db"):
+        self.database_path = database_path
+        self.create_tables()
 
     def connect(self):
-        return sqlite3.connect(self.db_path)
+        return sqlite3.connect(self.database_path)
 
-    def init_db(self):
-        conn = self.connect()
-        cursor = conn.cursor()
+    def create_tables(self):
+        connection = self.connect()
+        cursor = connection.cursor()
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS donations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
                 amount INTEGER NOT NULL,
                 method TEXT NOT NULL,
@@ -29,18 +36,33 @@ class DonationDatabase:
             )
         """)
 
-        conn.commit()
-        conn.close()
+        connection.commit()
+        connection.close()
 
-    def add_donation(self, user_id, amount, method, staff_id):
-        conn = self.connect()
-        cursor = conn.cursor()
+    def add_donation(
+        self,
+        guild_id,
+        user_id,
+        amount,
+        method,
+        staff_id
+    ):
+        connection = self.connect()
+        cursor = connection.cursor()
 
         cursor.execute("""
             INSERT INTO donations
-            (user_id, amount, method, staff_id, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            (
+                guild_id,
+                user_id,
+                amount,
+                method,
+                staff_id,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
         """, (
+            guild_id,
             user_id,
             amount,
             method,
@@ -50,666 +72,220 @@ class DonationDatabase:
 
         donation_id = cursor.lastrowid
 
-        conn.commit()
-        conn.close()
+        connection.commit()
+        connection.close()
 
         return donation_id
 
-    def get_user_total(self, user_id, method="rupiah"):
-        conn = self.connect()
-        cursor = conn.cursor()
+    def get_user_total(self, guild_id, user_id, method="rupiah"):
+        connection = self.connect()
+        cursor = connection.cursor()
 
         cursor.execute("""
             SELECT COALESCE(SUM(amount), 0)
             FROM donations
-            WHERE user_id = ? AND method = ?
-        """, (user_id, method))
+            WHERE guild_id = ?
+            AND user_id = ?
+            AND method = ?
+        """, (
+            guild_id,
+            user_id,
+            method
+        ))
 
-        total = cursor.fetchone()[0]
+        result = cursor.fetchone()[0]
 
-        conn.close()
+        connection.close()
 
-        return total
+        return result
 
-    def get_top_donors(self, method="rupiah", limit=10):
-        conn = self.connect()
-        cursor = conn.cursor()
+    def get_top_donors(
+        self,
+        guild_id,
+        method="rupiah",
+        limit=10
+    ):
+        connection = self.connect()
+        cursor = connection.cursor()
 
         cursor.execute("""
             SELECT user_id, SUM(amount) AS total
             FROM donations
-            WHERE method = ?
+            WHERE guild_id = ?
+            AND method = ?
             GROUP BY user_id
             ORDER BY total DESC
             LIMIT ?
-        """, (method, limit))
+        """, (
+            guild_id,
+            method,
+            limit
+        ))
 
-        results = cursor.fetchall()
+        result = cursor.fetchall()
 
-        conn.close()
+        connection.close()
 
-        return results
+        return result
 
-    def get_all_total(self, method="rupiah"):
-        conn = self.connect()
-        cursor = conn.cursor()
+    def get_total_donation(self, guild_id, method="rupiah"):
+        connection = self.connect()
+        cursor = connection.cursor()
 
         cursor.execute("""
             SELECT COALESCE(SUM(amount), 0)
             FROM donations
-            WHERE method = ?
-        """, (method,))
+            WHERE guild_id = ?
+            AND method = ?
+        """, (
+            guild_id,
+            method
+        ))
 
-        total = cursor.fetchone()[0]
+        result = cursor.fetchone()[0]
 
-        conn.close()
+        connection.close()
 
-        return total
+        return result
 
 
-class DonationAmountModal(Modal, title="💰 Input Donasi"):
-    amount = TextInput(
-        label="Nominal Donasi",
-        placeholder="Contoh: 50000",
-        required=True,
-        min_length=1,
-        max_length=15
-    )
+# ==========================================================
+# DONATION COG
+# ==========================================================
 
-    def __init__(self, cog, target_member, staff):
-        super().__init__()
+class DonationSystem(commands.Cog):
 
-        self.cog = cog
-        self.target_member = target_member
-        self.staff = staff
-
-    async def on_submit(self, interaction: discord.Interaction):
-
-        raw_amount = self.amount.value.strip()
-
-        # Hilangkan format umum
-        raw_amount = (
-            raw_amount
-            .replace("Rp", "")
-            .replace("rp", "")
-            .replace(".", "")
-            .replace(",", "")
-            .replace(" ", "")
-        )
-
-        if not raw_amount.isdigit():
-            await interaction.response.send_message(
-                "❌ Nominal harus berupa angka.\n\n"
-                "Contoh: `50000`",
-                ephemeral=True
-            )
-            return
-
-        amount = int(raw_amount)
-
-        if amount <= 0:
-            await interaction.response.send_message(
-                "❌ Nominal harus lebih dari Rp0.",
-                ephemeral=True
-            )
-            return
-
-        if amount > 1_000_000_000:
-            await interaction.response.send_message(
-                "❌ Nominal terlalu besar.",
-                ephemeral=True
-            )
-            return
-
-        confirm_view = DonationConfirmView(
-            cog=self.cog,
-            target_member=self.target_member,
-            staff=self.staff,
-            amount=amount
-        )
-
-        embed = discord.Embed(
-            title="💰 Konfirmasi Donasi",
-            description=(
-                "Periksa kembali data donasi sebelum disimpan."
-            ),
-            color=discord.Color.gold()
-        )
-
-        embed.add_field(
-            name="👤 Donatur",
-            value=self.target_member.mention,
-            inline=False
-        )
-
-        embed.add_field(
-            name="💵 Nominal",
-            value=f"**Rp{amount:,}**".replace(",", "."),
-            inline=False
-        )
-
-        embed.add_field(
-            name="🌐 Metode",
-            value="SociaBuzz / Donasi Rupiah",
-            inline=True
-        )
-
-        embed.add_field(
-            name="👮 Dicatat oleh",
-            value=self.staff.mention,
-            inline=True
-        )
-
-        embed.set_footer(
-            text="Pastikan nominal dan member sudah benar."
-        )
-
-        await interaction.response.send_message(
-            embed=embed,
-            view=confirm_view,
-            ephemeral=True
-        )
-
-
-class MemberSelect(Select):
-
-    def __init__(self, cog, staff):
-        self.cog = cog
-        self.staff = staff
-
-        options = []
-
-        members = [
-            member
-            for member in staff.guild.members
-            if not member.bot
-        ]
-
-        # Discord Select maksimal 25 option.
-        # Ambil member berdasarkan nama secara terbatas.
-        members = sorted(
-            members,
-            key=lambda m: m.display_name.lower()
-        )[:25]
-
-        for member in members:
-            options.append(
-                discord.SelectOption(
-                    label=member.display_name[:100],
-                    value=str(member.id),
-                    description=f"@{member.name}"[:100]
-                )
-            )
-
-        if not options:
-            options.append(
-                discord.SelectOption(
-                    label="Tidak ada member",
-                    value="none"
-                )
-            )
-
-        super().__init__(
-            placeholder="👤 Pilih member...",
-            min_values=1,
-            max_values=1,
-            options=options
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-
-        if self.values[0] == "none":
-            await interaction.response.send_message(
-                "❌ Tidak ada member yang tersedia.",
-                ephemeral=True
-            )
-            return
-
-        member_id = int(self.values[0])
-
-        member = interaction.guild.get_member(member_id)
-
-        if not member:
-            await interaction.response.send_message(
-                "❌ Member tidak ditemukan.",
-                ephemeral=True
-            )
-            return
-
-        modal = DonationAmountModal(
-            cog=self.cog,
-            target_member=member,
-            staff=interaction.user
-        )
-
-        await interaction.response.send_modal(modal)
-
-
-class DonationPanelView(View):
-
-    def __init__(self, cog):
-        super().__init__(timeout=None)
-
-        self.cog = cog
-
-        self.add_item(
-            DonationMemberSelect(cog)
-        )
-
-
-class DonationMemberSelect(Select):
-
-    def __init__(self, cog):
-        self.cog = cog
-
-        super().__init__(
-            placeholder="👤 Cari / pilih member...",
-            min_values=1,
-            max_values=1,
-            options=[
-                discord.SelectOption(
-                    label="Pilih member",
-                    description="Pilih member yang menerima donasi",
-                    value="select_member"
-                )
-            ]
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-
-        # Discord Select biasa tidak menyediakan pencarian
-        # terhadap seluruh member. Gunakan UserSelect Discord.
-        await interaction.response.send_message(
-            "Silakan gunakan tombol **Pilih Member** di bawah.",
-            ephemeral=True
-        )
-
-
-class DonationUserSelect(Select):
-
-    def __init__(self, cog):
-        self.cog = cog
-
-        super().__init__(
-            placeholder="🔎 Pilih member...",
-            min_values=1,
-            max_values=1,
-            options=[]
-        )
-
-
-class DonationConfirmView(View):
-
-    def __init__(self, cog, target_member, staff, amount):
-        super().__init__(timeout=120)
-
-        self.cog = cog
-        self.target_member = target_member
-        self.staff = staff
-        self.amount = amount
-        self.processed = False
-
-    @discord.ui.button(
-        label="✅ Konfirmasi",
-        style=discord.ButtonStyle.success
-    )
-    async def confirm(
-        self,
-        interaction: discord.Interaction,
-        button: Button
-    ):
-
-        if interaction.user.id != self.staff.id:
-            await interaction.response.send_message(
-                "❌ Hanya staff yang membuat transaksi ini "
-                "yang dapat mengonfirmasi.",
-                ephemeral=True
-            )
-            return
-
-        if self.processed:
-            await interaction.response.send_message(
-                "❌ Transaksi ini sudah diproses.",
-                ephemeral=True
-            )
-            return
-
-        self.processed = True
-
-        donation_id = self.cog.db.add_donation(
-            user_id=self.target_member.id,
-            amount=self.amount,
-            method="rupiah",
-            staff_id=self.staff.id
-        )
-
-        # Tambahkan role donor
-        role = interaction.guild.get_role(
-            self.cog.DONATUR_RUPIAH_ROLE_ID
-        )
-
-        role_result = ""
-
-        if role:
-
-            try:
-                if role not in self.target_member.roles:
-                    await self.target_member.add_roles(
-                        role,
-                        reason=f"Donatur Rupiah #{donation_id}"
-                    )
-
-                role_result = "\n🎖️ Role Donatur Rupiah diberikan."
-
-            except discord.Forbidden:
-                role_result = (
-                    "\n⚠️ Bot tidak mempunyai izin "
-                    "untuk memberikan role."
-                )
-
-        # Kirim notifikasi
-        await self.cog.send_donation_notification(
-            guild=interaction.guild,
-            donor=self.target_member,
-            amount=self.amount,
-            staff=self.staff,
-            donation_id=donation_id
-        )
-
-        # Update leaderboard
-        await self.cog.update_leaderboard(
-            interaction.guild
-        )
-
-        embed = discord.Embed(
-            title="✅ Donasi Berhasil Dicatat",
-            color=discord.Color.green()
-        )
-
-        embed.add_field(
-            name="👤 Donatur",
-            value=self.target_member.mention,
-            inline=False
-        )
-
-        embed.add_field(
-            name="💵 Nominal",
-            value=f"**Rp{self.amount:,}**".replace(",", "."),
-            inline=True
-        )
-
-        embed.add_field(
-            name="🆔 ID Transaksi",
-            value=f"`#{donation_id}`",
-            inline=True
-        )
-
-        embed.description = (
-            "Donasi sudah masuk ke database."
-            + role_result
-        )
-
-        for child in self.children:
-            child.disabled = True
-
-        await interaction.response.edit_message(
-            embed=embed,
-            view=self
-        )
-
-    @discord.ui.button(
-        label="❌ Batal",
-        style=discord.ButtonStyle.danger
-    )
-    async def cancel(
-        self,
-        interaction: discord.Interaction,
-        button: Button
-    ):
-
-        if interaction.user.id != self.staff.id:
-            await interaction.response.send_message(
-                "❌ Hanya staff yang membuat transaksi ini "
-                "yang dapat membatalkan.",
-                ephemeral=True
-            )
-            return
-
-        if self.processed:
-            return
-
-        self.processed = True
-
-        embed = discord.Embed(
-            title="❌ Donasi Dibatalkan",
-            description="Transaksi tidak dimasukkan ke database.",
-            color=discord.Color.red()
-        )
-
-        for child in self.children:
-            child.disabled = True
-
-        await interaction.response.edit_message(
-            embed=embed,
-            view=self
-        )
-
-class DonationPanel(View):
-
-    def __init__(self, cog):
-        super().__init__(timeout=None)
-        self.cog = cog
-
-    @discord.ui.button(
-        label="💰 Catat Donasi",
-        style=discord.ButtonStyle.success,
-        custom_id="nanz_donation_add"
-    )
-    async def add_donation(
-        self,
-        interaction: discord.Interaction,
-        button: Button
-    ):
-
-        if not self.cog.has_staff_access(interaction.user):
-            await interaction.response.send_message(
-                "❌ Kamu tidak mempunyai akses ke panel donasi.",
-                ephemeral=True
-            )
-            return
-
-        view = DonationMemberView(
-            cog=self.cog,
-            staff=interaction.user
-        )
-
-        embed = discord.Embed(
-            title="👤 Pilih Donatur",
-            description=(
-                "Cari dan pilih member yang melakukan donasi "
-                "menggunakan dropdown di bawah."
-            ),
-            color=discord.Color.blurple()
-        )
-
-        await interaction.response.send_message(
-            embed=embed,
-            view=view,
-            ephemeral=True
-        )
-
-class DonationPanel(View):
-
-    def __init__(self, cog):
-        super().__init__(timeout=None)
-        self.cog = cog
-
-    @discord.ui.button(
-        label="💰 Catat Donasi",
-        style=discord.ButtonStyle.success,
-        custom_id="nanz_donation_add"
-    )
-    async def add_donation(
-        self,
-        interaction: discord.Interaction,
-        button: Button
-    ):
-
-        if not self.cog.has_staff_access(interaction.user):
-            await interaction.response.send_message(
-                "❌ Kamu tidak mempunyai akses ke panel donasi.",
-                ephemeral=True
-            )
-            return
-
-        # UserSelect bawaan Discord.
-        class UserDonationSelect(Select):
-
-            def __init__(inner_self):
-                super().__init__(
-                    placeholder="🔎 Pilih member...",
-                    min_values=1,
-                    max_values=1
-                )
-
-            async def callback(inner_self, select_interaction):
-
-                member_id = int(inner_self.values[0])
-
-                member = (
-                    select_interaction.guild.get_member(member_id)
-                )
-
-                if not member:
-                    await select_interaction.response.send_message(
-                        "❌ Member tidak ditemukan.",
-                        ephemeral=True
-                    )
-                    return
-
-                modal = DonationAmountModal(
-                    cog=self.cog,
-                    target_member=member,
-                    staff=select_interaction.user
-                )
-
-                await select_interaction.response.send_modal(modal)
-
-        class UserDonationView(View):
-
-            def __init__(inner_self):
-                super().__init__(timeout=60)
-
-                inner_self.add_item(
-                    UserDonationSelect()
-                )
-
-        embed = discord.Embed(
-            title="👤 Pilih Donatur",
-            description=(
-                "Gunakan dropdown di bawah untuk memilih member "
-                "yang melakukan donasi."
-            ),
-            color=discord.Color.blurple()
-        )
-
-        await interaction.response.send_message(
-            embed=embed,
-            view=UserDonationView(),
-            ephemeral=True
-        )
-
-
-class DonationControl(commands.Cog):
+    # ======================================================
+    # KONFIGURASI
+    # ======================================================
 
     DONATUR_RUPIAH_ROLE_ID = 1528766033509220572
     DONATUR_OWO_ROLE_ID = 1528766890296611017
 
+    # Channel notifikasi donasi
     DONATION_NOTIFICATION_CHANNEL_ID = 1528760374705262742
+
+    # Channel leaderboard top donatur
     TOP_DONOR_CHANNEL_ID = 1550820849018474597
 
+    # GANTI DENGAN ID CHANNEL PANEL DONASI
+    DONATION_PANEL_CHANNEL_ID = 1550826363676794890
+
+    # Role staff yang boleh mencatat donasi
+    STAFF_ROLE_IDS = {
+        1417582562100117584,  # Guru Besar
+        1453103644244316343,  # Moderator
+        1467360501745844446,  # Pembina OSIS
+        1427276194876751902,  # OSIS
+    }
+
+    PANEL_MESSAGE_FILE = "donation_panel.json"
     LEADERBOARD_MESSAGE_FILE = "donation_leaderboard.json"
 
     def __init__(self, bot):
-
         self.bot = bot
-
         self.db = DonationDatabase()
 
-        self.leaderboard_message_id = self.load_leaderboard_message_id()
-
-    # ==========================================================
-    # ACCESS
-    # ==========================================================
-
-    def has_staff_access(self, member):
-
-        if member.guild_permissions.administrator:
-            return True
-
-        # Gunakan role staff yang sudah ada di server.
-        staff_role_ids = {
-            1417582562100117584,  # Guru Besar
-            1453103644244316343,  # Moderator
-            1467360501745844446,  # Pembina OSIS
-            1427276194876751902,  # OSIS
-        }
-
-        return any(
-            role.id in staff_role_ids
-            for role in member.roles
+        self.panel_message_id = self.load_message_id(
+            self.PANEL_MESSAGE_FILE
         )
 
-    # ==========================================================
-    # FILE
-    # ==========================================================
-
-    def load_leaderboard_message_id(self):
-
-        if not os.path.exists(
+        self.leaderboard_message_id = self.load_message_id(
             self.LEADERBOARD_MESSAGE_FILE
-        ):
+        )
+
+    async def cog_load(self):
+        """
+        Membuat view tetap aktif setelah bot restart.
+        """
+
+        self.bot.add_view(
+            DonationPanelView(self)
+        )
+
+    # ======================================================
+    # HELPER FILE
+    # ======================================================
+
+    def load_message_id(self, filename):
+        if not os.path.exists(filename):
             return None
 
         try:
-            with open(
-                self.LEADERBOARD_MESSAGE_FILE,
-                "r",
-                encoding="utf-8"
-            ) as f:
+            with open(filename, "r", encoding="utf-8") as file:
+                data = json.load(file)
 
-                data = json.load(f)
-
-                return data.get("message_id")
+            return data.get("message_id")
 
         except Exception:
             return None
 
-    def save_leaderboard_message_id(self, message_id):
-
-        with open(
-            self.LEADERBOARD_MESSAGE_FILE,
-            "w",
-            encoding="utf-8"
-        ) as f:
-
+    def save_message_id(self, filename, message_id):
+        with open(filename, "w", encoding="utf-8") as file:
             json.dump(
-                {"message_id": message_id},
-                f,
+                {
+                    "message_id": message_id
+                },
+                file,
                 indent=4
             )
 
-    # ==========================================================
-    # FORMAT
-    # ==========================================================
+    # ======================================================
+    # HELPER
+    # ======================================================
 
     def format_rupiah(self, amount):
-
         return f"Rp{amount:,}".replace(",", ".")
 
-    # ==========================================================
-    # NOTIFICATION
-    # ==========================================================
+    def has_staff_access(self, member):
+        if member.guild_permissions.administrator:
+            return True
+
+        return any(
+            role.id in self.STAFF_ROLE_IDS
+            for role in member.roles
+        )
+
+    # ======================================================
+    # PANEL EMBED
+    # ======================================================
+
+    def create_panel_embed(self):
+        embed = discord.Embed(
+            title="💰 NANZ DONATION CENTER",
+            description=(
+                "Terima kasih telah mendukung **nanZ Community**! 💙\n\n"
+
+                "Panel ini digunakan oleh staff untuk mencatat "
+                "donasi Rupiah dari member.\n\n"
+
+                "### 📌 Cara menggunakan\n"
+                "1. Klik tombol **Catat Donasi**.\n"
+                "2. Cari dan pilih member donatur.\n"
+                "3. Masukkan nominal donasi.\n"
+                "4. Periksa dan konfirmasi data.\n\n"
+
+                "### ⚙️ Sistem otomatis\n"
+                "• Donasi masuk database.\n"
+                "• Role Donatur Rupiah diberikan.\n"
+                "• Notifikasi dikirim ke channel donasi.\n"
+                "• Leaderboard Top Donatur diperbarui.\n\n"
+
+                "⚠️ Pastikan nominal dan member sudah benar "
+                "sebelum melakukan konfirmasi."
+            ),
+            color=discord.Color.gold()
+        )
+
+        embed.set_footer(
+            text="nanZ Community • Donation System"
+        )
+
+        return embed
+
+    # ======================================================
+    # NOTIFIKASI DONASI
+    # ======================================================
 
     async def send_donation_notification(
         self,
@@ -719,7 +295,6 @@ class DonationControl(commands.Cog):
         staff,
         donation_id
     ):
-
         channel = guild.get_channel(
             self.DONATION_NOTIFICATION_CHANNEL_ID
         )
@@ -728,15 +303,16 @@ class DonationControl(commands.Cog):
             return
 
         total = self.db.get_user_total(
+            guild.id,
             donor.id,
             "rupiah"
         )
 
         embed = discord.Embed(
-            title="💰 DONASI BARU",
+            title="💰 DONASI BARU MASUK",
             description=(
                 f"Terima kasih kepada {donor.mention} "
-                f"yang telah mendukung **nanZ Community**! 💙"
+                "yang telah mendukung **nanZ Community**! 💙"
             ),
             color=discord.Color.gold(),
             timestamp=datetime.utcnow()
@@ -749,20 +325,20 @@ class DonationControl(commands.Cog):
         )
 
         embed.add_field(
-            name="💵 Donasi",
+            name="💵 Nominal",
             value=f"**{self.format_rupiah(amount)}**",
-            inline=True
-        )
-
-        embed.add_field(
-            name="📊 Total Donasi",
-            value=f"**{self.format_rupiah(total)}**",
             inline=True
         )
 
         embed.add_field(
             name="🌐 Metode",
             value="SociaBuzz",
+            inline=True
+        )
+
+        embed.add_field(
+            name="📊 Total Donatur",
+            value=f"**{self.format_rupiah(total)}**",
             inline=True
         )
 
@@ -786,91 +362,82 @@ class DonationControl(commands.Cog):
             text="nanZ Donation System"
         )
 
-        await channel.send(
-            embed=embed
-        )
+        await channel.send(embed=embed)
 
-    # ==========================================================
+    # ======================================================
     # LEADERBOARD
-    # ==========================================================
+    # ======================================================
 
     async def create_leaderboard_embed(self, guild):
-
-        top_rupiah = self.db.get_top_donors(
+        top_donors = self.db.get_top_donors(
+            guild.id,
             method="rupiah",
             limit=10
         )
 
-        total_rupiah = self.db.get_all_total(
+        total_donation = self.db.get_total_donation(
+            guild.id,
             method="rupiah"
         )
 
         embed = discord.Embed(
             title="🏆 TOP DONATUR NANZ",
             description=(
-                "Supporter nanZ berdasarkan total donasi.\n"
-                "Leaderboard diperbarui otomatis."
+                "Leaderboard donatur Rupiah nanZ Community.\n"
+                "Data diperbarui otomatis setiap ada donasi baru."
             ),
             color=discord.Color.gold()
         )
 
-        if top_rupiah:
-
-            lines = []
-
+        if not top_donors:
+            donor_text = "Belum ada donasi yang tercatat."
+        else:
+            donor_lines = []
             medals = ["🥇", "🥈", "🥉"]
 
             for index, (user_id, total) in enumerate(
-                top_rupiah,
+                top_donors,
                 start=1
             ):
-
                 member = guild.get_member(user_id)
 
                 if member:
-                    name = member.mention
+                    donor_name = member.mention
                 else:
-                    name = f"<@{user_id}>"
+                    donor_name = f"<@{user_id}>"
 
-                medal = (
+                rank = (
                     medals[index - 1]
                     if index <= 3
                     else f"`#{index}`"
                 )
 
-                lines.append(
-                    f"{medal} {name} — "
+                donor_lines.append(
+                    f"{rank} {donor_name} — "
                     f"**{self.format_rupiah(total)}**"
                 )
 
-            embed.add_field(
-                name="💵 Donatur Rupiah",
-                value="\n".join(lines),
-                inline=False
-            )
-
-        else:
-
-            embed.add_field(
-                name="💵 Donatur Rupiah",
-                value="Belum ada donasi.",
-                inline=False
-            )
+            donor_text = "\n".join(donor_lines)
 
         embed.add_field(
-            name="💰 Total Donasi",
-            value=f"**{self.format_rupiah(total_rupiah)}**",
+            name="💵 Donatur Rupiah",
+            value=donor_text,
+            inline=False
+        )
+
+        embed.add_field(
+            name="💰 Total Seluruh Donasi",
+            value=f"**{self.format_rupiah(total_donation)}**",
             inline=False
         )
 
         embed.set_footer(
-            text="nanZ Community • Donation Leaderboard"
+            text="nanZ Community • Live Donation Leaderboard"
         )
 
         return embed
 
     async def update_leaderboard(self, guild):
-
         channel = guild.get_channel(
             self.TOP_DONOR_CHANNEL_ID
         )
@@ -878,145 +445,105 @@ class DonationControl(commands.Cog):
         if not channel:
             return
 
-        embed = await self.create_leaderboard_embed(
-            guild
-        )
+        embed = await self.create_leaderboard_embed(guild)
 
-        # Coba edit message lama
         if self.leaderboard_message_id:
-
             try:
-
                 message = await channel.fetch_message(
                     self.leaderboard_message_id
                 )
 
-                await message.edit(
-                    embed=embed
-                )
-
+                await message.edit(embed=embed)
                 return
 
             except discord.NotFound:
-
                 self.leaderboard_message_id = None
 
             except discord.HTTPException:
-
                 return
 
-        # Kalau belum ada, buat message baru
-        message = await channel.send(
-            embed=embed
-        )
+        message = await channel.send(embed=embed)
 
         self.leaderboard_message_id = message.id
 
-        self.save_leaderboard_message_id(
+        self.save_message_id(
+            self.LEADERBOARD_MESSAGE_FILE,
             message.id
         )
 
-    # ==========================================================
-    # COMMAND PANEL
-    # ==========================================================
+    # ======================================================
+    # SETUP PANEL PERMANEN
+    # ======================================================
 
     @commands.command(
-        name="donationpanel",
-        aliases=["donasipanel"]
+        name="setupdonationpanel",
+        aliases=["setupdonasipanel"]
     )
-    async def donation_panel(
-        self,
-        ctx
-    ):
+    @commands.has_permissions(administrator=True)
+    async def setup_donation_panel(self, ctx):
+        channel = ctx.guild.get_channel(
+            self.DONATION_PANEL_CHANNEL_ID
+        )
 
-        if not self.has_staff_access(ctx.author):
-
+        if not channel:
             await ctx.send(
-                "❌ Kamu tidak mempunyai akses "
-                "ke panel donasi.",
-                delete_after=5
+                "❌ Channel panel donasi tidak ditemukan. "
+                "Periksa `DONATION_PANEL_CHANNEL_ID`."
             )
-
             return
 
-        embed = discord.Embed(
-            title="💰 NANZ DONATION PANEL",
-            description=(
-                "Gunakan panel ini untuk mencatat "
-                "donasi Rupiah dari member.\n\n"
+        embed = self.create_panel_embed()
 
-                "### 💵 Donasi Rupiah\n"
-                "Klik **Catat Donasi** → pilih member → "
-                "masukkan nominal → konfirmasi.\n\n"
-
-                "### 🎖️ Otomatis\n"
-                "• Donasi masuk database\n"
-                "• Role Donatur Rupiah diberikan\n"
-                "• Notifikasi dikirim\n"
-                "• Top Donatur diperbarui\n\n"
-
-                "⚠️ Pastikan nominal yang dimasukkan "
-                "sesuai dengan donasi yang diterima."
-            ),
-            color=discord.Color.gold()
-        )
-
-        embed.set_footer(
-            text="nanZ Donation System"
-        )
-
-        await ctx.send(
+        message = await channel.send(
             embed=embed,
-            view=DonationPanel(self)
+            view=DonationPanelView(self)
         )
 
-    # ==========================================================
-    # MANUAL REFRESH
-    # ==========================================================
+        self.panel_message_id = message.id
 
-    @commands.command(
-        name="topdonatur",
-        aliases=["topdonasi"]
-    )
-    async def top_donatur(
-        self,
-        ctx
-    ):
-
-        if not self.has_staff_access(ctx.author):
-            return
-
-        await self.update_leaderboard(
-            ctx.guild
+        self.save_message_id(
+            self.PANEL_MESSAGE_FILE,
+            message.id
         )
 
         await ctx.send(
-            "✅ Leaderboard donatur berhasil diperbarui.",
+            f"✅ Panel donasi berhasil dibuat di {channel.mention}.",
             delete_after=5
         )
 
-    # ==========================================================
-    # USER TOTAL
-    # ==========================================================
+    # ======================================================
+    # SETUP LEADERBOARD
+    # ======================================================
 
     @commands.command(
-        name="donasiku"
+        name="setupdonatur",
+        aliases=["setuptopdonatur"]
     )
-    async def my_donation(
-        self,
-        ctx,
-        member: discord.Member = None
-    ):
+    @commands.has_permissions(administrator=True)
+    async def setup_donation_leaderboard(self, ctx):
+        await self.update_leaderboard(ctx.guild)
 
+        await ctx.send(
+            "✅ Leaderboard donatur berhasil dibuat/diperbarui.",
+            delete_after=5
+        )
+
+    # ======================================================
+    # CEK DONASI SENDIRI
+    # ======================================================
+
+    @commands.command(name="donasiku")
+    async def my_donation(self, ctx, member: discord.Member = None):
         target = member or ctx.author
 
         total = self.db.get_user_total(
+            ctx.guild.id,
             target.id,
             "rupiah"
         )
 
         embed = discord.Embed(
-            title="💰 Statistik Donasi",
+            title="💰 STATISTIK DONASI",
             color=discord.Color.gold()
         )
 
@@ -1031,32 +558,378 @@ class DonationControl(commands.Cog):
             inline=False
         )
 
-        await ctx.send(
-            embed=embed
+        await ctx.send(embed=embed)
+
+
+# ==========================================================
+# PANEL VIEW
+# ==========================================================
+
+class DonationPanelView(discord.ui.View):
+
+    def __init__(self, cog):
+        super().__init__(
+            timeout=None
         )
 
-    # ==========================================================
-    # SETUP LEADERBOARD
-    # ==========================================================
+        self.cog = cog
 
-    @commands.command(
-        name="setupdonatur"
+    @discord.ui.button(
+        label="💰 Catat Donasi",
+        style=discord.ButtonStyle.success,
+        custom_id="nanz_donation_record_button"
     )
-    @commands.has_permissions(administrator=True)
-    async def setup_donatur(
+    async def record_donation(
         self,
-        ctx
+        interaction: discord.Interaction,
+        button: discord.ui.Button
     ):
+        if not self.cog.has_staff_access(interaction.user):
+            await interaction.response.send_message(
+                "❌ Kamu tidak mempunyai akses ke panel donasi.",
+                ephemeral=True
+            )
+            return
 
-        await self.update_leaderboard(
-            ctx.guild
+        view = DonationMemberView(
+            cog=self.cog,
+            staff=interaction.user
         )
 
-        await ctx.send(
-            "✅ Leaderboard Donatur berhasil dibuat.",
-            delete_after=5
+        embed = discord.Embed(
+            title="👤 PILIH DONATUR",
+            description=(
+                "Gunakan dropdown di bawah untuk mencari "
+                "dan memilih member yang melakukan donasi."
+            ),
+            color=discord.Color.blurple()
         )
 
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=True
+        )
+
+
+# ==========================================================
+# MEMBER SELECT VIEW
+# ==========================================================
+
+class DonationMemberView(discord.ui.View):
+
+    def __init__(self, cog, staff):
+        super().__init__(
+            timeout=120
+        )
+
+        self.cog = cog
+        self.staff = staff
+
+        self.member_select = discord.ui.UserSelect(
+            placeholder="🔎 Cari member donatur...",
+            min_values=1,
+            max_values=1
+        )
+
+        self.member_select.callback = self.member_selected
+
+        self.add_item(self.member_select)
+
+    async def member_selected(self, interaction):
+        selected_member = self.member_select.values[0]
+
+        if not isinstance(selected_member, discord.Member):
+            selected_member = interaction.guild.get_member(
+                selected_member.id
+            )
+
+        if not selected_member:
+            await interaction.response.send_message(
+                "❌ Member tidak ditemukan.",
+                ephemeral=True
+            )
+            return
+
+        modal = DonationAmountModal(
+            cog=self.cog,
+            donor=selected_member,
+            staff=self.staff
+        )
+
+        await interaction.response.send_modal(modal)
+
+
+# ==========================================================
+# NOMINAL MODAL
+# ==========================================================
+
+class DonationAmountModal(discord.ui.Modal):
+
+    def __init__(self, cog, donor, staff):
+        super().__init__(
+            title="💰 Input Nominal Donasi"
+        )
+
+        self.cog = cog
+        self.donor = donor
+        self.staff = staff
+
+        self.amount_input = discord.ui.TextInput(
+            label="Nominal Donasi Rupiah",
+            placeholder="Contoh: 50000",
+            required=True,
+            min_length=1,
+            max_length=15
+        )
+
+        self.add_item(self.amount_input)
+
+    async def on_submit(self, interaction):
+        raw_amount = self.amount_input.value.strip()
+
+        raw_amount = (
+            raw_amount
+            .replace("Rp", "")
+            .replace("rp", "")
+            .replace(".", "")
+            .replace(",", "")
+            .replace(" ", "")
+        )
+
+        if not raw_amount.isdigit():
+            await interaction.response.send_message(
+                "❌ Nominal harus berupa angka.\n"
+                "Contoh: `50000`",
+                ephemeral=True
+            )
+            return
+
+        amount = int(raw_amount)
+
+        if amount <= 0:
+            await interaction.response.send_message(
+                "❌ Nominal harus lebih dari Rp0.",
+                ephemeral=True
+            )
+            return
+
+        if amount > 1_000_000_000:
+            await interaction.response.send_message(
+                "❌ Nominal terlalu besar.",
+                ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title="🔎 KONFIRMASI DONASI",
+            description=(
+                "Pastikan semua data sudah benar "
+                "sebelum menyimpan transaksi."
+            ),
+            color=discord.Color.gold()
+        )
+
+        embed.add_field(
+            name="👤 Donatur",
+            value=self.donor.mention,
+            inline=False
+        )
+
+        embed.add_field(
+            name="💵 Nominal",
+            value=f"**{self.cog.format_rupiah(amount)}**",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🌐 Metode",
+            value="SociaBuzz",
+            inline=True
+        )
+
+        embed.add_field(
+            name="👮 Dicatat oleh",
+            value=self.staff.mention,
+            inline=True
+        )
+
+        view = DonationConfirmView(
+            cog=self.cog,
+            donor=self.donor,
+            staff=self.staff,
+            amount=amount
+        )
+
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=True
+        )
+
+
+# ==========================================================
+# KONFIRMASI DONASI
+# ==========================================================
+
+class DonationConfirmView(discord.ui.View):
+
+    def __init__(self, cog, donor, staff, amount):
+        super().__init__(
+            timeout=120
+        )
+
+        self.cog = cog
+        self.donor = donor
+        self.staff = staff
+        self.amount = amount
+        self.completed = False
+
+    @discord.ui.button(
+        label="✅ Konfirmasi",
+        style=discord.ButtonStyle.success
+    )
+    async def confirm(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        if interaction.user.id != self.staff.id:
+            await interaction.response.send_message(
+                "❌ Hanya staff yang membuat transaksi ini "
+                "yang dapat mengonfirmasi.",
+                ephemeral=True
+            )
+            return
+
+        if self.completed:
+            await interaction.response.send_message(
+                "❌ Transaksi ini sudah diproses.",
+                ephemeral=True
+            )
+            return
+
+        self.completed = True
+
+        donation_id = self.cog.db.add_donation(
+            guild_id=interaction.guild.id,
+            user_id=self.donor.id,
+            amount=self.amount,
+            method="rupiah",
+            staff_id=self.staff.id
+        )
+
+        role = interaction.guild.get_role(
+            self.cog.DONATUR_RUPIAH_ROLE_ID
+        )
+
+        role_message = ""
+
+        if role:
+            try:
+                if role not in self.donor.roles:
+                    await self.donor.add_roles(
+                        role,
+                        reason=f"Donatur Rupiah #{donation_id}"
+                    )
+
+                role_message = "\n🎖️ Role Donatur Rupiah diberikan."
+
+            except discord.Forbidden:
+                role_message = (
+                    "\n⚠️ Bot tidak dapat memberikan role. "
+                    "Periksa posisi role bot."
+                )
+
+        await self.cog.send_donation_notification(
+            guild=interaction.guild,
+            donor=self.donor,
+            amount=self.amount,
+            staff=self.staff,
+            donation_id=donation_id
+        )
+
+        await self.cog.update_leaderboard(
+            interaction.guild
+        )
+
+        embed = discord.Embed(
+            title="✅ DONASI BERHASIL DICATAT",
+            description=(
+                "Donasi berhasil disimpan ke database."
+                + role_message
+            ),
+            color=discord.Color.green()
+        )
+
+        embed.add_field(
+            name="👤 Donatur",
+            value=self.donor.mention,
+            inline=False
+        )
+
+        embed.add_field(
+            name="💵 Nominal",
+            value=f"**{self.cog.format_rupiah(self.amount)}**",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🆔 ID Transaksi",
+            value=f"`#{donation_id}`",
+            inline=True
+        )
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self
+        )
+
+    @discord.ui.button(
+        label="❌ Batal",
+        style=discord.ButtonStyle.danger
+    )
+    async def cancel(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        if interaction.user.id != self.staff.id:
+            await interaction.response.send_message(
+                "❌ Hanya staff yang membuat transaksi ini "
+                "yang dapat membatalkan.",
+                ephemeral=True
+            )
+            return
+
+        if self.completed:
+            return
+
+        self.completed = True
+
+        embed = discord.Embed(
+            title="❌ DONASI DIBATALKAN",
+            description=(
+                "Data donasi tidak dimasukkan ke database."
+            ),
+            color=discord.Color.red()
+        )
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self
+        )
+
+
+# ==========================================================
+# SETUP
+# ==========================================================
 
 async def setup(bot):
-    await bot.add_cog(DonationControl(bot))
+    await bot.add_cog(DonationSystem(bot))
