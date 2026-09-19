@@ -253,6 +253,35 @@ class DonationDatabase:
         return result[0] if result else 0
 
     # -----------------------------------------------------
+    # GET USER TOTAL BY METHODS
+    # -----------------------------------------------------
+
+    def get_user_total_by_methods(
+        self,
+        user_id,
+        methods
+    ):
+
+        if not methods:
+            return 0
+
+        placeholders = ",".join("?" for _ in methods)
+
+        with self.connect() as conn:
+
+            result = conn.execute(
+                f"""
+                SELECT COALESCE(SUM(amount), 0)
+                FROM donations
+                WHERE user_id = ?
+                AND method IN ({placeholders})
+                """,
+                (user_id, *methods)
+            ).fetchone()
+
+        return result[0] if result else 0
+
+    # -----------------------------------------------------
     # TOP DONORS
     # -----------------------------------------------------
 
@@ -308,6 +337,66 @@ class DonationDatabase:
                 WHERE method = ?
                 """,
                 (method,)
+            ).fetchone()
+
+        return result[0] if result else 0
+
+    # -----------------------------------------------------
+    # TOP DONORS BY MULTIPLE METHODS
+    # -----------------------------------------------------
+
+    def get_top_donors_by_methods(
+        self,
+        methods,
+        limit=10
+    ):
+
+        if not methods:
+            return []
+
+        placeholders = ",".join("?" for _ in methods)
+
+        with self.connect() as conn:
+
+            rows = conn.execute(
+                f"""
+                SELECT
+                    user_id,
+                    SUM(amount) AS total
+                FROM donations
+                WHERE method IN ({placeholders})
+                GROUP BY user_id
+                ORDER BY total DESC
+                LIMIT ?
+                """,
+                (*methods, limit)
+            ).fetchall()
+
+        return rows
+
+    # -----------------------------------------------------
+    # TOTAL ALL BY MULTIPLE METHODS
+    # -----------------------------------------------------
+
+    def get_total_all_by_methods(
+        self,
+        methods
+    ):
+
+        if not methods:
+            return 0
+
+        placeholders = ",".join("?" for _ in methods)
+
+        with self.connect() as conn:
+
+            result = conn.execute(
+                f"""
+                SELECT COALESCE(SUM(amount), 0)
+                FROM donations
+                WHERE method IN ({placeholders})
+                """,
+                tuple(methods)
             ).fetchone()
 
         return result[0] if result else 0
@@ -689,6 +778,159 @@ class DonationAmountModal(
         )
 
 
+
+# =========================================================
+# MANUAL OWO MEMBER SELECT
+# =========================================================
+
+class ManualOwoMemberView(discord.ui.View):
+
+    def __init__(self, cog, staff_id):
+        super().__init__(timeout=120)
+
+        self.cog = cog
+        self.staff_id = staff_id
+
+        self.user_select = discord.ui.UserSelect(
+            placeholder="Pilih member donatur OwO lama...",
+            min_values=1,
+            max_values=1
+        )
+
+        self.user_select.callback = self.select_user
+        self.add_item(self.user_select)
+
+    async def select_user(self, interaction: discord.Interaction):
+
+        donor = self.user_select.values[0]
+
+        modal = ManualOwoAmountModal(
+            cog=self.cog,
+            donor=donor,
+            staff_id=self.staff_id
+        )
+
+        await interaction.response.send_modal(modal)
+
+
+# =========================================================
+# MANUAL OWO MODAL
+# =========================================================
+
+class ManualOwoAmountModal(discord.ui.Modal):
+
+    def __init__(self, cog, donor, staff_id):
+        super().__init__(title="Input Donasi OwO Lama")
+
+        self.cog = cog
+        self.donor = donor
+        self.staff_id = staff_id
+
+        self.amount = discord.ui.TextInput(
+            label="Nominal Donasi OwO",
+            placeholder="Contoh: 1585000",
+            required=True,
+            min_length=1,
+            max_length=20
+        )
+
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        raw_amount = (
+            self.amount.value
+            .replace(".", "")
+            .replace(",", "")
+            .replace(" ", "")
+        )
+
+        if not raw_amount.isdigit():
+            await interaction.response.send_message(
+                "❌ Nominal OwO harus berupa angka.",
+                ephemeral=True
+            )
+            return
+
+        amount = int(raw_amount)
+
+        if amount <= 0:
+            await interaction.response.send_message(
+                "❌ Nominal OwO harus lebih dari 0.",
+                ephemeral=True
+            )
+            return
+
+        # -------------------------------------------------
+        # SIMPAN DONASI MANUAL
+        # -------------------------------------------------
+
+        donation_id = self.cog.db.add_donation(
+            user_id=self.donor.id,
+            amount=amount,
+            method="owo_manual",
+            staff_id=self.staff_id
+        )
+
+        # -------------------------------------------------
+        # TOTAL OWO KUMULATIF
+        #
+        # owo_manual ikut dihitung sebagai donasi OwO.
+        # -------------------------------------------------
+
+        total = self.cog.db.get_user_total_by_methods(
+            self.donor.id,
+            ("owo", "owo_manual")
+        )
+
+        permanent = (
+            total >= OWO_PERMANENT_THRESHOLD
+        )
+
+        # -------------------------------------------------
+        # ROLE
+        # -------------------------------------------------
+
+        role_status = await self.cog.set_donor_role(
+            member=self.donor,
+            role_id=DONATUR_OWO_ROLE_ID,
+            permanent=permanent
+        )
+
+        # -------------------------------------------------
+        # NOTIFICATION
+        # -------------------------------------------------
+
+        await self.cog.send_manual_owo_notification(
+            donor=self.donor,
+            amount=amount,
+            total=total,
+            staff=interaction.user,
+            donation_id=donation_id,
+            permanent=permanent
+        )
+
+        # -------------------------------------------------
+        # LEADERBOARD
+        # -------------------------------------------------
+
+        await self.cog.update_leaderboard()
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
+
+        await interaction.response.send_message(
+            f"✅ **Donasi OwO lama berhasil dicatat!**\n\n"
+            f"👤 Donatur: {self.donor.mention}\n"
+            f"🐮 Nominal: **{format_owo(amount)} cowoncy**\n"
+            f"📊 Total OwO: **{format_owo(total)} cowoncy**\n"
+            f"🆔 Transaksi: `#{donation_id}`\n\n"
+            f"{role_status}",
+            ephemeral=True
+        )
+
+
 # =========================================================
 # DONATION PANEL
 # =========================================================
@@ -714,6 +956,54 @@ class DonationPanelView(
         style=discord.ButtonStyle.success,
         custom_id="nanz_donation_input_rupiah"
     )
+
+    @discord.ui.button(
+        label="Input Donasi OwO Lama",
+        emoji="🐮",
+        style=discord.ButtonStyle.primary,
+        custom_id="nanz_donation_input_owo_manual"
+    )
+    async def manual_owo_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        member = interaction.guild.get_member(
+            interaction.user.id
+        )
+
+        if not member:
+            await interaction.response.send_message(
+                "❌ Member tidak ditemukan.",
+                ephemeral=True
+            )
+            return
+
+        allowed = (
+            interaction.user.guild_permissions.administrator
+            or is_staff(member)
+        )
+
+        if not allowed:
+            await interaction.response.send_message(
+                "❌ Kamu tidak memiliki akses ke panel donasi.",
+                ephemeral=True
+            )
+            return
+
+        view = ManualOwoMemberView(
+            cog=self.cog,
+            staff_id=interaction.user.id
+        )
+
+        await interaction.response.send_message(
+            "🐮 **Pilih member yang memiliki riwayat donasi OwO:**\n"
+            "Masukkan total donasi OwO lama yang ingin ditambahkan.",
+            view=view,
+            ephemeral=True
+        )
+
     async def donation_button(
         self,
         interaction: discord.Interaction,
@@ -837,6 +1127,11 @@ class DonationControl(
                 "Staff dapat mencatat donasi melalui "
                 "tombol **Input Donasi Rupiah**.\n\n"
 
+                "### 🐮 INPUT OWO LAMA\n"
+                "Untuk donatur OwO sebelum sistem otomatis dibuat, "
+                "staff dapat memasukkan riwayat donasi melalui "
+                "tombol **Input Donasi OwO Lama**.\n\n"
+
                 "🎖️ Setiap donasi mendapatkan role "
                 "**Donatur Rupiah** selama **30 hari**.\n\n"
 
@@ -846,7 +1141,8 @@ class DonationControl(
 
                 "### 🐮 DONASI OWO\n"
                 "Donasi OwO akan dideteksi otomatis "
-                "dari transaksi resmi OwO Bot.\n\n"
+                "dari transaksi resmi OwO Bot. Riwayat donasi lama "
+                "juga dapat ditambahkan secara manual melalui panel.\n\n"
 
                 "🎖️ Setiap donasi mendapatkan role "
                 "**Donatur OwO** selama **30 hari**.\n\n"
@@ -1153,9 +1449,9 @@ class DonationControl(
         # TOTAL KUMULATIF
         # -------------------------------------------------
 
-        total = self.db.get_user_total(
+        total = self.db.get_user_total_by_methods(
             donor.id,
-            "owo"
+            ("owo", "owo_manual")
         )
 
         # -------------------------------------------------
@@ -1445,8 +1741,8 @@ class DonationControl(
             10
         )
 
-        owo_top = self.db.get_top_donors(
-            "owo",
+        owo_top = self.db.get_top_donors_by_methods(
+            ("owo", "owo_manual"),
             10
         )
 
@@ -1454,8 +1750,8 @@ class DonationControl(
             "rupiah"
         )
 
-        total_owo = self.db.get_total_all(
-            "owo"
+        total_owo = self.db.get_total_all_by_methods(
+            ("owo", "owo_manual")
         )
 
         embed = discord.Embed(
@@ -1711,9 +2007,9 @@ class DonationControl(
             "rupiah"
         )
 
-        owo = self.db.get_user_total(
+        owo = self.db.get_user_total_by_methods(
             ctx.author.id,
-            "owo"
+            ("owo", "owo_manual")
         )
 
         rupiah_permanent = (
