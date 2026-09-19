@@ -622,10 +622,12 @@ class DonationAmountModal(
         # -------------------------------------------------
 
         donation_id = self.cog.db.add_donation(
-            user_id=self.donor.id,
+            guild_id=interaction.guild.id,
+            user_id=self.user_id,
             amount=amount,
-            method="rupiah",
-            staff_id=self.staff_id
+            method="Rupiah",
+            staff_id=interaction.user.id,
+            recipient_id=self.user_id
         )
 
         # -------------------------------------------------
