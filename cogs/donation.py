@@ -2134,7 +2134,7 @@ class DonationControl(
         )
 
         embed = discord.Embed(
-            title="<:topdonatur:1550871705914974318> TOP DONATUR NANZ",
+            title="<a:topdonatur:1550871705914974318> TOP DONATUR NANZ",
             description=(
                 "Leaderboard donatur "
                 "**nanZ Server**\n"
@@ -2171,9 +2171,9 @@ class DonationControl(
                 )
 
                 medal = {
-                    1: "<:peringkat1:1550870838947872829>",
-                    2: "<:peringkat2:1550871079914962975>",
-                    3: "<:peringkat3:1550871014634954863>"
+                    1: "<a:peringkat1:1550870838947872829>",
+                    2: "<a:peringkat2:1550871079914962975>",
+                    3: "<a:peringkat3:1550871014634954863>"
                 }.get(
                     index,
                     f"`{index:02}`"
@@ -2229,9 +2229,9 @@ class DonationControl(
                 )
 
                 medal = {
-                    1: "<:peringkat1:1550870838947872829>",
-                    2: "<:peringkat2:1550871079914962975>",
-                    3: "<:peringkat3:1550871014634954863>"
+                    1: "<a:peringkat1:1550870838947872829>",
+                    2: "<a:peringkat2:1550871079914962975>",
+                    3: "<a:peringkat3:1550871014634954863>"
                 }.get(
                     index,
                     f"`{index:02}`"
@@ -2301,7 +2301,7 @@ class DonationControl(
                         msg.author.id == self.bot.user.id
                         and msg.embeds
                         and msg.embeds[0].title
-                        == "<:topdonatur:1550871705914974318> TOP DONATUR NANZ"
+                        == "<a:topdonatur:1550871705914974318> TOP DONATUR NANZ"
                     ):
 
                         message = msg
@@ -2365,7 +2365,7 @@ class DonationControl(
         await self.update_leaderboard()
 
         await ctx.send(
-            f"<:topdonatur:1550871705914974318> Leaderboard diperbarui di "
+            f"<a:topdonatur:1550871705914974318> Leaderboard diperbarui di "
             f"<#{LIVE_TOP_DONOR_CHANNEL_ID}>."
         )
 
