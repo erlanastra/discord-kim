@@ -91,6 +91,7 @@ async def load_cogs():
         "cogs.verifygreeting",
         "cogs.ticket",
         "cogs.musicbotdirectory",
+        "cogs.voice_control",
         "cogs.verifysystem",
         "cogs.about",
         "cogs.welcome"
