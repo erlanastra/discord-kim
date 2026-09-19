@@ -941,7 +941,7 @@ class DonationAmountModal(
             f"✅ **Donasi Rupiah berhasil dicatat!**\n\n"
 
             f"👤 Donatur: {self.donor.mention}\n"
-            f"💵 Nominal: **{format_rupiah(amount)}**\n"
+            f"<:rupiah:1550869044104798208> Nominal: **{format_rupiah(amount)}**\n"
             f"📊 Total: **{format_rupiah(total)}**\n"
             f"🆔 Transaksi: `{donation_id}`\n\n"
 
@@ -1114,7 +1114,7 @@ class ManualOwoAmountModal(discord.ui.Modal):
         await interaction.response.send_message(
             f"✅ **Donasi OwO lama berhasil dicatat!**\n\n"
             f"👤 Donatur: {self.donor.mention}\n"
-            f"🐮 Nominal: **{format_owo(amount)} cowoncy**\n"
+            f"<:owo:1550868268020006932> Nominal: **{format_owo(amount)} cowoncy**\n"
             f"📊 Total OwO: **{format_owo(total)} cowoncy**\n"
             f"🆔 Transaksi: `#{donation_id}`\n\n"
             f"{role_status}",
@@ -1143,7 +1143,7 @@ class DonationPanelView(
 
     @discord.ui.button(
         label="Input Donasi Rupiah",
-        emoji="💰",
+        emoji="<:rupiah:1550869044104798208>",
         style=discord.ButtonStyle.success,
         custom_id="nanz_donation_input_rupiah"
     )
@@ -1189,7 +1189,7 @@ class DonationPanelView(
 
     @discord.ui.button(
         label="Input Donasi OwO Lama",
-        emoji="🐮",
+        emoji="<:owo:1550868268020006932>",
         style=discord.ButtonStyle.primary,
         custom_id="nanz_donation_input_owo_manual"
     )
@@ -1228,7 +1228,7 @@ class DonationPanelView(
         )
 
         await interaction.response.send_message(
-            "🐮 **Pilih member yang memiliki riwayat donasi OwO:**\n"
+            "<:owo:1550868268020006932> **Pilih member yang memiliki riwayat donasi OwO:**\n"
             "Masukkan total donasi OwO lama yang ingin ditambahkan.",
             view=view,
             ephemeral=True
@@ -1303,16 +1303,16 @@ class DonationControl(
     ):
 
         embed = discord.Embed(
-            title="💰 DONASI NANZ",
+            title="<:rupiah:1550869044104798208> DONASI NANZ",
             description=(
                 "Terima kasih sudah mendukung "
-                "**nanZ Community** ❤️\n\n"
+                "**nanZ Server** ❤️\n\n"
 
-                "### 💵 DONASI RUPIAH\n"
+                "### <:rupiah:1550869044104798208> DONASI RUPIAH\n"
                 "Staff dapat mencatat donasi melalui "
                 "tombol **Input Donasi Rupiah**.\n\n"
 
-                "### 🐮 INPUT OWO LAMA\n"
+                "### <:owo:1550868268020006932> INPUT OWO LAMA\n"
                 "Untuk donatur OwO sebelum sistem otomatis dibuat, "
                 "staff dapat memasukkan riwayat donasi melalui "
                 "tombol **Input Donasi OwO Lama**.\n\n"
@@ -1328,7 +1328,7 @@ class DonationControl(
                 f"**{format_rupiah(RUPIAH_PERMANENT_THRESHOLD)}**, "
                 "role menjadi **PERMANEN**.\n\n"
 
-                "### 🐮 DONASI OWO\n"
+                "### <:owo:1550868268020006932> DONASI OWO\n"
                 "Donasi OwO akan dideteksi otomatis "
                 "dari transaksi resmi OwO Bot. Riwayat donasi lama "
                 "juga dapat ditambahkan secara manual melalui panel.\n\n"
@@ -1348,7 +1348,7 @@ class DonationControl(
         )
 
         embed.set_footer(
-            text="nanZ Community • Donation System"
+            text="nanZ Server • Donation System"
         )
 
         await ctx.send(
@@ -1815,7 +1815,7 @@ class DonationControl(
             return
 
         embed = discord.Embed(
-            title="🐮 DONASI OWO LAMA",
+            title="<:owo:1550868268020006932> DONASI OWO LAMA",
             color=discord.Color.blurple(),
             timestamp=utc_now()
         )
@@ -1827,7 +1827,7 @@ class DonationControl(
         )
 
         embed.add_field(
-            name="🐮 Nominal",
+            name="<:owo:1550868268020006932> Nominal",
             value=f"**{format_owo(amount)} cowoncy**",
             inline=True
         )
@@ -1895,7 +1895,7 @@ class DonationControl(
             return
 
         embed = discord.Embed(
-            title="🐮 DONASI OWO BARU",
+            title="<:owo:1550868268020006932> DONASI OWO BARU",
             color=discord.Color.blurple(),
             timestamp=utc_now()
         )
@@ -1907,7 +1907,7 @@ class DonationControl(
         )
 
         embed.add_field(
-            name="🐮 Nominal",
+            name="<:owo:1550868268020006932> Nominal",
             value=f"**{format_owo(amount)} cowoncy**",
             inline=True
         )
@@ -1975,7 +1975,7 @@ class DonationControl(
             return
 
         embed = discord.Embed(
-            title="💰 DONASI RUPIAH BARU",
+            title="<:rupiah:1550869044104798208> DONASI RUPIAH BARU",
             color=discord.Color.green(),
             timestamp=utc_now()
         )
@@ -1987,7 +1987,7 @@ class DonationControl(
         )
 
         embed.add_field(
-            name="💵 Nominal",
+            name="<:rupiah:1550869044104798208> Nominal",
             value=f"**{format_rupiah(amount)}**",
             inline=True
         )
@@ -2134,10 +2134,10 @@ class DonationControl(
         )
 
         embed = discord.Embed(
-            title="🏆 TOP DONATUR NANZ",
+            title="<:topdonatur:1550871705914974318> TOP DONATUR NANZ",
             description=(
                 "Leaderboard donatur "
-                "**nanZ Community**\n"
+                "**nanZ Server**\n"
                 "Diperbarui otomatis setiap ada donasi."
             ),
             color=discord.Color.gold(),
@@ -2171,9 +2171,9 @@ class DonationControl(
                 )
 
                 medal = {
-                    1: "🥇",
-                    2: "🥈",
-                    3: "🥉"
+                    1: "<:peringkat1:1550870838947872829>",
+                    2: "<:peringkat2:1550871079914962975>",
+                    3: "<:peringkat3:1550871014634954863>"
                 }.get(
                     index,
                     f"`{index:02}`"
@@ -2191,13 +2191,13 @@ class DonationControl(
             )
 
         embed.add_field(
-            name="💵 DONATUR RUPIAH — TOP 10",
+            name="<:rupiah:1550869044104798208> DONATUR RUPIAH — TOP 10",
             value=rupiah_text,
             inline=False
         )
 
         embed.add_field(
-            name="💰 TOTAL RUPIAH",
+            name="<:rupiah:1550869044104798208> TOTAL RUPIAH",
             value=f"**{format_rupiah(total_rupiah)}**",
             inline=False
         )
@@ -2229,9 +2229,9 @@ class DonationControl(
                 )
 
                 medal = {
-                    1: "🥇",
-                    2: "🥈",
-                    3: "🥉"
+                    1: "<:peringkat1:1550870838947872829>",
+                    2: "<:peringkat2:1550871079914962975>",
+                    3: "<:peringkat3:1550871014634954863>"
                 }.get(
                     index,
                     f"`{index:02}`"
@@ -2249,19 +2249,19 @@ class DonationControl(
             )
 
         embed.add_field(
-            name="🐮 DONATUR OWO — TOP 10",
+            name="<:owo:1550868268020006932> DONATUR OWO — TOP 10",
             value=owo_text,
             inline=False
         )
 
         embed.add_field(
-            name="🐮 TOTAL OWO",
+            name="<:owo:1550868268020006932> TOTAL OWO",
             value=f"**{format_owo(total_owo)} cowoncy**",
             inline=False
         )
 
         embed.set_footer(
-            text="nanZ Community • Live Donation Leaderboard"
+            text="nanZ Server • Live Donation Leaderboard"
         )
 
         # -------------------------------------------------
@@ -2301,7 +2301,7 @@ class DonationControl(
                         msg.author.id == self.bot.user.id
                         and msg.embeds
                         and msg.embeds[0].title
-                        == "🏆 TOP DONATUR NANZ"
+                        == "<:topdonatur:1550871705914974318> TOP DONATUR NANZ"
                     ):
 
                         message = msg
@@ -2365,7 +2365,7 @@ class DonationControl(
         await self.update_leaderboard()
 
         await ctx.send(
-            f"🏆 Leaderboard diperbarui di "
+            f"<:topdonatur:1550871705914974318> Leaderboard diperbarui di "
             f"<#{LIVE_TOP_DONOR_CHANNEL_ID}>."
         )
 
@@ -2413,13 +2413,13 @@ class DonationControl(
         )
 
         embed.add_field(
-            name="💵 Total Rupiah",
+            name="<:rupiah:1550869044104798208> Total Rupiah",
             value=f"**{format_rupiah(rupiah)}**",
             inline=True
         )
 
         embed.add_field(
-            name="🐮 Total OwO",
+            name="<:owo:1550868268020006932> Total OwO",
             value=f"**{format_owo(owo)} cowoncy**",
             inline=True
         )
@@ -2453,13 +2453,13 @@ class DonationControl(
             )
 
         embed.add_field(
-            name="💵 Status Rupiah",
+            name="<:rupiah:1550869044104798208> Status Rupiah",
             value=rupiah_status,
             inline=False
         )
 
         embed.add_field(
-            name="🐮 Status OwO",
+            name="<:owo:1550868268020006932> Status OwO",
             value=owo_status,
             inline=False
         )
