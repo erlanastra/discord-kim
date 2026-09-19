@@ -38,14 +38,15 @@ OWO_BOT_ID = 408785106942164992
 
 
 # =========================================================
-# THRESHOLD DONASI
+# THRESHOLD BENEFIT ROLE & PERMANEN
 # =========================================================
 
-# Minimum total kumulatif agar role donor diberikan.
+# Target progress untuk mendapatkan role 30 hari. Tidak ada batas waktu
+# untuk mengumpulkannya; progress hanya di-reset setelah role 30 hari habis.
 RUPIAH_ROLE_THRESHOLD = 25_000
 OWO_ROLE_THRESHOLD = 1_000_000
 
-# Minimum total kumulatif agar role berubah menjadi PERMANEN.
+# Total kumulatif seumur hidup untuk status permanen.
 RUPIAH_PERMANENT_THRESHOLD = 150_000
 OWO_PERMANENT_THRESHOLD = 10_000_000
 
@@ -167,6 +168,17 @@ class DonationDatabase:
                         user_id,
                         role_id
                     )
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS donor_benefit_cycles (
+                    user_id INTEGER PRIMARY KEY,
+                    rupiah_progress INTEGER NOT NULL DEFAULT 0,
+                    owo_progress INTEGER NOT NULL DEFAULT 0,
+                    rupiah_role_until TEXT,
+                    owo_role_until TEXT,
+                    updated_at TEXT NOT NULL
                 )
             """)
 
@@ -560,6 +572,145 @@ class DonationDatabase:
         return rows
 
     # -----------------------------------------------------
+    # BENEFIT CYCLE
+    # -----------------------------------------------------
+
+    def get_benefit_cycle(self, user_id):
+
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    rupiah_progress,
+                    owo_progress,
+                    rupiah_role_until,
+                    owo_role_until
+                FROM donor_benefit_cycles
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            ).fetchone()
+
+            if row is None:
+                conn.execute(
+                    """
+                    INSERT INTO donor_benefit_cycles (
+                        user_id,
+                        rupiah_progress,
+                        owo_progress,
+                        rupiah_role_until,
+                        owo_role_until,
+                        updated_at
+                    )
+                    VALUES (?, 0, 0, NULL, NULL, ?)
+                    """,
+                    (user_id, utc_now().isoformat())
+                )
+                conn.commit()
+                return {
+                    "rupiah_progress": 0,
+                    "owo_progress": 0,
+                    "rupiah_role_until": None,
+                    "owo_role_until": None
+                }
+
+        return {
+            "rupiah_progress": row[0] or 0,
+            "owo_progress": row[1] or 0,
+            "rupiah_role_until": row[2],
+            "owo_role_until": row[3]
+        }
+
+    def add_benefit_progress(self, user_id, method, amount):
+
+        cycle = self.get_benefit_cycle(user_id)
+
+        if method == "rupiah":
+            progress = cycle["rupiah_progress"] + amount
+            column = "rupiah_progress"
+        else:
+            progress = cycle["owo_progress"] + amount
+            column = "owo_progress"
+
+        with self.connect() as conn:
+            conn.execute(
+                f"""
+                UPDATE donor_benefit_cycles
+                SET {column} = ?, updated_at = ?
+                WHERE user_id = ?
+                """,
+                (progress, utc_now().isoformat(), user_id)
+            )
+            conn.commit()
+
+        return progress
+
+    def save_benefit_role_until(self, user_id, method, expires_at):
+
+        column = (
+            "rupiah_role_until"
+            if method == "rupiah"
+            else "owo_role_until"
+        )
+
+        with self.connect() as conn:
+            conn.execute(
+                f"""
+                UPDATE donor_benefit_cycles
+                SET {column} = ?, updated_at = ?
+                WHERE user_id = ?
+                """,
+                (expires_at, utc_now().isoformat(), user_id)
+            )
+            conn.commit()
+
+    def reset_benefit_cycle(self, user_id, method):
+
+        if method == "rupiah":
+            progress_column = "rupiah_progress"
+            until_column = "rupiah_role_until"
+        else:
+            progress_column = "owo_progress"
+            until_column = "owo_role_until"
+
+        with self.connect() as conn:
+            conn.execute(
+                f"""
+                UPDATE donor_benefit_cycles
+                SET {progress_column} = 0,
+                    {until_column} = NULL,
+                    updated_at = ?
+                WHERE user_id = ?
+                """,
+                (utc_now().isoformat(), user_id)
+            )
+            conn.commit()
+
+    def get_expired_benefit_cycles(self):
+
+        now = utc_now().isoformat()
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT user_id, 'rupiah' AS method
+                FROM donor_benefit_cycles
+                WHERE rupiah_role_until IS NOT NULL
+                AND rupiah_role_until <= ?
+
+                UNION ALL
+
+                SELECT user_id, 'owo' AS method
+                FROM donor_benefit_cycles
+                WHERE owo_role_until IS NOT NULL
+                AND owo_role_until <= ?
+                """,
+                (now, now)
+            ).fetchall()
+
+        return rows
+
+    # -----------------------------------------------------
     # DELETE ROLE RECORD
     # -----------------------------------------------------
 
@@ -731,26 +882,36 @@ class DonationAmountModal(
         )
 
         # -------------------------------------------------
-        # ROLE
+        # BENEFIT CYCLE / ROLE
         # -------------------------------------------------
 
-        if total >= RUPIAH_ROLE_THRESHOLD:
-            permanent = (
-                total >= RUPIAH_PERMANENT_THRESHOLD
+        permanent = total >= RUPIAH_PERMANENT_THRESHOLD
+
+        if permanent:
+            role_status = await self.cog.set_donor_role(
+                member=self.donor,
+                role_id=DONATUR_RUPIAH_ROLE_ID,
+                permanent=True
+            )
+        elif not self.cog._cycle_role_active(self.donor.id, "rupiah"):
+            progress = self.cog.db.add_benefit_progress(
+                self.donor.id, "rupiah", amount
             )
 
-            role_status = (
-                await self.cog.set_donor_role(
-                    member=self.donor,
-                    role_id=DONATUR_RUPIAH_ROLE_ID,
-                    permanent=permanent
+            if progress >= RUPIAH_ROLE_THRESHOLD:
+                role_status = await self.cog.activate_benefit_role(
+                    self.donor, "rupiah"
                 )
-            )
+            else:
+                role_status = (
+                    "⏳ Progress role: "
+                    f"{format_rupiah(progress)} / "
+                    f"{format_rupiah(RUPIAH_ROLE_THRESHOLD)}"
+                )
         else:
-            permanent = False
             role_status = (
-                f"⏳ Role Donatur Rupiah belum diberikan. "
-                f"Minimal total donasi: **{format_rupiah(RUPIAH_ROLE_THRESHOLD)}**."
+                "ℹ️ Role Donatur Rupiah masih aktif. "
+                "Donasi ini tidak masuk progress siklus berikutnya."
             )
 
         # -------------------------------------------------
@@ -894,25 +1055,37 @@ class ManualOwoAmountModal(discord.ui.Modal):
             ("owo", "owo_manual")
         )
 
-        permanent = (
-            total >= OWO_PERMANENT_THRESHOLD
-        )
+        permanent = total >= OWO_PERMANENT_THRESHOLD
 
         # -------------------------------------------------
-        # ROLE
+        # BENEFIT CYCLE / ROLE
         # -------------------------------------------------
 
-        if total >= OWO_ROLE_THRESHOLD:
+        if permanent:
             role_status = await self.cog.set_donor_role(
                 member=self.donor,
                 role_id=DONATUR_OWO_ROLE_ID,
-                permanent=permanent
+                permanent=True
             )
+        elif not self.cog._cycle_role_active(self.donor.id, "owo"):
+            progress = self.cog.db.add_benefit_progress(
+                self.donor.id, "owo", amount
+            )
+
+            if progress >= OWO_ROLE_THRESHOLD:
+                role_status = await self.cog.activate_benefit_role(
+                    self.donor, "owo"
+                )
+            else:
+                role_status = (
+                    "⏳ Progress role: "
+                    f"{format_owo(progress)} / "
+                    f"{format_owo(OWO_ROLE_THRESHOLD)} Owo"
+                )
         else:
-            permanent = False
             role_status = (
-                f"⏳ Role Donatur OwO belum diberikan. "
-                f"Minimal total donasi: **{format_owo(OWO_ROLE_THRESHOLD)} OwO**."
+                "ℹ️ Role Donatur OwO masih aktif. "
+                "Donasi ini tidak masuk progress siklus berikutnya."
             )
 
         # -------------------------------------------------
@@ -1144,9 +1317,12 @@ class DonationControl(
                 "staff dapat memasukkan riwayat donasi melalui "
                 "tombol **Input Donasi OwO Lama**.\n\n"
 
-                "🎖️ Role **Donatur Rupiah** diberikan jika total "
-                f"kumulatif mencapai minimal **{format_rupiah(RUPIAH_ROLE_THRESHOLD)}**.\n"
-                "Role aktif selama **30 hari**.\n\n"
+                "🎖️ Kumpulkan donasi sampai minimal "
+                f"**{format_rupiah(RUPIAH_ROLE_THRESHOLD)}**. Tidak ada batas waktu "
+                "untuk mengumpulkannya. Setelah tercapai, role aktif **30 hari**.\n\n"
+
+                "🔄 Setelah 30 hari role dicopot dan progress siklus kembali **0**. "
+                "Donasi berikutnya mulai mengisi siklus baru.\n\n"
 
                 "👑 Jika total kumulatif mencapai "
                 f"**{format_rupiah(RUPIAH_PERMANENT_THRESHOLD)}**, "
@@ -1157,9 +1333,12 @@ class DonationControl(
                 "dari transaksi resmi OwO Bot. Riwayat donasi lama "
                 "juga dapat ditambahkan secara manual melalui panel.\n\n"
 
-                "🎖️ Role **Donatur OwO** diberikan jika total "
-                f"kumulatif mencapai minimal **{format_owo(OWO_ROLE_THRESHOLD)} OwO**.\n"
-                "Role aktif selama **30 hari**.\n\n"
+                "🎖️ Kumpulkan donasi sampai minimal "
+                f"**{format_owo(OWO_ROLE_THRESHOLD)} OwO**. Tidak ada batas waktu "
+                "untuk mengumpulkannya. Setelah tercapai, role aktif **30 hari**.\n\n"
+
+                "🔄 Setelah 30 hari role dicopot dan progress siklus kembali **0**. "
+                "Donasi berikutnya mulai mengisi siklus baru.\n\n"
 
                 "👑 Jika total kumulatif mencapai "
                 f"**{format_owo(OWO_PERMANENT_THRESHOLD)} OwO**, "
@@ -1180,6 +1359,92 @@ class DonationControl(
         await ctx.send(
             "✅ Panel donasi berhasil dibuat."
         )
+
+    # =====================================================
+    # BENEFIT ROLE CYCLE
+    # =====================================================
+
+    def _cycle_role_active(self, user_id, method):
+
+        cycle = self.db.get_benefit_cycle(user_id)
+        until = (
+            cycle["rupiah_role_until"]
+            if method == "rupiah"
+            else cycle["owo_role_until"]
+        )
+
+        if not until:
+            return False
+
+        try:
+            if datetime.fromisoformat(until) > utc_now():
+                return True
+
+            # Masa role sudah lewat. Reset progress sebelum donasi berikutnya
+            # masuk ke siklus baru, walaupun task 10-menit belum sempat jalan.
+            self.db.reset_benefit_cycle(user_id, method)
+            return False
+        except (TypeError, ValueError):
+            self.db.reset_benefit_cycle(user_id, method)
+            return False
+
+    async def activate_benefit_role(self, member, method):
+
+        role_id = (
+            DONATUR_RUPIAH_ROLE_ID
+            if method == "rupiah"
+            else DONATUR_OWO_ROLE_ID
+        )
+        role = member.guild.get_role(role_id)
+
+        if not role:
+            return "⚠️ Role donor tidak ditemukan."
+
+        if self._cycle_role_active(member.id, method):
+            cycle = self.db.get_benefit_cycle(member.id)
+            until = (
+                cycle["rupiah_role_until"]
+                if method == "rupiah"
+                else cycle["owo_role_until"]
+            )
+            expiry = datetime.fromisoformat(until)
+            return (
+                "ℹ️ Role donor masih aktif sampai "
+                f"<t:{int(expiry.timestamp())}:F>."
+            )
+
+        try:
+            if role not in member.roles:
+                await member.add_roles(
+                    role,
+                    reason="nanZ Donation - Benefit Cycle 30 Days"
+                )
+
+            expires_at = utc_now() + timedelta(days=DONOR_DURATION_DAYS)
+
+            self.db.save_donor_role(
+                user_id=member.id,
+                role_id=role_id,
+                permanent=False,
+                expires_at=expires_at.isoformat()
+            )
+
+            self.db.save_benefit_role_until(
+                member.id,
+                method,
+                expires_at.isoformat()
+            )
+
+            return (
+                "🎖️ Role donor aktif **30 hari**.\n"
+                f"⏰ Berakhir: <t:{int(expires_at.timestamp())}:F>"
+            )
+
+        except discord.Forbidden:
+            return (
+                "⚠️ Bot tidak dapat memberikan role.\n"
+                "Pastikan role bot berada di atas role Donatur."
+            )
 
     # =====================================================
     # SET DONOR ROLE
@@ -1469,28 +1734,36 @@ class DonationControl(
         )
 
         # -------------------------------------------------
-        # CEK PERMANEN
+        # BENEFIT CYCLE / ROLE
         # -------------------------------------------------
 
-        permanent = (
-            total >= OWO_PERMANENT_THRESHOLD
-        )
+        permanent = total >= OWO_PERMANENT_THRESHOLD
 
-        # -------------------------------------------------
-        # ROLE
-        # -------------------------------------------------
-
-        if total >= OWO_ROLE_THRESHOLD:
+        if permanent:
             role_status = await self.set_donor_role(
                 member=donor,
                 role_id=DONATUR_OWO_ROLE_ID,
-                permanent=permanent
+                permanent=True
             )
+        elif not self._cycle_role_active(donor.id, "owo"):
+            progress = self.db.add_benefit_progress(
+                donor.id, "owo", amount
+            )
+
+            if progress >= OWO_ROLE_THRESHOLD:
+                role_status = await self.activate_benefit_role(
+                    donor, "owo"
+                )
+            else:
+                role_status = (
+                    "⏳ Progress role: "
+                    f"{format_owo(progress)} / "
+                    f"{format_owo(OWO_ROLE_THRESHOLD)} Owo"
+                )
         else:
-            permanent = False
             role_status = (
-                f"⏳ Role Donatur OwO belum diberikan. "
-                f"Minimal total donasi: **{format_owo(OWO_ROLE_THRESHOLD)} OwO**."
+                "ℹ️ Role Donatur OwO masih aktif. "
+                "Donasi ini tidak masuk progress siklus berikutnya."
             )
 
         # -------------------------------------------------
@@ -1818,6 +2091,11 @@ class DonationControl(
                 role_id
             )
 
+            if role_id == DONATUR_RUPIAH_ROLE_ID:
+                self.db.reset_benefit_cycle(user_id, "rupiah")
+            elif role_id == DONATUR_OWO_ROLE_ID:
+                self.db.reset_benefit_cycle(user_id, "owo")
+
             print(
                 "[DONATION] Donor role expired: "
                 f"{user_id} / {role_id}"
@@ -2103,6 +2381,9 @@ class DonationControl(
         ctx
     ):
 
+        # Progress benefit dipisahkan dari total leaderboard.
+        rupiah_cycle = self.db.get_benefit_cycle(ctx.author.id)
+
         rupiah = self.db.get_user_total(
             ctx.author.id,
             "rupiah"
@@ -2143,36 +2424,43 @@ class DonationControl(
             inline=True
         )
 
-        embed.add_field(
-            name="📌 Minimum Role",
-            value=(
-                f"💵 Rupiah: **{format_rupiah(RUPIAH_ROLE_THRESHOLD)}**\n"
-                f"🐮 OwO: **{format_owo(OWO_ROLE_THRESHOLD)} cowoncy**"
-            ),
-            inline=False
-        )
+        rupiah_until = rupiah_cycle["rupiah_role_until"]
+        owo_until = rupiah_cycle["owo_role_until"]
+
+        rupiah_progress = rupiah_cycle["rupiah_progress"]
+        owo_progress = rupiah_cycle["owo_progress"]
+
+        if rupiah_permanent:
+            rupiah_status = "👑 **PERMANEN**"
+        elif rupiah_until:
+            expiry = datetime.fromisoformat(rupiah_until)
+            rupiah_status = f"🎖️ **AKTIF** sampai <t:{int(expiry.timestamp())}:R>"
+        else:
+            rupiah_status = (
+                f"⏳ **{format_rupiah(rupiah_progress)} / "
+                f"{format_rupiah(RUPIAH_ROLE_THRESHOLD)}**"
+            )
+
+        if owo_permanent:
+            owo_status = "👑 **PERMANEN**"
+        elif owo_until:
+            expiry = datetime.fromisoformat(owo_until)
+            owo_status = f"🎖️ **AKTIF** sampai <t:{int(expiry.timestamp())}:R>"
+        else:
+            owo_status = (
+                f"⏳ **{format_owo(owo_progress)} / "
+                f"{format_owo(OWO_ROLE_THRESHOLD)} Owo**"
+            )
 
         embed.add_field(
             name="💵 Status Rupiah",
-            value=(
-                "👑 **PERMANEN**"
-                if rupiah_permanent
-                else "⏳ **30 HARI**"
-                if rupiah >= RUPIAH_ROLE_THRESHOLD
-                else "❌ **Belum memenuhi minimum**"
-            ),
+            value=rupiah_status,
             inline=False
         )
 
         embed.add_field(
             name="🐮 Status OwO",
-            value=(
-                "👑 **PERMANEN**"
-                if owo_permanent
-                else "⏳ **30 HARI**"
-                if owo >= OWO_ROLE_THRESHOLD
-                else "❌ **Belum memenuhi minimum**"
-            ),
+            value=owo_status,
             inline=False
         )
 
