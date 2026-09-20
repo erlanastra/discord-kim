@@ -95,7 +95,7 @@ async def load_cogs():
         "cogs.donation",
         "cogs.verifysystem",
         "cogs.about",
-        "cogs.hall_of_fame",
+        "cogs.hall_of_time",
         "cogs.welcome"
     ]
 
