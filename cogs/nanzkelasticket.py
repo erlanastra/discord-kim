@@ -26,7 +26,7 @@ DB_CONFIG = {
     "host": "localhost",
     "port": 3306,
     "user": "nanzuser",
-    "password": "GANTI_PASSWORD_DB",
+    "password": "nanzserversolid",
     "db": "nanz_bot",
     "autocommit": True,
 }
