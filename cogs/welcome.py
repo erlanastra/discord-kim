@@ -445,7 +445,7 @@ class Welcome(commands.Cog):
 
         content = (
             "<a:done:1512648033190543421> **Verifikasi berhasil!**\n"
-            f"Selamat datang di **nanZ Server**, {member.mention}!\n\n"
+            f"Selamat datang di **nanZ Server**, {member.mention}!\n"
             f"> Pahami aturan server di <#{self.RULES_CHANNEL_ID}>\n"
             f"> Pilih role kamu di <#{self.ROLES_CHANNEL_ID}>"
         )
