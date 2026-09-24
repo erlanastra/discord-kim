@@ -226,10 +226,10 @@ def _render_frame(idx, avatar, name, fx):
 
     # label di bawah avatar
     la = t_alpha(0.05)
-    lw = int(td.textlength("MURID RESMI", font=f_tiny)) + 30
+    lw = int(td.textlength("MEMBER RESMI", font=f_tiny)) + 30
     td.rounded_rectangle([AV_CX - lw // 2, 262, AV_CX + lw // 2, 286], radius=12,
                          fill=(*PURPLE, _clamp(la * 0.35)), outline=(*SOFT_PURPLE, _clamp(la * 0.8)), width=1)
-    td.text((AV_CX, 274), "MURID RESMI", font=f_tiny, fill=(255, 255, 255, la), anchor="mm")
+    td.text((AV_CX, 274), "MEMBER RESMI", font=f_tiny, fill=(255, 255, 255, la), anchor="mm")
 
     # baris atas: label sapaan (kiri) + pill status (kanan)
     a, dy = t_alpha(0.0), slide(0.0)
@@ -343,7 +343,7 @@ class WaveView(discord.ui.View):
         self.member = member
         self.cooldowns = {}          # user_id -> waktu terakhir klik
 
-    @discord.ui.button(label="Sapa Murid Baru!", emoji="👋", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Sapa murid baru!", emoji="👋", style=discord.ButtonStyle.secondary)
     async def wave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             # ── cooldown ──
@@ -431,38 +431,44 @@ class Welcome(commands.Cog):
             print(f"Channel dengan ID {channel_id} tidak ditemukan!")
             return
 
-        # panel: hanya tag channel
-        embed = discord.Embed(
-            description=(
-                f"📜 Baca tata tertib  >>  <#{self.RULES_CHANNEL_ID}>\n"
-                f"🎭 Ambil role  >>  <#{self.ROLES_CHANNEL_ID}>"
-            ),
-            color=0x8250FF,
-        )
-        embed.set_footer(text="nanZ Server")
+        mentions = discord.AllowedMentions(users=True)
 
-        # GIF (dibuat di executor supaya bot tidak nge-lag)
+        # ── 1) Sapaan + GIF (GIF berdiri sendiri, di luar panel) ──
         gif_file = None
         try:
             avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
             loop = asyncio.get_running_loop()
             gif_bytes = await loop.run_in_executor(None, generate_welcome_gif, avatar_bytes, member.display_name)
             gif_file = discord.File(io.BytesIO(gif_bytes), filename="welcome.gif")
-            embed.set_image(url="attachment://welcome.gif")
         except Exception as e:
             print(f"[Welcome] gagal bikin GIF: {e}")
 
-        view = WaveView(member)
-        kwargs = {"file": gif_file} if gif_file else {}
-
-        # member di-tag di luar panel (content)
-        await channel.send(
-            content=f"Verifikasi berhasil! {member.mention}",
-            embed=embed,
-            view=view,
-            allowed_mentions=discord.AllowedMentions(users=True),
-            **kwargs,
+        greeting = (
+            "**Verifikasi berhasil!**\n"
+            f"Selamat datang di **nanZ Server**, {member.mention}!"
         )
+        kwargs = {"file": gif_file} if gif_file else {}
+        await channel.send(content=greeting, allowed_mentions=mentions, **kwargs)
+
+        # ── 2) Panel arahan (tag channel langsung bisa diklik) ──
+        embed = discord.Embed(
+            title="Langkah awal untukmu",
+            description="Ikuti 2 langkah ini dulu ya, biar pengalamanmu makin nyaman.",
+            color=0x8250FF,
+        )
+        embed.add_field(
+            name="1️⃣  Baca tata tertib",
+            value=f"Pahami aturan server di <#{self.RULES_CHANNEL_ID}>",
+            inline=False,
+        )
+        embed.add_field(
+            name="2️⃣  Ambil role",
+            value=f"Pilih role kamu di <#{self.ROLES_CHANNEL_ID}>",
+            inline=False,
+        )
+        embed.set_footer(text="nanZ Server  •  Setelah itu, bebas ngobrol & ikut event bareng!")
+
+        await channel.send(embed=embed, view=WaveView(member))
 
 
 # ══════════════════════════════════════════════
