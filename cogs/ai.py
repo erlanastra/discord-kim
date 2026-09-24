@@ -14,10 +14,44 @@ from collections import defaultdict
 
 
 # =========================================================
+# BASE DIRECTORY
+# =========================================================
+
+# Struktur yang diasumsikan:
+#
+# /root/discord-kim/
+# ├── bot.py
+# ├── config.json
+# ├── ai_activity.json
+# ├── ai_chat_history.json
+# └── cogs/
+#     └── nanz_ai.py
+#
+# Karena file ini berada di /cogs/,
+# dua level ke atas adalah root bot.
+
+BASE_DIR = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
+
+
+# =========================================================
 # CONFIG
 # =========================================================
 
-with open("config.json", "r", encoding="utf-8") as f:
+CONFIG_FILE = os.path.join(
+    BASE_DIR,
+    "config.json"
+)
+
+
+with open(
+    CONFIG_FILE,
+    "r",
+    encoding="utf-8"
+) as f:
     config = json.load(f)
 
 
@@ -156,22 +190,6 @@ logger = logging.getLogger(
 # STORAGE
 # =========================================================
 
-# Selalu gunakan lokasi file berdasarkan lokasi
-# file cog ini, bukan current working directory.
-#
-# Jika file:
-# /root/discord-kim/cogs/nanz_ai.py
-#
-# Maka BASE_DIR:
-# /root/discord-kim
-
-BASE_DIR = os.path.dirname(
-    os.path.dirname(
-        os.path.abspath(__file__)
-    )
-)
-
-
 ACTIVITY_FILE = os.path.join(
     BASE_DIR,
     "ai_activity.json"
@@ -186,16 +204,16 @@ HISTORY_FILE = os.path.join(
 
 def _read_json(path, default):
     """
-    Membaca file JSON dengan aman.
-    Jika file tidak ada atau rusak,
-    kembalikan nilai default.
+    Membaca JSON dengan aman.
+
+    Jika file tidak ada, rusak,
+    atau gagal dibaca, return default.
     """
 
     if not os.path.exists(path):
         return default
 
     try:
-
         with open(
             path,
             "r",
@@ -204,8 +222,15 @@ def _read_json(path, default):
 
             return json.load(f)
 
-    except Exception as e:
+    except json.JSONDecodeError:
+        logger.warning(
+            "File JSON tidak valid: %s",
+            path
+        )
 
+        return default
+
+    except Exception as e:
         logger.error(
             "Gagal membaca JSON %s: %s",
             path,
@@ -215,80 +240,43 @@ def _read_json(path, default):
         return default
 
 
-def _write_json_atomic(path, data):
+def _write_json(path, data):
     """
-    Menyimpan JSON dengan aman.
+    Menyimpan JSON langsung ke file.
 
-    File temporary dibuat di folder yang sama
-    dengan file utama, kemudian diganti menggunakan
-    os.replace().
+    Tidak menggunakan:
+    - .tmp
+    - os.replace()
+    - temporary file
 
-    Absolute path digunakan agar tidak bergantung
-    pada folder tempat bot dijalankan.
+    Tujuannya agar tidak muncul error:
+    [Errno 2] No such file or directory:
+    ai_activity.json.tmp
     """
 
     directory = os.path.dirname(path)
 
-    os.makedirs(
-        directory,
-        exist_ok=True
-    )
+    if directory:
+        os.makedirs(
+            directory,
+            exist_ok=True
+        )
 
-    tmp_path = (
-        f"{path}.tmp"
-    )
+    with open(
+        path,
+        "w",
+        encoding="utf-8"
+    ) as f:
 
-    try:
-
-        with open(
-            tmp_path,
-            "w",
-            encoding="utf-8"
-        ) as f:
-
-            json.dump(
-                data,
-                f,
-                indent=2,
-                ensure_ascii=False
-            )
-
-            f.flush()
-
-            os.fsync(
-                f.fileno()
-            )
-
-
-        os.replace(
-            tmp_path,
-            path
+        json.dump(
+            data,
+            f,
+            indent=2,
+            ensure_ascii=False
         )
 
 
-    except Exception:
-
-        # Bersihkan temporary file jika
-        # proses penyimpanan gagal.
-
-        try:
-
-            if os.path.exists(
-                tmp_path
-            ):
-
-                os.remove(
-                    tmp_path
-                )
-
-        except Exception:
-            pass
-
-        raise
-
-
 def load_activity():
-
     return _read_json(
         ACTIVITY_FILE,
         {}
@@ -296,10 +284,13 @@ def load_activity():
 
 
 def save_activity(data):
+    """
+    Simpan activity ke ai_activity.json.
+    """
 
     try:
 
-        _write_json_atomic(
+        _write_json(
             ACTIVITY_FILE,
             data
         )
@@ -313,7 +304,6 @@ def save_activity(data):
 
 
 def load_history_raw():
-
     return _read_json(
         HISTORY_FILE,
         {}
@@ -321,10 +311,13 @@ def load_history_raw():
 
 
 def save_history_raw(data):
+    """
+    Simpan history ke ai_chat_history.json.
+    """
 
     try:
 
-        _write_json_atomic(
+        _write_json(
             HISTORY_FILE,
             data
         )
@@ -341,7 +334,6 @@ def history_key(
     guild_id,
     user_id
 ):
-
     return (
         f"{guild_id}:{user_id}"
     )
@@ -535,7 +527,10 @@ class AI(commands.Cog):
 
         self.bot = bot
 
-        # History per guild + user
+        # -------------------------------------------------
+        # HISTORY
+        # -------------------------------------------------
+
         self.chat_history = (
             defaultdict(list)
         )
@@ -543,7 +538,10 @@ class AI(commands.Cog):
         self.session = None
 
 
-        # Activity
+        # -------------------------------------------------
+        # ACTIVITY
+        # -------------------------------------------------
+
         self.activity = (
             load_activity()
         )
@@ -558,15 +556,24 @@ class AI(commands.Cog):
         )
 
 
-        # Voice sessions
+        # -------------------------------------------------
+        # VOICE
+        # -------------------------------------------------
+
         self.voice_sessions = {}
 
 
-        # Anti spam
+        # -------------------------------------------------
+        # ANTI SPAM
+        # -------------------------------------------------
+
         self.last_ai_use = {}
 
 
-        # Save counter
+        # -------------------------------------------------
+        # SAVE COUNTER
+        # -------------------------------------------------
+
         self.save_counter = 0
 
 
@@ -575,7 +582,6 @@ class AI(commands.Cog):
         func,
         *args
     ):
-
         """
         Python 3.8-compatible replacement
         untuk asyncio.to_thread().
@@ -614,17 +620,34 @@ class AI(commands.Cog):
         )
 
 
-        for key, pairs in (
-            raw_history.items()
+        if isinstance(
+            raw_history,
+            dict
         ):
 
-            self.chat_history[key] = [
+            for key, pairs in (
+                raw_history.items()
+            ):
 
-                tuple(pair)
+                if not isinstance(
+                    pairs,
+                    list
+                ):
+                    continue
 
-                for pair in pairs
 
-            ]
+                self.chat_history[key] = [
+
+                    tuple(pair)
+
+                    for pair in pairs
+
+                    if (
+                        isinstance(pair, (list, tuple))
+                        and len(pair) >= 2
+                    )
+
+                ]
 
 
         # -------------------------------------------------
@@ -846,7 +869,9 @@ class AI(commands.Cog):
                 ) as resp:
 
                     data = (
-                        await resp.json()
+                        await resp.json(
+                            content_type=None
+                        )
                     )
 
 
@@ -1274,10 +1299,6 @@ class AI(commands.Cog):
 
         )
 
-
-        # Kalau bukan channel AI
-        # dan bukan mention bot,
-        # jangan diproses.
 
         if (
             not is_ai_channel
@@ -2000,6 +2021,10 @@ class AI(commands.Cog):
 
         offline = 0
 
+
+        # -------------------------------------------------
+        # MEMBER STATUS
+        # -------------------------------------------------
 
         for member in guild.members:
 
@@ -3603,7 +3628,9 @@ ATURAN MENJAWAB
             )
 
 
-        # Ranking aktivitas
+        # -------------------------------------------------
+        # RANKING AKTIVITAS
+        # -------------------------------------------------
 
         activity_members = []
 
@@ -3835,13 +3862,44 @@ ATURAN MENJAWAB
         )
 
 
-        self.chat_history.pop(
+        async with self.history_lock:
 
-            key,
+            self.chat_history.pop(
 
-            None
+                key,
 
-        )
+                None
+
+            )
+
+
+            serializable = {
+
+                history_key:
+                    [
+
+                        list(pair)
+
+                        for pair
+                        in pairs
+
+                    ]
+
+                for history_key, pairs
+                in self.chat_history.items()
+
+                if pairs
+
+            }
+
+
+            await self._run_blocking(
+
+                save_history_raw,
+
+                serializable
+
+            )
 
 
         await interaction.response.send_message(
