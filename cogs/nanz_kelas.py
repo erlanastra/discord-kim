@@ -18,9 +18,9 @@ PEMBATAS_ROLE_ID = 998877665544332211         # ID Role Pembatas di server
 # Konfigurasi Database MySQL/MariaDB
 DB_CONFIG = {
     "host": "localhost",
-    "user": "root",
-    "password": "your_password",
-    "db": "bot_database",
+    "user": "nanzuser",         # GANTI DARI 'root' KE 'nanzuser'
+    "password": "nanzserversolid",
+    "db": "nanz_bot",
     "autocommit": True
 }
 
