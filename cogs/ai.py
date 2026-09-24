@@ -16,29 +16,13 @@ from collections import defaultdict
 # =========================================================
 # CONFIG
 # =========================================================
-# config.json yang didukung:
-# {
-#   "gemini_api_key": "...",
-#   "ai_channel": 123456789012345678,
-#   "gemini_model": "gemini-3.5-flash",
-#   "gemini_fallback_model": "gemini-3.1-flash-lite",
-#   "gemini_temperature": 0.9,
-#   "gemini_max_output_tokens": 2048,
-#   "ai_cooldown_seconds": 4,
-#   "crew_role_keyword": "crew",
-#   "internal_topic_keywords": [
-#       "staff",
-#       "crew",
-#       "internal"
-#   ]
-# }
-
 
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
 
 API_KEY = config["gemini_api_key"]
+
 AI_CHANNEL = config["ai_channel"]
 
 GEMINI_MODEL = config.get(
@@ -73,7 +57,10 @@ GEMINI_BASE = (
 
 
 def gemini_url(model):
-    return f"{GEMINI_BASE}/{model}:generateContent?key={API_KEY}"
+    return (
+        f"{GEMINI_BASE}/"
+        f"{model}:generateContent?key={API_KEY}"
+    )
 
 
 GENERATION_CONFIG = {
@@ -113,9 +100,11 @@ SAFETY_SETTINGS = [
 # =========================================================
 
 MAX_HISTORY_TURNS = 6
+
 MAX_HISTORY_STORED = 10
 
 EMBED_CHUNK_SIZE = 4000
+
 MAX_EMBED_CHUNKS = 3
 
 MAX_IMAGE_PARTS = 3
@@ -132,8 +121,8 @@ CREW_ROLE_KEYWORD = config.get(
 
 
 INTERNAL_TOPIC_KEYWORDS = [
-    k.lower()
-    for k in config.get(
+    keyword.lower()
+    for keyword in config.get(
         "internal_topic_keywords",
         [
             "staff",
@@ -158,57 +147,148 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-logger = logging.getLogger("nanZ-AI")
+logger = logging.getLogger(
+    "nanZ-AI"
+)
 
 
 # =========================================================
 # STORAGE
 # =========================================================
 
-ACTIVITY_FILE = "ai_activity.json"
-HISTORY_FILE = "ai_chat_history.json"
+# Selalu gunakan lokasi file berdasarkan lokasi
+# file cog ini, bukan current working directory.
+#
+# Jika file:
+# /root/discord-kim/cogs/nanz_ai.py
+#
+# Maka BASE_DIR:
+# /root/discord-kim
+
+BASE_DIR = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
+
+
+ACTIVITY_FILE = os.path.join(
+    BASE_DIR,
+    "ai_activity.json"
+)
+
+
+HISTORY_FILE = os.path.join(
+    BASE_DIR,
+    "ai_chat_history.json"
+)
 
 
 def _read_json(path, default):
+    """
+    Membaca file JSON dengan aman.
+    Jika file tidak ada atau rusak,
+    kembalikan nilai default.
+    """
+
     if not os.path.exists(path):
         return default
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
+
+        with open(
+            path,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
             return json.load(f)
 
-    except Exception:
+    except Exception as e:
+
+        logger.error(
+            "Gagal membaca JSON %s: %s",
+            path,
+            e
+        )
+
         return default
 
 
 def _write_json_atomic(path, data):
     """
-    Tulis ke file sementara terlebih dahulu,
-    kemudian rename supaya lebih aman jika bot crash.
+    Menyimpan JSON dengan aman.
+
+    File temporary dibuat di folder yang sama
+    dengan file utama, kemudian diganti menggunakan
+    os.replace().
+
+    Absolute path digunakan agar tidak bergantung
+    pada folder tempat bot dijalankan.
     """
 
-    tmp_path = f"{path}.tmp"
+    directory = os.path.dirname(path)
 
-    with open(
-        tmp_path,
-        "w",
-        encoding="utf-8"
-    ) as f:
+    os.makedirs(
+        directory,
+        exist_ok=True
+    )
 
-        json.dump(
-            data,
-            f,
-            indent=2,
-            ensure_ascii=False
+    tmp_path = (
+        f"{path}.tmp"
+    )
+
+    try:
+
+        with open(
+            tmp_path,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                data,
+                f,
+                indent=2,
+                ensure_ascii=False
+            )
+
+            f.flush()
+
+            os.fsync(
+                f.fileno()
+            )
+
+
+        os.replace(
+            tmp_path,
+            path
         )
 
-    os.replace(
-        tmp_path,
-        path
-    )
+
+    except Exception:
+
+        # Bersihkan temporary file jika
+        # proses penyimpanan gagal.
+
+        try:
+
+            if os.path.exists(
+                tmp_path
+            ):
+
+                os.remove(
+                    tmp_path
+                )
+
+        except Exception:
+            pass
+
+        raise
 
 
 def load_activity():
+
     return _read_json(
         ACTIVITY_FILE,
         {}
@@ -216,19 +296,24 @@ def load_activity():
 
 
 def save_activity(data):
+
     try:
+
         _write_json_atomic(
             ACTIVITY_FILE,
             data
         )
 
     except Exception as e:
+
         logger.error(
-            f"Gagal menyimpan activity: {e}"
+            "Gagal menyimpan activity: %s",
+            e
         )
 
 
 def load_history_raw():
+
     return _read_json(
         HISTORY_FILE,
         {}
@@ -236,15 +321,19 @@ def load_history_raw():
 
 
 def save_history_raw(data):
+
     try:
+
         _write_json_atomic(
             HISTORY_FILE,
             data
         )
 
     except Exception as e:
+
         logger.error(
-            f"Gagal menyimpan chat history: {e}"
+            "Gagal menyimpan chat history: %s",
+            e
         )
 
 
@@ -252,7 +341,10 @@ def history_key(
     guild_id,
     user_id
 ):
-    return f"{guild_id}:{user_id}"
+
+    return (
+        f"{guild_id}:{user_id}"
+    )
 
 
 # =========================================================
@@ -266,22 +358,30 @@ class LeaderboardView(discord.ui.View):
         cog,
         guild
     ):
+
         super().__init__(
             timeout=90
         )
 
         self.cog = cog
+
         self.guild = guild
+
         self.mode = "active"
 
 
     def build_embed(self):
 
-        stats = self.cog.get_server_statistics(
-            self.guild
+        stats = (
+            self.cog
+            .get_server_statistics(
+                self.guild
+            )
         )
 
+
         mapping = {
+
             "chat": (
                 "💬 Top Chat",
                 stats["top_chat"]
@@ -296,23 +396,37 @@ class LeaderboardView(discord.ui.View):
                 "🔥 Member Paling Aktif",
                 stats["top_active"]
             ),
+
         }
 
-        title, lines = mapping[self.mode]
+
+        title, lines = (
+            mapping[self.mode]
+        )
+
 
         embed = discord.Embed(
+
             title=title,
+
             description=(
                 "\n".join(lines)
                 if lines
-                else "Belum ada data aktivitas."
+                else
+                "Belum ada data aktivitas."
             ),
+
             color=0x5865F2,
         )
 
+
         embed.set_footer(
-            text=f"{self.guild.name} • Leaderboard nanZ"
+            text=(
+                f"{self.guild.name} "
+                "• Leaderboard nanZ"
+            )
         )
+
 
         return embed
 
@@ -325,6 +439,7 @@ class LeaderboardView(discord.ui.View):
 
         self.mode = mode
 
+
         for child in self.children:
 
             if isinstance(
@@ -333,14 +448,23 @@ class LeaderboardView(discord.ui.View):
             ):
 
                 child.style = (
+
                     discord.ButtonStyle.success
+
                     if child.custom_id == mode
-                    else discord.ButtonStyle.secondary
+
+                    else
+                    discord.ButtonStyle.secondary
+
                 )
 
+
         await interaction.response.edit_message(
+
             embed=self.build_embed(),
+
             view=self
+
         )
 
 
@@ -355,6 +479,7 @@ class LeaderboardView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+
         await self._switch(
             interaction,
             "chat"
@@ -372,6 +497,7 @@ class LeaderboardView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+
         await self._switch(
             interaction,
             "voice"
@@ -389,6 +515,7 @@ class LeaderboardView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+
         await self._switch(
             interaction,
             "active"
@@ -401,35 +528,70 @@ class LeaderboardView(discord.ui.View):
 
 class AI(commands.Cog):
 
-    def __init__(self, bot):
+    def __init__(
+        self,
+        bot
+    ):
 
         self.bot = bot
 
         # History per guild + user
-        self.chat_history = defaultdict(list)
+        self.chat_history = (
+            defaultdict(list)
+        )
 
         self.session = None
 
-        # Activity
-        self.activity = load_activity()
 
-        self.activity_lock = asyncio.Lock()
-        self.history_lock = asyncio.Lock()
+        # Activity
+        self.activity = (
+            load_activity()
+        )
+
+
+        self.activity_lock = (
+            asyncio.Lock()
+        )
+
+        self.history_lock = (
+            asyncio.Lock()
+        )
+
 
         # Voice sessions
         self.voice_sessions = {}
 
+
         # Anti spam
         self.last_ai_use = {}
+
 
         # Save counter
         self.save_counter = 0
 
 
-    async def _run_blocking(self, func, *args):
-        """Python 3.8-compatible replacement for asyncio.to_thread()."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, func, *args)
+    async def _run_blocking(
+        self,
+        func,
+        *args
+    ):
+
+        """
+        Python 3.8-compatible replacement
+        untuk asyncio.to_thread().
+        """
+
+        loop = (
+            asyncio.get_running_loop()
+        )
+
+        return await (
+            loop.run_in_executor(
+                None,
+                func,
+                *args
+            )
+        )
 
 
     # =====================================================
@@ -438,35 +600,66 @@ class AI(commands.Cog):
 
     async def cog_load(self):
 
-        self.session = aiohttp.ClientSession()
+        self.session = (
+            aiohttp.ClientSession()
+        )
 
-        # Load history
-        raw_history = load_history_raw()
 
-        for key, pairs in raw_history.items():
+        # -------------------------------------------------
+        # LOAD HISTORY
+        # -------------------------------------------------
+
+        raw_history = (
+            load_history_raw()
+        )
+
+
+        for key, pairs in (
+            raw_history.items()
+        ):
 
             self.chat_history[key] = [
+
                 tuple(pair)
+
                 for pair in pairs
+
             ]
 
 
-        # Rekonsiliasi voice
+        # -------------------------------------------------
+        # REKONSILIASI VOICE
+        # -------------------------------------------------
+
         for guild in self.bot.guilds:
 
             for vc in guild.voice_channels:
 
                 for member in vc.members:
 
-                    if not member.bot:
+                    if member.bot:
+                        continue
 
-                        self.voice_sessions[member.id] = {
-                            "started": time.time(),
-                            "channel": vc.name,
-                        }
 
+                    self.voice_sessions[
+                        member.id
+                    ] = {
+
+                        "started":
+                            time.time(),
+
+                        "channel":
+                            vc.name,
+
+                    }
+
+
+        # -------------------------------------------------
+        # AUTOSAVE
+        # -------------------------------------------------
 
         self.autosave.start()
+
 
         logger.info(
             "===================================="
@@ -481,6 +674,7 @@ class AI(commands.Cog):
             GEMINI_MODEL
         )
 
+
         if FALLBACK_MODEL:
 
             logger.info(
@@ -488,8 +682,19 @@ class AI(commands.Cog):
                 FALLBACK_MODEL
             )
 
+
         logger.info(
             "Activity Tracking: AKTIF"
+        )
+
+        logger.info(
+            "Activity File: %s",
+            ACTIVITY_FILE
+        )
+
+        logger.info(
+            "History File: %s",
+            HISTORY_FILE
         )
 
         logger.info(
@@ -501,9 +706,11 @@ class AI(commands.Cog):
 
         self.autosave.cancel()
 
+
         if self.session:
 
             await self.session.close()
+
 
         await self._persist()
 
@@ -516,6 +723,10 @@ class AI(commands.Cog):
 
     async def _persist(self):
 
+        # -------------------------------------------------
+        # SAVE ACTIVITY
+        # -------------------------------------------------
+
         async with self.activity_lock:
 
             await self._run_blocking(
@@ -524,19 +735,29 @@ class AI(commands.Cog):
             )
 
 
+        # -------------------------------------------------
+        # SAVE HISTORY
+        # -------------------------------------------------
+
         async with self.history_lock:
 
             serializable = {
+
                 key: [
+
                     list(pair)
+
                     for pair in pairs
+
                 ]
 
                 for key, pairs
                 in self.chat_history.items()
 
                 if pairs
+
             }
+
 
             await self._run_blocking(
                 save_history_raw,
@@ -567,18 +788,32 @@ class AI(commands.Cog):
             self.activity[guild_id] = {}
 
 
-        if user_id not in self.activity[guild_id]:
+        if user_id not in (
+            self.activity[guild_id]
+        ):
 
-            self.activity[guild_id][user_id] = {
+            self.activity[guild_id][
+                user_id
+            ] = {
+
                 "messages": 0,
+
                 "voice_seconds": 0,
+
                 "voice_sessions": 0,
+
                 "last_message": None,
+
                 "last_voice": None,
+
             }
 
 
-        return self.activity[guild_id][user_id]
+        return self.activity[
+            guild_id
+        ][
+            user_id
+        ]
 
 
     # =====================================================
@@ -593,29 +828,38 @@ class AI(commands.Cog):
 
         backoff = 2
 
+
         for attempt in range(3):
 
             try:
 
                 async with self.session.post(
+
                     url,
+
                     json=payload,
+
                     timeout=aiohttp.ClientTimeout(
                         total=30
                     )
+
                 ) as resp:
 
-                    data = await resp.json()
+                    data = (
+                        await resp.json()
+                    )
 
 
-                    # -----------------------------
+                    # -------------------------------------
                     # SUCCESS
-                    # -----------------------------
+                    # -------------------------------------
 
                     if resp.status == 200:
 
                         candidates = (
-                            data.get("candidates")
+                            data.get(
+                                "candidates"
+                            )
                             or []
                         )
 
@@ -623,13 +867,19 @@ class AI(commands.Cog):
                         if not candidates:
 
                             reason = (
+
                                 data
-                                .get("promptFeedback", {})
+                                .get(
+                                    "promptFeedback",
+                                    {}
+                                )
                                 .get(
                                     "blockReason",
                                     "tidak diketahui"
                                 )
+
                             )
+
 
                             return (
                                 None,
@@ -638,15 +888,29 @@ class AI(commands.Cog):
 
 
                         parts = (
+
                             candidates[0]
-                            .get("content", {})
-                            .get("parts", [])
+                            .get(
+                                "content",
+                                {}
+                            )
+                            .get(
+                                "parts",
+                                []
+                            )
+
                         )
 
 
                         text = "".join(
-                            p.get("text", "")
+
+                            p.get(
+                                "text",
+                                ""
+                            )
+
                             for p in parts
+
                         ).strip()
 
 
@@ -664,9 +928,9 @@ class AI(commands.Cog):
                         )
 
 
-                    # -----------------------------
+                    # -------------------------------------
                     # RATE LIMIT
-                    # -----------------------------
+                    # -------------------------------------
 
                     if resp.status == 429:
 
@@ -676,9 +940,9 @@ class AI(commands.Cog):
                         )
 
 
-                    # -----------------------------
+                    # -------------------------------------
                     # SERVER ERROR
-                    # -----------------------------
+                    # -------------------------------------
 
                     if (
                         resp.status >= 500
@@ -700,6 +964,7 @@ class AI(commands.Cog):
                         data
                     )
 
+
                     return (
                         None,
                         f"error:{resp.status}"
@@ -718,6 +983,7 @@ class AI(commands.Cog):
 
                     continue
 
+
                 return (
                     None,
                     "timeout"
@@ -729,6 +995,7 @@ class AI(commands.Cog):
                 logger.exception(
                     "Gemini request gagal"
                 )
+
 
                 return (
                     None,
@@ -749,64 +1016,107 @@ class AI(commands.Cog):
     ):
 
         payload = {
+
             "systemInstruction": {
+
                 "parts": [
+
                     {
-                        "text": system_text
+                        "text":
+                            system_text
                     }
+
                 ]
+
             },
 
-            "contents": contents,
+            "contents":
+                contents,
 
             "generationConfig":
                 GENERATION_CONFIG,
 
             "safetySettings":
                 SAFETY_SETTINGS,
+
         }
 
 
-        # Model utama
-        text, err = await self._post_gemini(
-            gemini_url(GEMINI_MODEL),
-            payload
+        # -------------------------------------------------
+        # MODEL UTAMA
+        # -------------------------------------------------
+
+        text, err = await (
+            self._post_gemini(
+                gemini_url(
+                    GEMINI_MODEL
+                ),
+                payload
+            )
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # FALLBACK
-        # =================================================
+        # -------------------------------------------------
 
         should_try_fallback = (
+
             text is None
+
             and FALLBACK_MODEL
+
             and (
+
                 err in (
                     "ratelimit",
                     "timeout"
                 )
+
                 or (
-                    isinstance(err, str)
-                    and err.startswith("error:5")
+
+                    isinstance(
+                        err,
+                        str
+                    )
+
+                    and err.startswith(
+                        "error:5"
+                    )
+
                 )
+
             )
+
         )
 
 
         if should_try_fallback:
 
             logger.warning(
+
                 "Model utama gagal (%s), "
                 "mencoba fallback %s",
+
                 err,
+
                 FALLBACK_MODEL
+
             )
 
 
-            text, err = await self._post_gemini(
-                gemini_url(FALLBACK_MODEL),
-                payload
+            text, err = await (
+
+                self._post_gemini(
+
+                    gemini_url(
+                        FALLBACK_MODEL
+                    ),
+
+                    payload
+
+                )
+
             )
 
 
@@ -827,40 +1137,53 @@ class AI(commands.Cog):
             return None
 
 
-        if err.startswith("blocked"):
+        if err.startswith(
+            "blocked"
+        ):
 
             return (
-                "⚠️ Jawaban diblokir filter keamanan Gemini. "
-                "Coba ubah pertanyaanmu ya."
+
+                "⚠️ Jawaban diblokir filter "
+                "keamanan Gemini. Coba ubah "
+                "pertanyaanmu ya."
+
             )
 
 
         if err == "ratelimit":
 
             return (
-                "⚠️ **nanZ AI sedang mencapai batas penggunaan.**\n"
+
+                "⚠️ **nanZ AI sedang mencapai "
+                "batas penggunaan.**\n"
                 "Coba lagi beberapa saat nanti."
+
             )
 
 
         if err == "timeout":
 
             return (
+
                 "⚠️ Server AI lambat merespons, "
                 "coba lagi ya."
+
             )
 
 
         if err == "empty":
 
             return (
+
                 "⚠️ AI tidak memberikan jawaban, "
                 "coba ulangi pertanyaanmu."
+
             )
 
 
         return (
-            "⚠️ Coba lagi, server AI sedang bermasalah."
+            "⚠️ Coba lagi, server AI sedang "
+            "bermasalah."
         )
 
 
@@ -874,25 +1197,35 @@ class AI(commands.Cog):
         message
     ):
 
-        # Jangan proses bot
+        # -------------------------------------------------
+        # JANGAN PROSES BOT
+        # -------------------------------------------------
+
         if message.author.bot:
             return
 
 
-        # Jangan proses DM
+        # -------------------------------------------------
+        # JANGAN PROSES DM
+        # -------------------------------------------------
+
         if not message.guild:
             return
 
 
-        # =================================================
+        # -------------------------------------------------
         # CATAT AKTIVITAS MEMBER
-        # =================================================
+        # -------------------------------------------------
 
-        stats = self.get_member_activity(
-            message.author
+        stats = (
+            self.get_member_activity(
+                message.author
+            )
         )
 
+
         stats["messages"] += 1
+
         stats["last_message"] = int(
             time.time()
         )
@@ -906,24 +1239,31 @@ class AI(commands.Cog):
             async with self.activity_lock:
 
                 await self._run_blocking(
+
                     save_activity,
+
                     self.activity
+
                 )
+
 
             self.save_counter = 0
 
 
-        # =================================================
+        # -------------------------------------------------
         # CEK PESAN UNTUK AI
-        # =================================================
+        # -------------------------------------------------
 
         is_ai_channel = (
-            message.channel.id == AI_CHANNEL
+
+            message.channel.id
+            == AI_CHANNEL
+
         )
 
 
-        # Explicit mention literal
         is_explicit_mention = (
+
             f"<@{self.bot.user.id}>"
             in message.content
 
@@ -931,23 +1271,30 @@ class AI(commands.Cog):
 
             f"<@!{self.bot.user.id}>"
             in message.content
+
         )
 
 
-        # Kalau bukan channel AI dan bukan mention
+        # Kalau bukan channel AI
+        # dan bukan mention bot,
+        # jangan diproses.
+
         if (
             not is_ai_channel
             and not is_explicit_mention
         ):
+
             return
 
 
-        is_mention = is_explicit_mention
+        is_mention = (
+            is_explicit_mention
+        )
 
 
-        # =================================================
+        # -------------------------------------------------
         # BERSIHKAN MENTION BOT
-        # =================================================
+        # -------------------------------------------------
 
         prompt = message.content
 
@@ -955,80 +1302,112 @@ class AI(commands.Cog):
         if is_mention:
 
             prompt = prompt.replace(
+
                 f"<@{self.bot.user.id}>",
+
                 ""
+
             )
 
+
             prompt = prompt.replace(
+
                 f"<@!{self.bot.user.id}>",
+
                 ""
+
             )
+
 
             prompt = prompt.strip()
 
 
-        # =================================================
+        # -------------------------------------------------
         # INTERNAL STAFF GATE
-        # =================================================
+        # -------------------------------------------------
 
-        prompt_lower = prompt.lower()
+        prompt_lower = (
+            prompt.lower()
+        )
 
 
         is_internal_topic = any(
-            kw in prompt_lower
-            for kw in INTERNAL_TOPIC_KEYWORDS
+
+            keyword in prompt_lower
+
+            for keyword
+            in INTERNAL_TOPIC_KEYWORDS
+
         )
 
 
         if (
+
             is_internal_topic
+
             and not self.is_crew_member(
                 message.author
             )
+
         ):
 
             await message.reply(
-                "🔒 Maaf, ini kelihatannya pembahasan "
-                "internal Crew nanZ. Cuma member dengan "
-                "role **Crew nanZ** yang bisa nanya soal "
-                "ini ke aku ya.",
+
+                "🔒 Maaf, ini kelihatannya "
+                "pembahasan internal Crew nanZ. "
+                "Cuma member dengan role "
+                "**Crew nanZ** yang bisa nanya "
+                "soal ini ke aku ya.",
+
                 mention_author=False,
+
             )
+
 
             return
 
 
-        # =================================================
+        # -------------------------------------------------
         # IMAGE / MULTIMODAL
-        # =================================================
+        # -------------------------------------------------
 
         user_parts = []
+
         image_note = False
 
 
         if prompt:
 
-            user_parts.append(
-                {
-                    "text": prompt
-                }
-            )
+            user_parts.append({
+
+                "text":
+                    prompt
+
+            })
 
 
         image_count = 0
 
 
-        for attachment in message.attachments:
+        for attachment in (
+            message.attachments
+        ):
 
-            if image_count >= MAX_IMAGE_PARTS:
+            if image_count >= (
+                MAX_IMAGE_PARTS
+            ):
+
                 break
 
 
             if (
+
                 attachment.content_type
+
                 and attachment.content_type.startswith(
                     "image/"
                 )
+
             ):
 
                 try:
@@ -1038,32 +1417,39 @@ class AI(commands.Cog):
                     )
 
 
-                    b64 = base64.b64encode(
-                        img_bytes
-                    ).decode("utf-8")
-
-
-                    user_parts.append(
-                        {
-                            "inline_data": {
-                                "mime_type":
-                                    attachment.content_type,
-
-                                "data":
-                                    b64,
-                            }
-                        }
+                    b64 = (
+                        base64.b64encode(
+                            img_bytes
+                        )
+                        .decode("utf-8")
                     )
 
 
+                    user_parts.append({
+
+                        "inline_data": {
+
+                            "mime_type":
+                                attachment.content_type,
+
+                            "data":
+                                b64,
+
+                        }
+
+                    })
+
+
                     image_count += 1
+
                     image_note = True
 
 
                 except Exception:
 
                     logger.warning(
-                        "Gagal membaca lampiran gambar"
+                        "Gagal membaca "
+                        "lampiran gambar"
                     )
 
 
@@ -1071,22 +1457,28 @@ class AI(commands.Cog):
             return
 
 
-        # =================================================
+        # -------------------------------------------------
         # ANTI SPAM
-        # =================================================
+        # -------------------------------------------------
 
         now = time.time()
 
 
         last_used = self.last_ai_use.get(
+
             message.author.id,
+
             0
+
         )
 
 
         if (
+
             now - last_used
+
             < AI_COOLDOWN_SECONDS
+
         ):
 
             try:
@@ -1098,6 +1490,7 @@ class AI(commands.Cog):
             except Exception:
                 pass
 
+
             return
 
 
@@ -1106,19 +1499,24 @@ class AI(commands.Cog):
         ] = now
 
 
-        # =================================================
+        # -------------------------------------------------
         # AI RESPONSE
-        # =================================================
+        # -------------------------------------------------
 
         async with message.channel.typing():
 
             key = history_key(
+
                 message.guild.id,
+
                 message.author.id
+
             )
 
 
-            history = self.chat_history[key]
+            history = (
+                self.chat_history[key]
+            )
 
 
             contents = []
@@ -1128,78 +1526,115 @@ class AI(commands.Cog):
                 -MAX_HISTORY_TURNS:
             ]:
 
-                contents.append(
-                    {
-                        "role": "user",
-                        "parts": [
-                            {
-                                "text": q
-                            }
-                        ],
-                    }
-                )
+                contents.append({
+
+                    "role":
+                        "user",
+
+                    "parts": [
+
+                        {
+                            "text":
+                                q
+                        }
+
+                    ],
+
+                })
 
 
-                contents.append(
-                    {
-                        "role": "model",
-                        "parts": [
-                            {
-                                "text": a
-                            }
-                        ],
-                    }
-                )
+                contents.append({
+
+                    "role":
+                        "model",
+
+                    "parts": [
+
+                        {
+                            "text":
+                                a
+                        }
+
+                    ],
+
+                })
 
 
-            contents.append(
-                {
-                    "role": "user",
-                    "parts": user_parts
-                }
-            )
+            contents.append({
+
+                "role":
+                    "user",
+
+                "parts":
+                    user_parts,
+
+            })
 
 
-            # =================================================
+            # -------------------------------------------------
             # SYSTEM PROMPT
-            # =================================================
+            # -------------------------------------------------
 
-            system_text = await self.system_prompt(
-                message.guild,
-                message.author,
-                message.channel,
-                message
+            system_text = (
+                await self.system_prompt(
+
+                    message.guild,
+
+                    message.author,
+
+                    message.channel,
+
+                    message
+
+                )
             )
 
 
-            answer, err = await self.generate_content(
-                contents,
-                system_text
+            answer, err = (
+                await self.generate_content(
+
+                    contents,
+
+                    system_text
+
+                )
             )
 
 
             if answer is None:
 
                 await message.reply(
-                    self.error_to_message(err),
+
+                    self.error_to_message(
+                        err
+                    ),
+
                     mention_author=False
+
                 )
+
 
                 return
 
 
-            # Simpan history
-            history.append(
-                (
-                    prompt
-                    if prompt
-                    else "[gambar]",
-                    answer
-                )
-            )
+            # -------------------------------------------------
+            # SIMPAN HISTORY
+            # -------------------------------------------------
+
+            history.append((
+
+                prompt
+                if prompt
+                else "[gambar]",
+
+                answer
+
+            ))
 
 
-            if len(history) > MAX_HISTORY_STORED:
+            if len(history) > (
+                MAX_HISTORY_STORED
+            ):
 
                 del history[
                     :len(history)
@@ -1208,9 +1643,13 @@ class AI(commands.Cog):
 
 
             await self._send_ai_answer(
+
                 message,
+
                 answer,
+
                 image_note
+
             )
 
 
@@ -1226,17 +1665,23 @@ class AI(commands.Cog):
     ):
 
         chunks = [
+
             answer[i:i + EMBED_CHUNK_SIZE]
+
             for i in range(
                 0,
                 len(answer),
                 EMBED_CHUNK_SIZE
             )
+
         ]
 
 
         if not chunks:
-            chunks = ["(kosong)"]
+
+            chunks = [
+                "(kosong)"
+            ]
 
 
         chunks = chunks[
@@ -1249,25 +1694,34 @@ class AI(commands.Cog):
         ):
 
             embed = discord.Embed(
+
                 title=(
+
                     "🤖 nanZ AI"
+
                     if index == 0
+
                     else
+
                     f"🤖 nanZ AI "
                     f"(lanjutan {index + 1})"
+
                 ),
 
                 description=chunk,
 
                 color=0x5865F2,
+
             )
 
 
             if index == 0:
 
                 footer = (
+
                     f"Diminta oleh "
                     f"{message.author.display_name}"
+
                 )
 
 
@@ -1286,8 +1740,11 @@ class AI(commands.Cog):
             if index == 0:
 
                 await message.reply(
+
                     embed=embed,
+
                     mention_author=False
+
                 )
 
             else:
@@ -1313,25 +1770,35 @@ class AI(commands.Cog):
             return
 
 
-        # =================================================
+        # -------------------------------------------------
         # MASUK VOICE
-        # =================================================
+        # -------------------------------------------------
 
         if (
+
             before.channel is None
+
             and after.channel is not None
+
         ):
 
             self.voice_sessions[
                 member.id
             ] = {
-                "started": time.time(),
-                "channel": after.channel.name,
+
+                "started":
+                    time.time(),
+
+                "channel":
+                    after.channel.name,
+
             }
 
 
-            stats = self.get_member_activity(
-                member
+            stats = (
+                self.get_member_activity(
+                    member
+                )
             )
 
 
@@ -1342,18 +1809,24 @@ class AI(commands.Cog):
             )
 
 
-        # =================================================
+        # -------------------------------------------------
         # PINDAH VOICE
-        # =================================================
+        # -------------------------------------------------
 
         elif (
+
             before.channel is not None
+
             and after.channel is not None
+
             and before.channel.id
             != after.channel.id
+
         ):
 
-            if member.id in self.voice_sessions:
+            if member.id in (
+                self.voice_sessions
+            ):
 
                 started = (
                     self.voice_sessions[
@@ -1363,39 +1836,53 @@ class AI(commands.Cog):
 
 
                 seconds = int(
+
                     time.time()
                     - started
+
                 )
 
 
-                stats = self.get_member_activity(
-                    member
+                stats = (
+                    self.get_member_activity(
+                        member
+                    )
                 )
 
 
-                stats["voice_seconds"] += (
-                    seconds
-                )
+                stats[
+                    "voice_seconds"
+                ] += seconds
 
 
             self.voice_sessions[
                 member.id
             ] = {
-                "started": time.time(),
-                "channel": after.channel.name,
+
+                "started":
+                    time.time(),
+
+                "channel":
+                    after.channel.name,
+
             }
 
 
-        # =================================================
+        # -------------------------------------------------
         # KELUAR VOICE
-        # =================================================
+        # -------------------------------------------------
 
         elif (
+
             before.channel is not None
+
             and after.channel is None
+
         ):
 
-            if member.id in self.voice_sessions:
+            if member.id in (
+                self.voice_sessions
+            ):
 
                 started = (
                     self.voice_sessions[
@@ -1405,19 +1892,23 @@ class AI(commands.Cog):
 
 
                 seconds = int(
+
                     time.time()
                     - started
+
                 )
 
 
-                stats = self.get_member_activity(
-                    member
+                stats = (
+                    self.get_member_activity(
+                        member
+                    )
                 )
 
 
-                stats["voice_seconds"] += (
-                    seconds
-                )
+                stats[
+                    "voice_seconds"
+                ] += seconds
 
 
                 del self.voice_sessions[
@@ -1425,11 +1916,18 @@ class AI(commands.Cog):
                 ]
 
 
+        # -------------------------------------------------
+        # SAVE
+        # -------------------------------------------------
+
         async with self.activity_lock:
 
             await self._run_blocking(
+
                 save_activity,
+
                 self.activity
+
             )
 
 
@@ -1442,20 +1940,28 @@ class AI(commands.Cog):
         seconds
     ):
 
-        seconds = int(seconds)
+        seconds = int(
+            seconds
+        )
 
 
-        days = seconds // 86400
+        days = (
+            seconds // 86400
+        )
 
         seconds %= 86400
 
 
-        hours = seconds // 3600
+        hours = (
+            seconds // 3600
+        )
 
         seconds %= 3600
 
 
-        minutes = seconds // 60
+        minutes = (
+            seconds // 60
+        )
 
 
         if days:
@@ -1472,7 +1978,9 @@ class AI(commands.Cog):
             )
 
 
-        return f"{minutes}m"
+        return (
+            f"{minutes}m"
+        )
 
 
     # =====================================================
@@ -1485,8 +1993,11 @@ class AI(commands.Cog):
     ):
 
         online = 0
+
         idle = 0
+
         dnd = 0
+
         offline = 0
 
 
@@ -1499,17 +2010,23 @@ class AI(commands.Cog):
             status = member.status
 
 
-            if status == discord.Status.online:
+            if status == (
+                discord.Status.online
+            ):
 
                 online += 1
 
 
-            elif status == discord.Status.idle:
+            elif status == (
+                discord.Status.idle
+            ):
 
                 idle += 1
 
 
-            elif status == discord.Status.dnd:
+            elif status == (
+                discord.Status.dnd
+            ):
 
                 dnd += 1
 
@@ -1519,9 +2036,9 @@ class AI(commands.Cog):
                 offline += 1
 
 
-        # =================================================
+        # -------------------------------------------------
         # VOICE MEMBERS
-        # =================================================
+        # -------------------------------------------------
 
         voice_members = []
 
@@ -1530,25 +2047,34 @@ class AI(commands.Cog):
 
             for member in vc.members:
 
-                if not member.bot:
-
-                    voice_members.append(
-                        f"{member.display_name} → "
-                        f"{vc.name}"
-                    )
+                if member.bot:
+                    continue
 
 
-        # =================================================
+                voice_members.append(
+
+                    f"{member.display_name} "
+                    f"→ {vc.name}"
+
+                )
+
+
+        # -------------------------------------------------
         # ROLE STATS
-        # =================================================
+        # -------------------------------------------------
 
         role_stats = []
 
 
         for role in sorted(
+
             guild.roles,
-            key=lambda r: len(r.members),
+
+            key=lambda r:
+                len(r.members),
+
             reverse=True
+
         ):
 
             if role.is_default():
@@ -1556,24 +2082,33 @@ class AI(commands.Cog):
 
 
             count = len([
-                m
-                for m in role.members
-                if not m.bot
+
+                member
+
+                for member
+                in role.members
+
+                if not member.bot
+
             ])
 
 
             role_stats.append(
+
                 f"{role.name}: {count}"
+
             )
 
 
-        # =================================================
+        # -------------------------------------------------
         # ACTIVITY
-        # =================================================
+        # -------------------------------------------------
 
-        guild_activity = self.activity.get(
-            str(guild.id),
-            {}
+        guild_activity = (
+            self.activity.get(
+                str(guild.id),
+                {}
+            )
         )
 
 
@@ -1586,15 +2121,26 @@ class AI(commands.Cog):
                 continue
 
 
-            data = guild_activity.get(
-                str(member.id),
-                {
-                    "messages": 0,
-                    "voice_seconds": 0,
-                    "voice_sessions": 0,
-                    "last_message": None,
-                    "last_voice": None,
-                }
+            data = (
+                guild_activity.get(
+
+                    str(member.id),
+
+                    {
+
+                        "messages": 0,
+
+                        "voice_seconds": 0,
+
+                        "voice_sessions": 0,
+
+                        "last_message": None,
+
+                        "last_voice": None,
+
+                    }
+
+                )
             )
 
 
@@ -1610,155 +2156,219 @@ class AI(commands.Cog):
             )
 
 
-            # Tambahkan sesi voice aktif
-            if member.id in self.voice_sessions:
+            # Tambahkan sesi voice aktif.
+
+            if member.id in (
+                self.voice_sessions
+            ):
 
                 started = (
+
                     self.voice_sessions[
                         member.id
                     ]["started"]
+
                 )
 
 
                 voice_seconds += int(
+
                     time.time()
                     - started
+
                 )
 
 
             activity_score = (
+
                 messages
                 + (
                     voice_seconds / 60
                 )
+
             )
 
 
-            activity_members.append(
-                {
-                    "member": member,
-                    "messages": messages,
-                    "voice_seconds":
-                        voice_seconds,
-                    "score":
-                        activity_score,
-                }
-            )
+            activity_members.append({
+
+                "member":
+                    member,
+
+                "messages":
+                    messages,
+
+                "voice_seconds":
+                    voice_seconds,
+
+                "score":
+                    activity_score,
+
+            })
 
 
-        # =================================================
+        # -------------------------------------------------
         # TOP CHAT
-        # =================================================
+        # -------------------------------------------------
 
         top_chat = sorted(
+
             activity_members,
-            key=lambda x: x["messages"],
+
+            key=lambda x:
+                x["messages"],
+
             reverse=True
+
         )[:15]
 
 
         top_chat_text = [
+
             (
+
                 f"{i}. "
-                f"{d['member'].display_name} — "
-                f"{d['messages']} chat"
+                f"{data['member'].display_name} — "
+                f"{data['messages']} chat"
+
             )
 
-            for i, d
+            for i, data
             in enumerate(
                 top_chat,
                 start=1
             )
+
         ]
 
 
-        # =================================================
+        # -------------------------------------------------
         # TOP VOICE
-        # =================================================
+        # -------------------------------------------------
 
         top_voice = sorted(
+
             activity_members,
-            key=lambda x: x["voice_seconds"],
+
+            key=lambda x:
+                x["voice_seconds"],
+
             reverse=True
+
         )[:15]
 
 
         top_voice_text = [
+
             (
+
                 f"{i}. "
-                f"{d['member'].display_name} — "
-                f"{self.format_seconds(d['voice_seconds'])}"
+                f"{data['member'].display_name} — "
+                f"{self.format_seconds(data['voice_seconds'])}"
+
             )
 
-            for i, d
+            for i, data
             in enumerate(
                 top_voice,
                 start=1
             )
+
         ]
 
 
-        # =================================================
+        # -------------------------------------------------
         # TOP ACTIVE
-        # =================================================
+        # -------------------------------------------------
 
         top_active = sorted(
+
             activity_members,
-            key=lambda x: x["score"],
+
+            key=lambda x:
+                x["score"],
+
             reverse=True
+
         )[:15]
 
 
         top_active_text = [
+
             (
+
                 f"{i}. "
-                f"{d['member'].display_name} — "
-                f"{d['messages']} chat, "
-                f"{self.format_seconds(d['voice_seconds'])} voice"
+                f"{data['member'].display_name} — "
+                f"{data['messages']} chat, "
+                f"{self.format_seconds(data['voice_seconds'])} voice"
+
             )
 
-            for i, d
+            for i, data
             in enumerate(
                 top_active,
                 start=1
             )
+
         ]
 
 
-        # =================================================
+        # -------------------------------------------------
         # CHANNELS
-        # =================================================
+        # -------------------------------------------------
 
         text_channels = [
-            c.name
-            for c in guild.text_channels
+
+            channel.name
+
+            for channel
+            in guild.text_channels
+
         ]
 
 
         voice_channels = [
-            f"{c.name}: {len(c.members)} orang"
-            for c in guild.voice_channels
+
+            f"{channel.name}: "
+            f"{len(channel.members)} orang"
+
+            for channel
+            in guild.voice_channels
+
         ]
 
 
-        # =================================================
+        # -------------------------------------------------
         # STAFF
-        # =================================================
+        # -------------------------------------------------
 
         staff_keywords = [
+
             "guru besar",
+
             "owner",
+
             "admin",
+
             "administrator",
+
             "moderator",
+
             "mod",
+
             "pembina",
+
             "ketua",
+
             "wakil ketua",
+
             "osis",
+
             "staff",
+
             "developer",
+
             "dev",
+
         ]
 
 
@@ -1772,66 +2382,95 @@ class AI(commands.Cog):
 
 
             role_names = [
+
                 role.name.lower()
-                for role in member.roles
+
+                for role
+                in member.roles
+
             ]
 
 
             is_staff = any(
+
                 keyword in role_name
 
-                for role_name in role_names
+                for role_name
+                in role_names
 
-                for keyword in staff_keywords
+                for keyword
+                in staff_keywords
+
             )
 
 
             if is_staff:
 
-                data = guild_activity.get(
-                    str(member.id),
-                    {
-                        "messages": 0,
-                        "voice_seconds": 0
-                    }
+                data = (
+
+                    guild_activity.get(
+
+                        str(member.id),
+
+                        {
+
+                            "messages": 0,
+
+                            "voice_seconds": 0
+
+                        }
+
+                    )
+
                 )
 
 
-                staff_members.append(
-                    {
-                        "member": member,
-                        "messages":
-                            data.get(
-                                "messages",
-                                0
-                            ),
-                        "voice":
-                            data.get(
-                                "voice_seconds",
-                                0
-                            ),
-                    }
-                )
+                staff_members.append({
+
+                    "member":
+                        member,
+
+                    "messages":
+                        data.get(
+                            "messages",
+                            0
+                        ),
+
+                    "voice":
+                        data.get(
+                            "voice_seconds",
+                            0
+                        ),
+
+                })
 
 
         staff_members.sort(
+
             key=lambda x:
+
                 x["messages"]
                 + x["voice"] / 60,
+
             reverse=True
+
         )
 
 
         staff_text = [
 
             (
-                f"{s['member'].display_name} "
-                f"({s['member'].status}) — "
-                f"{s['messages']} chat, "
-                f"{self.format_seconds(s['voice'])} voice"
+
+                f"{staff['member'].display_name} "
+                f"({staff['member'].status}) — "
+                f"{staff['messages']} chat, "
+                f"{self.format_seconds(staff['voice'])} voice"
+
             )
 
-            for s in staff_members
+            for staff
+            in staff_members
+
         ]
 
 
@@ -1842,16 +2481,26 @@ class AI(commands.Cog):
 
             "human_members":
                 len([
-                    m
-                    for m in guild.members
-                    if not m.bot
+
+                    member
+
+                    for member
+                    in guild.members
+
+                    if not member.bot
+
                 ]),
 
             "bots":
                 len([
-                    m
-                    for m in guild.members
-                    if m.bot
+
+                    member
+
+                    for member
+                    in guild.members
+
+                    if member.bot
+
                 ]),
 
             "online":
@@ -1892,6 +2541,7 @@ class AI(commands.Cog):
 
             "staff":
                 staff_text,
+
         }
 
 
@@ -1912,14 +2562,18 @@ class AI(commands.Cog):
         try:
 
             async for msg in channel.history(
+
                 limit=limit + 1
+
             ):
 
                 if msg.id == exclude_id:
                     continue
 
 
-                content = msg.content.strip()
+                content = (
+                    msg.content.strip()
+                )
 
 
                 if not content:
@@ -1927,23 +2581,35 @@ class AI(commands.Cog):
 
 
                 if (
+
                     msg.author.bot
+
                     and msg.author.id
                     != self.bot.user.id
+
                 ):
+
                     continue
 
 
                 tag = (
+
                     "nanZ AI"
+
                     if msg.author.id
                     == self.bot.user.id
-                    else msg.author.display_name
+
+                    else
+                    msg.author.display_name
+
                 )
 
 
                 lines.append(
-                    f"{tag}: {content[:200]}"
+
+                    f"{tag}: "
+                    f"{content[:200]}"
+
                 )
 
 
@@ -1954,12 +2620,15 @@ class AI(commands.Cog):
         except Exception:
 
             logger.warning(
+
                 "Gagal mengambil histori "
                 "channel untuk konteks"
+
             )
 
 
         lines.reverse()
+
 
         return lines
 
@@ -1987,36 +2656,52 @@ class AI(commands.Cog):
             if replied is None:
 
                 replied = await (
+
                     message.channel.fetch_message(
+
                         message.reference.message_id
+
                     )
+
                 )
 
 
             if (
+
                 replied
+
                 and replied.content
+
             ):
 
                 author = (
+
                     "nanZ AI"
+
                     if replied.author.id
                     == self.bot.user.id
-                    else replied.author.display_name
+
+                    else
+                    replied.author.display_name
+
                 )
 
 
                 return (
+
                     f"{author}: "
                     f"{replied.content[:300]}"
+
                 )
 
 
         except Exception:
 
             logger.warning(
+
                 "Gagal mengambil pesan "
                 "yang dibalas"
+
             )
 
 
@@ -2035,18 +2720,24 @@ class AI(commands.Cog):
 
         try:
 
-            pins = await channel.pins()
+            pins = (
+                await channel.pins()
+            )
 
 
             return [
+
                 (
+
                     f"{p.author.display_name}: "
                     f"{p.content[:150]}"
+
                 )
 
                 for p in pins[:limit]
 
                 if p.content
+
             ]
 
 
@@ -2065,10 +2756,13 @@ class AI(commands.Cog):
     ):
 
         return any(
+
             CREW_ROLE_KEYWORD
             in role.name.lower()
 
-            for role in member.roles
+            for role
+            in member.roles
+
         )
 
 
@@ -2084,19 +2778,23 @@ class AI(commands.Cog):
         try:
 
             created = (
+
                 guild.created_at.strftime(
                     "%d %B %Y"
                 )
+
             )
 
         except Exception:
 
-            created = "tidak diketahui"
+            created = (
+                "tidak diketahui"
+            )
 
 
-        # =================================================
+        # -------------------------------------------------
         # EVENTS
-        # =================================================
+        # -------------------------------------------------
 
         events = []
 
@@ -2104,7 +2802,9 @@ class AI(commands.Cog):
         try:
 
             scheduled = (
+
                 await guild.fetch_scheduled_events()
+
             )
 
         except Exception:
@@ -2119,52 +2819,77 @@ class AI(commands.Cog):
             try:
 
                 start = (
+
                     event.start_time.strftime(
                         "%d %b %Y %H:%M"
                     )
+
                     if event.start_time
+
                     else "?"
+
                 )
 
 
                 end = (
+
                     f" s/d "
                     f"{event.end_time.strftime('%H:%M')}"
+
                     if event.end_time
+
                     else ""
+
                 )
 
 
                 if event.location:
 
-                    location = event.location
+                    location = (
+                        event.location
+                    )
 
                 elif event.channel:
 
-                    location = event.channel.name
+                    location = (
+                        event.channel.name
+                    )
 
                 else:
 
-                    location = "Tidak diketahui"
+                    location = (
+                        "Tidak diketahui"
+                    )
 
 
                 desc = (
-                    f" — {event.description[:120]}"
+
+                    f" — "
+                    f"{event.description[:120]}"
+
                     if event.description
+
                     else ""
+
                 )
 
 
-                status = event.status.name.lower()
+                status = (
+                    event.status.name.lower()
+                )
 
 
                 events.append(
+
                     (
+
                         f"{event.name} | "
                         f"{start}{end} | "
                         f"@ {location} | "
                         f"status: {status}{desc}"
+
                     )
+
                 )
 
 
@@ -2173,9 +2898,9 @@ class AI(commands.Cog):
                 continue
 
 
-        # =================================================
+        # -------------------------------------------------
         # RECENT JOIN
-        # =================================================
+        # -------------------------------------------------
 
         recent_joins = []
 
@@ -2183,27 +2908,40 @@ class AI(commands.Cog):
         try:
 
             humans = [
-                m
-                for m in guild.members
-                if not m.bot
-                and m.joined_at
+
+                member
+
+                for member
+                in guild.members
+
+                if not member.bot
+                and member.joined_at
+
             ]
 
 
             humans.sort(
-                key=lambda m: m.joined_at,
+
+                key=lambda member:
+                    member.joined_at,
+
                 reverse=True
+
             )
 
 
-            for m in humans[:5]:
+            for member in humans[:5]:
 
                 recent_joins.append(
+
                     (
-                        f"{m.display_name} "
+
+                        f"{member.display_name} "
                         f"(bergabung "
-                        f"{m.joined_at.strftime('%d %b %Y')})"
+                        f"{member.joined_at.strftime('%d %b %Y')})"
+
                     )
+
                 )
 
 
@@ -2216,7 +2954,8 @@ class AI(commands.Cog):
 
             "description":
                 guild.description
-                or "Tidak ada deskripsi server.",
+                or
+                "Tidak ada deskripsi server.",
 
             "created":
                 created,
@@ -2245,6 +2984,7 @@ class AI(commands.Cog):
 
             "recent_joins":
                 recent_joins,
+
         }
 
 
@@ -2260,28 +3000,38 @@ class AI(commands.Cog):
         message=None
     ):
 
-        stats = self.get_server_statistics(
-            guild
+        stats = (
+            self.get_server_statistics(
+                guild
+            )
         )
 
 
-        guild_info = await self.get_guild_context(
-            guild
+        guild_info = (
+            await self.get_guild_context(
+                guild
+            )
         )
 
 
-        is_crew = self.is_crew_member(
-            member
+        is_crew = (
+            self.is_crew_member(
+                member
+            )
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # BASIC DATA
-        # =================================================
+        # -------------------------------------------------
 
         roles = "\n".join(
-            f"- {r}"
-            for r in stats["roles"]
+
+            f"- {role}"
+
+            for role
+            in stats["roles"]
+
         )
 
 
@@ -2301,92 +3051,137 @@ class AI(commands.Cog):
 
 
         voice_members = "\n".join(
-            f"- {x}"
-            for x in stats["voice_members"]
+
+            f"- {item}"
+
+            for item
+            in stats["voice_members"]
+
         )
 
 
         voice_channels = "\n".join(
-            f"- {x}"
-            for x in stats["voice_channels"]
+
+            f"- {item}"
+
+            for item
+            in stats["voice_channels"]
+
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # STAFF
-        # =================================================
+        # -------------------------------------------------
 
         if is_crew:
 
             staff = (
+
                 "\n".join(
-                    f"- {x}"
-                    for x in stats["staff"]
+
+                    f"- {item}"
+
+                    for item
+                    in stats["staff"]
+
                 )
+
                 or
                 "Belum terdeteksi staff."
+
             )
 
         else:
 
             staff = (
+
                 "🔒 Disembunyikan — "
-                "hanya bisa dilihat oleh Crew nanZ."
+                "hanya bisa dilihat oleh "
+                "Crew nanZ."
+
             )
 
 
-        # =================================================
+        # -------------------------------------------------
         # EVENTS
-        # =================================================
+        # -------------------------------------------------
 
         events = "\n".join(
-            f"- {e}"
-            for e in guild_info["events"]
+
+            f"- {event}"
+
+            for event
+            in guild_info["events"]
+
         )
 
 
         recent_joins = "\n".join(
-            f"- {j}"
-            for j in guild_info["recent_joins"]
+
+            f"- {join}"
+
+            for join
+            in guild_info["recent_joins"]
+
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # CHANNEL CONTEXT
-        # =================================================
+        # -------------------------------------------------
 
         recent_chat = []
+
         reply_context = None
+
         pinned = []
 
 
         if channel is not None:
 
             recent_chat = (
+
                 await self.get_recent_channel_context(
+
                     channel,
+
                     exclude_id=(
+
                         message.id
+
                         if message
+
                         else None
+
                     )
+
                 )
+
             )
 
 
             pinned = (
+
                 await self.get_pinned_context(
+
                     channel
+
                 )
+
             )
 
 
         if message is not None:
 
             reply_context = (
+
                 await self.get_reply_context(
+
                     message
+
                 )
+
             )
 
 
@@ -2396,26 +3191,26 @@ class AI(commands.Cog):
 
 
         pinned_text = "\n".join(
-            f"- {p}"
-            for p in pinned
+
+            f"- {item}"
+
+            for item
+            in pinned
+
         )
 
 
-        # =================================================
-        # FIX F-STRING BACKSLASH ERROR
-        # =================================================
-        #
-        # JANGAN memasukkan "\n" langsung
-        # ke dalam expression {...} f-string.
-        #
-        # Dibuat sebagai variable terlebih dahulu.
-        # =================================================
+        # -------------------------------------------------
+        # REPLY CONTEXT
+        # -------------------------------------------------
 
         if reply_context:
 
             reply_context_text = (
+
                 "USER MEMBALAS PESAN INI:\n"
                 f"{reply_context}"
+
             )
 
         else:
@@ -2423,9 +3218,9 @@ class AI(commands.Cog):
             reply_context_text = ""
 
 
-        # =================================================
+        # -------------------------------------------------
         # FINAL SYSTEM PROMPT
-        # =================================================
+        # -------------------------------------------------
 
         return f"""
 Kamu adalah nanZ AI, AI resmi milik Discord nanZ Server.
@@ -2603,9 +3398,9 @@ Status:
 
 Role User:
 {", ".join(
-    r.name
-    for r in member.roles
-    if not r.is_default()
+    role.name
+    for role in member.roles
+    if not role.is_default()
 ) or "Tidak memiliki role khusus"}
 
 Status Crew nanZ:
@@ -2690,11 +3485,14 @@ ATURAN MENJAWAB
     # =====================================================
 
     @app_commands.command(
+
         name="leaderboard",
+
         description=(
             "Lihat leaderboard aktivitas "
             "server (chat/voice/aktif)"
         )
+
     )
     async def leaderboard(
         self,
@@ -2705,14 +3503,20 @@ ATURAN MENJAWAB
 
 
         view = LeaderboardView(
+
             self,
+
             interaction.guild
+
         )
 
 
         await interaction.followup.send(
+
             embed=view.build_embed(),
+
             view=view
+
         )
 
 
@@ -2721,88 +3525,126 @@ ATURAN MENJAWAB
     # =====================================================
 
     @app_commands.command(
+
         name="profil",
+
         description=(
             "Lihat statistik aktivitas "
             "seorang member"
         )
+
     )
     @app_commands.describe(
+
         member=(
             "Member yang mau dilihat "
             "(kosongkan untuk diri sendiri)"
         )
+
     )
     async def profil(
+
         self,
+
         interaction: discord.Interaction,
+
         member: discord.Member = None
+
     ):
 
         member = (
+
             member
+
             or interaction.user
+
         )
 
 
         if member.bot:
 
             await interaction.response.send_message(
-                "Bot tidak memiliki statistik aktivitas.",
+
+                "Bot tidak memiliki "
+                "statistik aktivitas.",
+
                 ephemeral=True
+
             )
+
 
             return
 
 
-        data = self.get_member_activity(
-            member
+        data = (
+            self.get_member_activity(
+                member
+            )
         )
 
 
-        voice_seconds = data[
-            "voice_seconds"
-        ]
+        voice_seconds = (
+            data["voice_seconds"]
+        )
 
 
-        if member.id in self.voice_sessions:
+        if member.id in (
+            self.voice_sessions
+        ):
 
             voice_seconds += int(
+
                 time.time()
+
                 - self.voice_sessions[
                     member.id
                 ]["started"]
+
             )
 
 
-        stats = self.get_server_statistics(
-            interaction.guild
-        )
+        # Ranking aktivitas
 
-
-        # Catatan:
-        # Ranking berdasarkan score aktivitas.
         activity_members = []
 
 
-        guild_activity = self.activity.get(
-            str(interaction.guild.id),
-            {}
+        guild_activity = (
+            self.activity.get(
+
+                str(
+                    interaction.guild.id
+                ),
+
+                {}
+
+            )
         )
 
 
-        for m in interaction.guild.members:
+        for m in (
+            interaction.guild.members
+        ):
 
             if m.bot:
                 continue
 
 
-            d = guild_activity.get(
-                str(m.id),
-                {
-                    "messages": 0,
-                    "voice_seconds": 0
-                }
+            d = (
+
+                guild_activity.get(
+
+                    str(m.id),
+
+                    {
+
+                        "messages": 0,
+
+                        "voice_seconds": 0
+
+                    }
+
+                )
+
             )
 
 
@@ -2818,38 +3660,52 @@ ATURAN MENJAWAB
             )
 
 
-            if m.id in self.voice_sessions:
+            if m.id in (
+                self.voice_sessions
+            ):
 
                 voice += int(
+
                     time.time()
+
                     - self.voice_sessions[
                         m.id
                     ]["started"]
+
                 )
 
 
             score = (
+
                 messages
                 + voice / 60
+
             )
 
 
             activity_members.append(
+
                 (
                     m.id,
                     score
                 )
+
             )
 
 
         activity_members.sort(
+
             key=lambda x: x[1],
+
             reverse=True
+
         )
 
 
         rank = next(
+
             (
+
                 i + 1
 
                 for i, item
@@ -2858,61 +3714,93 @@ ATURAN MENJAWAB
                 )
 
                 if item[0] == member.id
+
             ),
+
             None
+
         )
 
 
         embed = discord.Embed(
+
             title=(
                 f"📊 Statistik "
                 f"{member.display_name}"
             ),
 
             color=(
+
                 member.color
+
                 if member.color.value
+
                 else 0x5865F2
+
             ),
+
         )
 
 
         embed.set_thumbnail(
-            url=member.display_avatar.url
+
+            url=(
+                member.display_avatar.url
+            )
+
         )
 
 
         embed.add_field(
+
             name="💬 Pesan",
+
             value=str(
                 data["messages"]
             ),
+
             inline=True
+
         )
 
 
         embed.add_field(
+
             name="🎙️ Waktu Voice",
+
             value=self.format_seconds(
                 voice_seconds
             ),
+
             inline=True
+
         )
 
 
         embed.add_field(
+
             name="🏆 Ranking Aktif",
+
             value=(
+
                 f"#{rank}"
+
                 if rank
-                else "Belum ada ranking"
+
+                else
+                "Belum ada ranking"
+
             ),
+
             inline=True
+
         )
 
 
         await interaction.response.send_message(
+
             embed=embed
+
         )
 
 
@@ -2921,33 +3809,48 @@ ATURAN MENJAWAB
     # =====================================================
 
     @app_commands.command(
+
         name="resetchat",
+
         description=(
             "Hapus riwayat percakapanmu "
             "dengan nanZ AI"
         )
+
     )
     async def resetchat(
+
         self,
+
         interaction: discord.Interaction
+
     ):
 
         key = history_key(
+
             interaction.guild.id,
+
             interaction.user.id
+
         )
 
 
         self.chat_history.pop(
+
             key,
+
             None
+
         )
 
 
         await interaction.response.send_message(
+
             "✅ Riwayat percakapanmu dengan "
             "nanZ AI sudah dihapus.",
+
             ephemeral=True
+
         )
 
 
@@ -2956,40 +3859,59 @@ ATURAN MENJAWAB
     # =====================================================
 
     @app_commands.command(
+
         name="vc",
+
         description=(
             "Lihat siapa saja yang sedang "
             "di voice channel"
         )
+
     )
     async def vc(
+
         self,
+
         interaction: discord.Interaction
+
     ):
 
-        stats = self.get_server_statistics(
-            interaction.guild
+        stats = (
+            self.get_server_statistics(
+                interaction.guild
+            )
         )
 
 
         embed = discord.Embed(
+
             title="🎙️ Sedang di Voice",
 
             description=(
+
                 "\n".join(
-                    f"- {x}"
-                    for x in stats["voice_members"]
+
+                    f"- {item}"
+
+                    for item
+                    in stats["voice_members"]
+
                 )
+
                 or
                 "Tidak ada member di voice."
+
             ),
 
             color=0x5865F2,
+
         )
 
 
         await interaction.response.send_message(
+
             embed=embed
+
         )
 
 
@@ -2998,15 +3920,21 @@ ATURAN MENJAWAB
     # =====================================================
 
     @app_commands.command(
+
         name="serverinfo",
+
         description=(
             "Lihat situasi server "
             "secara real-time"
         )
+
     )
     async def serverinfo(
+
         self,
+
         interaction: discord.Interaction
+
     ):
 
         await interaction.response.defer()
@@ -3015,79 +3943,119 @@ ATURAN MENJAWAB
         guild = interaction.guild
 
 
-        info = await self.get_guild_context(
-            guild
+        info = (
+            await self.get_guild_context(
+                guild
+            )
         )
 
 
         embed = discord.Embed(
+
             title=f"🏫 Situasi {guild.name}",
 
             description=info["description"],
 
             color=0x5865F2,
+
         )
 
 
         if guild.icon:
 
             embed.set_thumbnail(
+
                 url=guild.icon.url
+
             )
 
 
         embed.add_field(
+
             name="📅 Dibuat",
+
             value=info["created"],
+
             inline=True
+
         )
 
 
         embed.add_field(
+
             name="🚀 Boost",
+
             value=(
+
                 f"{info['boosts']} "
                 f"(Lv.{info['boost_tier']})"
+
             ),
+
             inline=True
+
         )
 
 
         embed.add_field(
+
             name="🛡️ Verifikasi",
+
             value=info["verification"],
+
             inline=True
+
         )
 
 
         embed.add_field(
+
             name="🗓️ Event Terjadwal",
+
             value=(
+
                 "\n".join(
                     info["events"]
                 )
+
                 if info["events"]
-                else "Tidak ada."
+
+                else
+                "Tidak ada."
+
             ),
+
             inline=False
+
         )
 
 
         embed.add_field(
+
             name="🆕 Member Baru",
+
             value=(
+
                 "\n".join(
                     info["recent_joins"]
                 )
+
                 if info["recent_joins"]
-                else "Tidak ada data."
+
+                else
+                "Tidak ada data."
+
             ),
+
             inline=False
+
         )
 
 
         await interaction.followup.send(
+
             embed=embed
+
         )
 
 
@@ -3096,15 +4064,21 @@ ATURAN MENJAWAB
     # =====================================================
 
     @app_commands.command(
+
         name="events",
+
         description=(
             "Lihat event terjadwal "
             "di kalender server"
         )
+
     )
     async def events(
+
         self,
+
         interaction: discord.Interaction
+
     ):
 
         await interaction.response.defer()
@@ -3116,7 +4090,9 @@ ATURAN MENJAWAB
         try:
 
             scheduled = (
+
                 await guild.fetch_scheduled_events()
+
             )
 
         except Exception:
@@ -3129,8 +4105,12 @@ ATURAN MENJAWAB
         if not scheduled:
 
             await interaction.followup.send(
+
                 embed=discord.Embed(
-                    title="🗓️ Kalender Event nanZ",
+
+                    title=(
+                        "🗓️ Kalender Event nanZ"
+                    ),
 
                     description=(
                         "Belum ada event "
@@ -3138,21 +4118,28 @@ ATURAN MENJAWAB
                     ),
 
                     color=0x5865F2,
+
                 )
+
             )
+
 
             return
 
 
         embed = discord.Embed(
+
             title="🗓️ Kalender Event nanZ",
+
             color=0x5865F2
+
         )
 
 
         for event in scheduled[:10]:
 
             start = (
+
                 event.start_time.strftime(
                     "%d %b %Y, %H:%M"
                 )
@@ -3160,55 +4147,80 @@ ATURAN MENJAWAB
                 if event.start_time
 
                 else "?"
+
             )
 
 
             location = (
+
                 event.location
+
                 or (
+
                     event.channel.name
+
                     if event.channel
-                    else "Tidak diketahui"
+
+                    else
+                    "Tidak diketahui"
+
                 )
+
             )
 
 
             value = (
+
                 f"🕒 {start}\n"
                 f"📍 {location}"
+
             )
 
 
             if event.description:
 
                 value += (
-                    f"\n"
+
+                    "\n"
                     f"{event.description[:150]}"
+
                 )
 
 
             if getattr(
+
                 event,
+
                 "url",
+
                 None
+
             ):
 
                 value += (
-                    f"\n"
+
+                    "\n"
                     f"[Lihat event]"
                     f"({event.url})"
+
                 )
 
 
             embed.add_field(
+
                 name=f"📌 {event.name}",
+
                 value=value,
+
                 inline=False
+
             )
 
 
         await interaction.followup.send(
+
             embed=embed
+
         )
 
 
