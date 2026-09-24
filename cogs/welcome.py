@@ -226,10 +226,10 @@ def _render_frame(idx, avatar, name, fx):
 
     # label di bawah avatar
     la = t_alpha(0.05)
-    lw = int(td.textlength("MEMBER RESMI", font=f_tiny)) + 30
+    lw = int(td.textlength("MURID RESMI", font=f_tiny)) + 30
     td.rounded_rectangle([AV_CX - lw // 2, 262, AV_CX + lw // 2, 286], radius=12,
                          fill=(*PURPLE, _clamp(la * 0.35)), outline=(*SOFT_PURPLE, _clamp(la * 0.8)), width=1)
-    td.text((AV_CX, 274), "MEMBER RESMI", font=f_tiny, fill=(255, 255, 255, la), anchor="mm")
+    td.text((AV_CX, 274), "MURID RESMI", font=f_tiny, fill=(255, 255, 255, la), anchor="mm")
 
     # baris atas: label sapaan (kiri) + pill status (kanan)
     a, dy = t_alpha(0.0), slide(0.0)
@@ -433,7 +433,7 @@ class Welcome(commands.Cog):
 
         mentions = discord.AllowedMentions(users=True)
 
-        # ── 1) Sapaan + GIF (GIF berdiri sendiri, di luar panel) ──
+        # ── Sapaan + arahan + GIF (satu pesan, tanpa panel) ──
         gif_file = None
         try:
             avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
@@ -443,32 +443,20 @@ class Welcome(commands.Cog):
         except Exception as e:
             print(f"[Welcome] gagal bikin GIF: {e}")
 
-        greeting = (
-            "**Verifikasi berhasil!**\n"
-            f"Selamat datang di **nanZ Server**, {member.mention}!"
+        content = (
+            "<a:done:1512648033190543421> **Verifikasi berhasil!**\n"
+            f"Selamat datang di **nanZ Server**, {member.mention}!\n\n"
+            f"> Pahami aturan server di <#{self.RULES_CHANNEL_ID}>\n"
+            f"> Pilih role kamu di <#{self.ROLES_CHANNEL_ID}>"
         )
+
         kwargs = {"file": gif_file} if gif_file else {}
-        await channel.send(content=greeting, allowed_mentions=mentions, **kwargs)
-
-        # ── 2) Panel arahan (tag channel langsung bisa diklik) ──
-        embed = discord.Embed(
-            title="Langkah awal untukmu",
-            description="Ikuti 2 langkah ini dulu ya, biar pengalamanmu makin nyaman.",
-            color=0x8250FF,
+        await channel.send(
+            content=content,
+            view=WaveView(member),
+            allowed_mentions=mentions,
+            **kwargs,
         )
-        embed.add_field(
-            name="1️⃣  Baca tata tertib",
-            value=f"Pahami aturan server di <#{self.RULES_CHANNEL_ID}>",
-            inline=False,
-        )
-        embed.add_field(
-            name="2️⃣  Ambil role",
-            value=f"Pilih role kamu di <#{self.ROLES_CHANNEL_ID}>",
-            inline=False,
-        )
-        embed.set_footer(text="nanZ Server  •  Setelah itu, bebas ngobrol & ikut event bareng!")
-
-        await channel.send(embed=embed, view=WaveView(member))
 
 
 # ══════════════════════════════════════════════
