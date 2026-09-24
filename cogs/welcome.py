@@ -7,7 +7,7 @@ import time
 
 import discord
 from discord.ext import commands
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 # ══════════════════════════════════════════════
 #  GIF GENERATOR
@@ -216,11 +216,19 @@ def _render_frame(idx, avatar, name, fx):
     f_med = _font(FONT_MEDIUM, 18)
     f_small = _font(FONT_REGULAR, 16)
 
+    # Animasi masuk teks dimatikan: semua teks langsung tampil penuh di setiap frame.
+    # (Kalau mau dinyalakan lagi, ganti ke True.)
+    ENTRANCE_ANIM = False
+
     def t_alpha(d):
+        if not ENTRANCE_ANIM:
+            return 255
         lt = max(0, (t - d) / (1.0 - d + 0.001))
         return _clamp(255 * _ease_out(min(lt * 2.5, 1.0)))
 
     def slide(d, mx=16):
+        if not ENTRANCE_ANIM:
+            return 0
         lt = max(0, (t - d) / (1.0 - d + 0.001))
         return int(mx * (1 - _ease_out(min(lt * 2.5, 1.0))))
 
@@ -300,6 +308,23 @@ def _render_frame(idx, avatar, name, fx):
     base = Image.alpha_composite(base, sh)
 
     base = Image.alpha_composite(base, tl)
+
+    # ── Kilau warna teks: pita diagonal lewat dan mewarnai teks (hanya piksel teks) ──
+    # Teks sudah tampil penuh dari frame pertama; kilau ini yang membuatnya tetap "hidup".
+    prog = idx / (TOTAL_FRAMES * 0.65)          # lewat di ~65% awal loop, sisanya jeda
+    if prog <= 1:
+        bw = 44                                   # setengah lebar pita
+        cx0 = RX0 - 120 + prog * (RX1 - RX0 + 240)
+        band = Image.new("L", (W, H), 0)
+        bdr = ImageDraw.Draw(band)
+        for k in range(-bw, bw + 1):
+            bdr.line([(cx0 + k + 40, 0), (cx0 + k - 40, H)],
+                     fill=_clamp(255 * (1 - abs(k) / bw) ** 1.4), width=2)
+        shine_a = ImageChops.multiply(band, tl.getchannel("A")).point(lambda v: int(v * 0.95))
+        shine = Image.new("RGBA", (W, H), (170, 120, 255, 0))   # teks berubah jadi ungu-neon saat dilewati pita
+        shine.putalpha(shine_a)
+        base = Image.alpha_composite(base, shine)
+
     return base.convert("RGB")
 
 
@@ -343,7 +368,7 @@ class WaveView(discord.ui.View):
         self.member = member
         self.cooldowns = {}          # user_id -> waktu terakhir klik
 
-    @discord.ui.button(label="Sapa murid baru!", emoji="👋", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Sapa Murid Baru!", emoji="👋", style=discord.ButtonStyle.secondary)
     async def wave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             # ── cooldown ──
