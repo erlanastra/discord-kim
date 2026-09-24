@@ -91,7 +91,8 @@ async def load_cogs():
         "cogs.voice_control",
         "cogs.donation",
         "cogs.verifysystem",
-        "cogs.nanz_kelas",
+        "cogs.nanzkelasticket",
+        "cogs.nanzkelasadmin",
         "cogs.about",
         "cogs.hall_of_time",
         "cogs.welcome"
