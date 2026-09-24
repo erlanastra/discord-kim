@@ -122,7 +122,7 @@ class VerifyModal(
                 ephemeral=True
             )
 
-        username_clean = self.username.value.replace("@", "")
+        username_clean = self.username.value.replace("@", "").strip()
 
         medsos_final = (
             f"{self.platform} | @{username_clean}"
@@ -264,7 +264,7 @@ class PlatformSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         self.view.platform = self.values[0]
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
 
 class AgeSelect(discord.ui.Select):
@@ -296,7 +296,7 @@ class AgeSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         self.view.umur = self.values[0]
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
 
 class GenderSelect(discord.ui.Select):
@@ -325,7 +325,7 @@ class GenderSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         self.view.gender = self.values[0]
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
 
 class VerifyButton(discord.ui.View):
