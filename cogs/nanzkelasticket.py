@@ -17,6 +17,10 @@ from discord.ext import commands
 
 APPROVAL_CHANNEL_ID = 1552604897201881148
 DAFTAR_KELAS_CHANNEL_ID = 1552604329435856986
+REQUEST_GABUNG_CHANNEL_ID = 1552604968643731546
+# Isi dengan ID channel log-kelas jika ingin logging ke channel.
+# None = logging channel dinonaktifkan.
+LOG_KELAS_CHANNEL_ID = None
 RUANG_KELAS_CATEGORY_ID = 1552603909606875216
 PEMBATAS_ROLE_ID = 1453246187636396032
 
@@ -2268,7 +2272,7 @@ class NanzKelasCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         bot.REQUEST_GABUNG_CHANNEL_ID = REQUEST_GABUNG_CHANNEL_ID
-        bot.LOG_KELAS_CHANNEL_ID = getattr(bot, "LOG_KELAS_CHANNEL_ID", None)
+        bot.LOG_KELAS_CHANNEL_ID = LOG_KELAS_CHANNEL_ID
 
     async def cog_load(self):
         # Register persistent static views first.
