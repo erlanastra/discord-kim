@@ -2283,39 +2283,65 @@ class NanzKelasCog(commands.Cog):
         bot.LOG_KELAS_CHANNEL_ID = LOG_KELAS_CHANNEL_ID
 
     async def cog_load(self):
-        # Register persistent static views first.
-        self.bot.add_view(ClassFormTriggerView())
-        self.bot.add_view(StaffDashboardView())
+        """
+        Extension dapat di-load dari setup_hook(), yaitu sebelum bot menerima
+        READY dari Discord. Jangan melakukan operasi Discord yang membutuhkan
+        client ready di sini karena discord.py masih memakai sentinel internal
+        untuk event ready pada tahap tersebut.
 
-        classes = await fetch_all(
-            """
-            SELECT class_id FROM nanz_classes
-            WHERE status IN ('Active','Grace')
-            """
-        )
-        for cls in classes:
-            self.bot.add_view(ClassPublicPanel(int(cls["class_id"])))
+        Kita jadwalkan proses restore di background task. Task akan menunggu
+        bot benar-benar READY terlebih dahulu, lalu baru melakukan fetch channel,
+        membaca database, restore persistent views, dan membuat dashboard Staff.
+        """
+        self._restore_task = asyncio.create_task(self._restore_after_ready())
 
-        requests = await fetch_all(
-            """
-            SELECT request_id FROM nanz_class_creation_requests
-            WHERE status='Pending'
-            """
-        )
-        for request in requests:
-            self.bot.add_view(ClassApprovalView(int(request["request_id"])))
+    async def _restore_after_ready(self):
+        try:
+            await self.bot.wait_until_ready()
 
-        join_requests = await fetch_all(
-            """
-            SELECT request_id FROM nanz_class_join_requests
-            WHERE status='Pending'
-            """
-        )
-        for request in join_requests:
-            self.bot.add_view(JoinRequestView(int(request["request_id"])))
+            # Register persistent static views setelah client siap.
+            self.bot.add_view(ClassFormTriggerView())
+            self.bot.add_view(StaffDashboardView())
 
-        await self.ensure_staff_dashboard()
-        log.info("Persistent View Kelas nanZ berhasil direstore.")
+            classes = await fetch_all(
+                """
+                SELECT class_id FROM nanz_classes
+                WHERE status IN ('Active','Grace')
+                """
+            )
+            for cls in classes:
+                self.bot.add_view(ClassPublicPanel(int(cls["class_id"])))
+
+            requests = await fetch_all(
+                """
+                SELECT request_id FROM nanz_class_creation_requests
+                WHERE status='Pending'
+                """
+            )
+            for request in requests:
+                self.bot.add_view(ClassApprovalView(int(request["request_id"])))
+
+            join_requests = await fetch_all(
+                """
+                SELECT request_id FROM nanz_class_join_requests
+                WHERE status='Pending'
+                """
+            )
+            for request in join_requests:
+                self.bot.add_view(JoinRequestView(int(request["request_id"])))
+
+            await self.ensure_staff_dashboard()
+            log.info("Persistent View Kelas nanZ berhasil direstore.")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Gagal restore Persistent View/Dashboard Kelas nanZ.")
+
+    def cog_unload(self):
+        task = getattr(self, "_restore_task", None)
+        if task and not task.done():
+            task.cancel()
 
     async def ensure_staff_dashboard(self):
         # get_channel() hanya mencari cache. Gunakan fetch_channel() sebagai
