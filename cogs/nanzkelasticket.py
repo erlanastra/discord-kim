@@ -879,11 +879,31 @@ class ClassFormTriggerView(discord.ui.View):
 
 class ClassApprovalView(discord.ui.View):
     def __init__(self, request_id):
-        super().__init__(
-            timeout=None
-        )
+        super().__init__(timeout=None)
 
         self.request_id = int(request_id)
+
+        # Persistent buttons wajib sudah memiliki custom_id
+        # saat View dibuat.
+        self.approve_button = discord.ui.Button(
+            label="Approve",
+            emoji="✅",
+            style=discord.ButtonStyle.success,
+            custom_id=f"nanz:class_approve:{self.request_id}",
+        )
+
+        self.reject_button = discord.ui.Button(
+            label="Reject",
+            emoji="❌",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"nanz:class_reject:{self.request_id}",
+        )
+
+        self.approve_button.callback = self.approve
+        self.reject_button.callback = self.reject
+
+        self.add_item(self.approve_button)
+        self.add_item(self.reject_button)
 
     async def interaction_check(self, interaction):
         if not interaction.user.guild_permissions.manage_guild:
@@ -895,15 +915,9 @@ class ClassApprovalView(discord.ui.View):
 
         return True
 
-    @discord.ui.button(
-        label="Approve",
-        emoji="✅",
-        style=discord.ButtonStyle.success,
-    )
     async def approve(
         self,
         interaction: discord.Interaction,
-        button: discord.ui.Button,
     ):
         request = await fetch_one(
             """
@@ -1249,15 +1263,9 @@ class ClassApprovalView(discord.ui.View):
                 ephemeral=True,
             )
 
-    @discord.ui.button(
-        label="Reject",
-        emoji="❌",
-        style=discord.ButtonStyle.danger,
-    )
     async def reject(
         self,
         interaction: discord.Interaction,
-        button: discord.ui.Button,
     ):
         request = await fetch_one(
             """
@@ -1570,6 +1578,28 @@ class JoinRequestView(discord.ui.View):
 
         self.request_id = int(request_id)
 
+        # Persistent buttons wajib sudah memiliki custom_id
+        # saat View dibuat.
+        self.approve_button = discord.ui.Button(
+            label="Terima",
+            emoji="✅",
+            style=discord.ButtonStyle.success,
+            custom_id=f"nanz:class_join_approve:{self.request_id}",
+        )
+
+        self.reject_button = discord.ui.Button(
+            label="Tolak",
+            emoji="❌",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"nanz:class_join_reject:{self.request_id}",
+        )
+
+        self.approve_button.callback = self.approve
+        self.reject_button.callback = self.reject
+
+        self.add_item(self.approve_button)
+        self.add_item(self.reject_button)
+
     async def get_request(self):
         return await fetch_one(
             """
@@ -1594,15 +1624,9 @@ class JoinRequestView(discord.ui.View):
             or interaction.user.id == int(request["staff_id"])
         )
 
-    @discord.ui.button(
-        label="Terima",
-        emoji="✅",
-        style=discord.ButtonStyle.success,
-    )
     async def approve(
         self,
         interaction,
-        button,
     ):
         request = await self.get_request()
 
@@ -1757,15 +1781,9 @@ class JoinRequestView(discord.ui.View):
                 ephemeral=True,
             )
 
-    @discord.ui.button(
-        label="Tolak",
-        emoji="❌",
-        style=discord.ButtonStyle.danger,
-    )
     async def reject(
         self,
         interaction,
-        button,
     ):
         request = await self.get_request()
 
