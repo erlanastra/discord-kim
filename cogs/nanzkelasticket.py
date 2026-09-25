@@ -790,10 +790,18 @@ class ClassCreationModal(discord.ui.Modal):
             )
             return
 
+        # get_channel() hanya mencari cache Discord. Jika channel belum masuk
+        # cache, fallback ke fetch_channel() agar ID yang benar tetap ditemukan.
         approval_channel = interaction.guild.get_channel(APPROVAL_CHANNEL_ID)
         if not approval_channel:
+            try:
+                approval_channel = await interaction.guild.fetch_channel(APPROVAL_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                approval_channel = None
+
+        if not approval_channel:
             await interaction.response.send_message(
-                "❌ Channel `approval-kelas` tidak ditemukan.",
+                "❌ Channel `approval-kelas` tidak ditemukan atau bot tidak memiliki akses ke channel tersebut.",
                 ephemeral=True,
             )
             return
@@ -2310,10 +2318,20 @@ class NanzKelasCog(commands.Cog):
         log.info("Persistent View Kelas nanZ berhasil direstore.")
 
     async def ensure_staff_dashboard(self):
+        # get_channel() hanya mencari cache. Gunakan fetch_channel() sebagai
+        # fallback supaya dashboard tetap dibuat meskipun channel belum cached.
         channel = self.bot.get_channel(APPROVAL_CHANNEL_ID)
         if not channel:
-            log.warning("Channel approval-kelas tidak ditemukan; dashboard Staff tidak dibuat.")
-            return
+            try:
+                channel = await self.bot.fetch_channel(APPROVAL_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                log.warning(
+                    "Channel approval-kelas (ID %s) tidak dapat diakses: %s. "
+                    "Dashboard Staff tidak dibuat.",
+                    APPROVAL_CHANNEL_ID,
+                    exc,
+                )
+                return
 
         marker = "NANZ_STAFF_DASHBOARD"
         existing = None
