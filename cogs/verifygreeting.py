@@ -326,10 +326,9 @@ class VerifyGreeting(commands.Cog):
         self.already_greeted.add(member.id)
 
         content = (
-            f"Welcome {member.mention} to the server!\n"
-            f"<@&{self.MOD_DC_ROLE_ID}> "
-            f"<@&{self.PEMBINA_OSIS_ROLE_ID}> "
-            f"<@&{self.OSIS_ROLE_ID}>"
+            "<a:welcome:1553703629880299610> **Murid Baru tiba!**\n"
+            f"Selamat datang di **nanZ Server**, {member.mention}!\n"
+            f"|| <@&{self.MOD_DC_ROLE_ID}> <@&{self.PEMBINA_OSIS_ROLE_ID}> <@&{self.OSIS_ROLE_ID}> ||"
         )
 
         try:
