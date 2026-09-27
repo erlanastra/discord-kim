@@ -521,6 +521,9 @@ class NanzChannelGuide(commands.Cog):
         # Setiap kategori menjadi 1 panel sendiri.
         # Jika satu kategori terlalu besar, channel akan dibagi
         # menjadi beberapa panel dengan nama kategori yang sama.
+        # Judul utama hanya ditampilkan pada panel pertama.
+        first_panel = True
+
         for category in visible_categories:
             channels = self.get_visible_channels(category)
 
@@ -580,12 +583,14 @@ class NanzChannelGuide(commands.Cog):
 
             for part_index, lines in enumerate(chunks, start=1):
                 embed = discord.Embed(
-                    title=(
-                        f"{purple_arrow} NANZ CHANNEL GUIDE"
-                    ),
                     description=header,
                     color=discord.Color.from_rgb(100, 70, 180)
                 )
+
+                # Judul utama hanya di panel pertama agar panel berikutnya
+                # tidak terlihat seperti panel yang terpisah-pisah.
+                if first_panel:
+                    embed.title = f"{purple_arrow} NANZ CHANNEL GUIDE"
 
                 # Nomor bagian hanya muncul jika kategori memang terbagi.
                 if len(chunks) > 1:
@@ -619,17 +624,10 @@ class NanzChannelGuide(commands.Cog):
                         inline=False
                     )
 
-                embed.set_footer(
-                    text=(
-                        f"nanZ Server • {len(channels)} Channel"
-                        + (
-                            f" • Bagian {part_index}/{len(chunks)}"
-                            if len(chunks) > 1 else ""
-                        )
-                    )
-                )
-
+                # Tidak ada footer/jumlah channel agar antar panel
+                # terlihat bersih tanpa pemisah tambahan.
                 embeds.append(embed)
+                first_panel = False
 
         return embeds
 
