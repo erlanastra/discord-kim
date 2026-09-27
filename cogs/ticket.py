@@ -303,32 +303,28 @@ class Ticket(commands.Cog):
     async def setup_bk(self, ctx):
 
         embed = discord.Embed(
-            title="nanZ Server Support",
-
             description=(
+                "# <a:support:1553706267816493060> nanZ Support\n",
+                "<a:blue:1512787254312042496> **Keluhan**\n"
+                "> Laporkan pengalaman tidak nyaman atau masalah yang kamu alami.\n"
 
-                "Pilih kategori yang sesuai dengan kebutuhan kamu.\n\n"
+                "<a:purple:1512787191234035803> **Konseling**\n"
+                "> Curhat, konsultasi, atau berbicara langsung bersama staff BK.\n"
 
-                "📚 **Keluhan**\n"
-                "Laporkan pengalaman tidak nyaman atau masalah yang kamu alami.\n\n"
+                "<a:blue:1512787254312042496> **Laporan**\n"
+                "> Laporkan pelanggaran aturan, bullying, maupun perilaku tidak baik.\n"
 
-                "🫂 **Konseling**\n"
-                "Curhat, konsultasi, atau berbicara langsung bersama staff BK.\n\n"
+                "<a:purple:1512787191234035803> **Pengajuan & Partnership**\n"
+                "> Ajukan izin, kerja sama, partnership, maupun kebutuhan administrasi lainnya.\n\n"
 
-                "⚠️ **Laporan**\n"
-                "Laporkan pelanggaran aturan, bullying, maupun perilaku tidak baik.\n\n"
-
-                "🤝 **Pengajuan & Partnership**\n"
-                "Ajukan izin, kerja sama, partnership, maupun kebutuhan administrasi lainnya.\n\n"
-
-                "Semua ticket bersifat privat dan hanya dapat dilihat oleh kamu & staff BK."
+                "`Semua ticket bersifat privat dan hanya dapat dilihat oleh kamu & staff BK.`"
             ),
 
             color=discord.Color.from_rgb(88, 101, 242)
         )
 
         embed.set_footer(
-            text="nanZ Server • Ruang BK"
+            text="Ruang BK"
         )
 
         await ctx.send(
