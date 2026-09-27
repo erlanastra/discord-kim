@@ -6,36 +6,9 @@ from discord.ext import commands
 
 
 class NanzChannelGuide(commands.Cog):
-    """
-    NANZ CHANNEL GUIDE
-
-    Fitur:
-    - Deskripsi kategori hardcode di Python
-    - Deskripsi channel hardcode di Python
-    - Auto-normalize nama channel
-    - Emoji dan dekorasi nama channel diabaikan
-    - Tidak menggunakan database
-    - Tidak menggunakan JSON
-    - Tidak menggunakan panel
-    - Tidak menggunakan modal
-    - Tidak menggunakan search
-
-    LOGIKA AKSES:
-    - Command hanya dapat digunakan oleh Murid / Calon Murid
-    - Channel Guide hanya menampilkan channel yang memiliki
-      View Channel untuk Murid / Calon Murid
-    """
-
-    # ============================================================
-    # ROLE NANZ
-    # ============================================================
-
-    MURID_ROLE_ID = 1453095603008442510
-    CALON_MURID_ROLE_ID = 1504467138440597604
-
-    # ============================================================
-    # CATEGORY YANG TIDAK DITAMPILKAN
-    # ============================================================
+    # =========================================================
+    # CONFIG
+    # =========================================================
 
     EXCLUDED_CATEGORY_IDS = {
         1416639085757468784,
@@ -47,71 +20,69 @@ class NanzChannelGuide(commands.Cog):
         1513028445423009923,
     }
 
-    # ============================================================
-    # CUSTOM EMOJI NANZ
-    # ============================================================
+    # Role yang boleh menjalankan command
+    MURID_ROLE_ID = 1453095603008442510
+    CALON_MURID_ROLE_ID = 1504467138440597604
 
+    # Custom emoji nanZ
     PURPLE_ARROW_ID = 1512787191234035803
     BLUE_ARROW_ID = 1512787254312042496
 
-    # ============================================================
-    # BATAS DESCRIPTION EMBED
-    # ============================================================
-
+    # Discord embed description maksimal 4096 karakter.
+    # Kita gunakan buffer supaya aman.
     MAX_DESCRIPTION_LENGTH = 3900
 
-    # ============================================================
-    # DESKRIPSI CATEGORY
-    # ============================================================
+    # =========================================================
+    # CATEGORY DESCRIPTIONS
+    # =========================================================
 
     CATEGORY_DESCRIPTIONS = {
-
-        "mading sekolah":
+        "MADING SEKOLAH":
             "Pusat informasi dan pengumuman penting nanZ.",
 
-        "halaman sekolah":
+        "HALAMAN SEKOLAH":
             "Tempat murid bersosialisasi dan berbincang.",
 
-        "ruang kelas":
+        "RUANG KELAS":
             "Tempat belajar dan berbagi wawasan.",
 
-        "ruang vip owner":
+        "RUANG VIP OWNER":
             "Ruang khusus aktivitas Guru Besar.",
 
-        "ruang kreativitas":
+        "RUANG KREATIVITAS":
             "Tempat murid berbagi karya dan kreativitas.",
 
-        "zona permainan bot":
+        "ZONA PERMAINAN BOT":
             "Area bermain menggunakan bot.",
 
-        "zona permainan":
+        "ZONA PERMAINAN":
             "Tempat murid bermain game bersama.",
 
-        "ruang bk":
+        "RUANG BK":
             "Tempat bantuan dan berbagi cerita.",
 
-        "ruang nobar":
+        "RUANG NOBAR":
             "Tempat menikmati film bersama.",
 
-        "ruang teater":
+        "RUANG TEATER":
             "Area hiburan dan aktivitas voice.",
 
-        "ruang donatur":
+        "RUANG DONATUR":
             "Ruang khusus informasi dan fasilitas donatur.",
 
-        "area sekolah":
+        "AREA SEKOLAH":
             "Area voice untuk aktivitas bersama.",
     }
 
-    # ============================================================
-    # DESKRIPSI CHANNEL
-    # ============================================================
+    # =========================================================
+    # CHANNEL DESCRIPTIONS
+    # =========================================================
 
     CHANNEL_DESCRIPTIONS = {
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # MADING SEKOLAH
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "tata-tertib":
             "Aturan sekolah nanZ.",
@@ -138,9 +109,9 @@ class NanzChannelGuide(commands.Cog):
             "Ucapan untuk murid atau staff yang pergi.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # HALAMAN SEKOLAH
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "ruang-ngobrol":
             "Obrolan sehari-hari.",
@@ -161,9 +132,9 @@ class NanzChannelGuide(commands.Cog):
             "Berbagi kata dan cerita singkat.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # RUANG KELAS
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "tanya-ai":
             "Bertanya kepada AI nanZ.",
@@ -175,9 +146,9 @@ class NanzChannelGuide(commands.Cog):
             "Fakta dan informasi menarik.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # RUANG VIP OWNER
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "streaming-youtube":
             "Info streaming YouTube.",
@@ -186,9 +157,9 @@ class NanzChannelGuide(commands.Cog):
             "Dukungan dan donasi penonton.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # RUANG KREATIVITAS
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "berbagi-konten":
             "Berbagi konten dan karya.",
@@ -200,20 +171,20 @@ class NanzChannelGuide(commands.Cog):
             "Galeri karya murid.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # ZONA PERMAINAN BOT
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "perintah-bot":
             "Menjalankan command bot.",
 
-        "owo¹":
+        "owo1":
             "Area permainan OwO.",
 
-        "owo²":
+        "owo2":
             "Area permainan OwO.",
 
-        "owo³":
+        "owo3":
             "Area permainan OwO.",
 
         "tebak-bendera":
@@ -226,9 +197,9 @@ class NanzChannelGuide(commands.Cog):
             "Aktivitas memancing.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # ZONA PERMAINAN
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "dokumentasi-game":
             "Berbagi dokumentasi game.",
@@ -237,9 +208,9 @@ class NanzChannelGuide(commands.Cog):
             "Voice untuk bermain bersama.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # RUANG BK
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "pusat-bantuan":
             "Pusat bantuan murid.",
@@ -248,9 +219,9 @@ class NanzChannelGuide(commands.Cog):
             "Voice untuk curhat.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # RUANG NOBAR
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "vote-film":
             "Memilih film nobar.",
@@ -262,9 +233,9 @@ class NanzChannelGuide(commands.Cog):
             "Voice untuk nonton bersama.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # RUANG TEATER
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "podcast":
             "Voice untuk podcast dan bincang.",
@@ -273,9 +244,9 @@ class NanzChannelGuide(commands.Cog):
             "Voice untuk bermain bersama.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # RUANG DONATUR
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "info-donasi":
             "Informasi donasi.",
@@ -289,13 +260,13 @@ class NanzChannelGuide(commands.Cog):
         "interface-vip":
             "Akses fasilitas VIP.",
 
-        "custom room (vip)":
+        "custom room vip":
             "Voice khusus VIP.",
 
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # AREA SEKOLAH
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         "pengaturan-voice":
             "Pengaturan voice room.",
@@ -303,37 +274,51 @@ class NanzChannelGuide(commands.Cog):
         "daftar-bot-music":
             "Daftar bot musik.",
 
-        "girls corner`s":
+        "girls corners":
             "Voice khusus siswi.",
 
         "obrolan terbuka":
             "Voice umum untuk murid.",
 
-        "custom room (1)":
+        "custom room 1":
             "Voice custom.",
 
-        "custom room (2)":
+        "custom room 2":
             "Voice custom.",
     }
 
-    # ============================================================
-    # NORMALIZE NAMA
-    # ============================================================
+    # =========================================================
+    # NORMALIZER
+    # =========================================================
 
     @staticmethod
     def normalize_name(name: str) -> str:
+        """
+        Menyamakan nama channel/category agar tidak perlu
+        menggunakan ID.
+
+        Contoh:
+
+        🎙️・Bermain Game
+        -> bermain game
+
+        💬・🗨️﹕ruang-ngobrol
+        -> ruang-ngobrol
+
+        <:emoji:123456789>・tata-tertib
+        -> tata-tertib
+        """
 
         if not name:
             return ""
 
-        # Case insensitive
         name = name.casefold()
 
-        # --------------------------------------------------------
-        # Hapus custom emoji Discord
+        # -----------------------------------------------------
+        # Hapus custom Discord emoji
         # <:nama:id>
         # <a:nama:id>
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         name = re.sub(
             r"<a?:\w+:\d+>",
@@ -341,9 +326,9 @@ class NanzChannelGuide(commands.Cog):
             name
         )
 
-        # --------------------------------------------------------
+        # -----------------------------------------------------
         # Hapus Unicode emoji
-        # --------------------------------------------------------
+        # -----------------------------------------------------
 
         name = re.sub(
             r"[\U0001F000-\U0001FAFF"
@@ -357,9 +342,9 @@ class NanzChannelGuide(commands.Cog):
             name
         )
 
-        # --------------------------------------------------------
-        # Hapus dekorasi
-        # --------------------------------------------------------
+        # -----------------------------------------------------
+        # Hapus / ubah dekorasi
+        # -----------------------------------------------------
 
         name = re.sub(
             r"[╭╮╰╯┇┆┊┋│┃"
@@ -370,7 +355,7 @@ class NanzChannelGuide(commands.Cog):
             name
         )
 
-        # Hapus backtick
+        # Backtick
         name = name.replace("`", "")
 
         # Rapikan spasi
@@ -382,11 +367,16 @@ class NanzChannelGuide(commands.Cog):
 
         return name.strip()
 
-    # ============================================================
-    # CEK USER PUNYA ROLE MURID / CALON MURID
-    # ============================================================
+    # =========================================================
+    # ROLE CHECK
+    # =========================================================
 
-    def has_member_role(self, member):
+    def has_member_role(self, member: discord.Member) -> bool:
+        """
+        Command hanya bisa digunakan oleh:
+        - Murid
+        - Calon Murid
+        """
 
         role_ids = {
             role.id
@@ -395,23 +385,24 @@ class NanzChannelGuide(commands.Cog):
 
         return (
             self.MURID_ROLE_ID in role_ids
-            or
-            self.CALON_MURID_ROLE_ID in role_ids
+            or self.CALON_MURID_ROLE_ID in role_ids
         )
 
-    # ============================================================
-    # CEK APAKAH MURID / CALON MURID BISA VIEW CHANNEL
-    # ============================================================
+    # =========================================================
+    # CHANNEL ACCESS CHECK
+    # =========================================================
 
-    def can_murid_view_channel(self, guild, channel):
-
+    def can_murid_view_channel(
+        self,
+        guild: discord.Guild,
+        channel
+    ) -> bool:
         """
-        Mengecek View Channel berdasarkan ROLE Murid dan
-        Calon Murid, bukan berdasarkan user yang menjalankan
-        command.
+        Channel ditampilkan jika:
 
-        Jika salah satu role memiliki akses View Channel,
-        channel akan ditampilkan.
+        Murid bisa View Channel
+        ATAU
+        Calon Murid bisa View Channel
         """
 
         murid_role = guild.get_role(
@@ -422,17 +413,10 @@ class NanzChannelGuide(commands.Cog):
             self.CALON_MURID_ROLE_ID
         )
 
-        # --------------------------------------------------------
-        # Tidak menemukan role
-        # --------------------------------------------------------
-
         if not murid_role and not calon_murid_role:
             return False
 
-        # --------------------------------------------------------
         # Cek Murid
-        # --------------------------------------------------------
-
         if murid_role:
 
             permissions = channel.permissions_for(
@@ -442,10 +426,7 @@ class NanzChannelGuide(commands.Cog):
             if permissions.view_channel:
                 return True
 
-        # --------------------------------------------------------
         # Cek Calon Murid
-        # --------------------------------------------------------
-
         if calon_murid_role:
 
             permissions = channel.permissions_for(
@@ -457,549 +438,436 @@ class NanzChannelGuide(commands.Cog):
 
         return False
 
-    # ============================================================
-    # GET CHANNEL DESCRIPTION
-    # ============================================================
+    # =========================================================
+    # DESCRIPTION
+    # =========================================================
 
-    def get_channel_description(self, channel):
+    def get_channel_description(
+        self,
+        channel_name: str
+    ) -> str:
 
-        normalized_name = self.normalize_name(
-            channel.name
+        normalized = self.normalize_name(
+            channel_name
         )
 
         # Direct lookup
-        if normalized_name in self.CHANNEL_DESCRIPTIONS:
-
+        if normalized in self.CHANNEL_DESCRIPTIONS:
             return self.CHANNEL_DESCRIPTIONS[
-                normalized_name
+                normalized
             ]
 
-        # Fallback
-        for name, description in self.CHANNEL_DESCRIPTIONS.items():
+        # Fallback compare
+        for key, description in self.CHANNEL_DESCRIPTIONS.items():
 
-            if (
-                self.normalize_name(name)
-                == normalized_name
-            ):
+            if self.normalize_name(key) == normalized:
                 return description
 
-        return None
+        return "Belum ada deskripsi."
 
-    # ============================================================
-    # GET CATEGORY DESCRIPTION
-    # ============================================================
+    def get_category_description(
+        self,
+        category_name: str
+    ) -> str:
 
-    def get_category_description(self, category):
-
-        if not category:
-            return ""
-
-        normalized_name = self.normalize_name(
-            category.name
+        normalized = self.normalize_name(
+            category_name
         )
 
-        # Direct lookup
-        if normalized_name in self.CATEGORY_DESCRIPTIONS:
-
+        if normalized in self.CATEGORY_DESCRIPTIONS:
             return self.CATEGORY_DESCRIPTIONS[
-                normalized_name
+                normalized
             ]
 
-        # Fallback
-        for name, description in self.CATEGORY_DESCRIPTIONS.items():
+        for key, description in self.CATEGORY_DESCRIPTIONS.items():
 
-            if (
-                self.normalize_name(name)
-                == normalized_name
-            ):
+            if self.normalize_name(key) == normalized:
                 return description
 
-        return ""
+        return "Belum ada deskripsi."
 
-    # ============================================================
-    # CHANNEL ICON
-    # ============================================================
+    # =========================================================
+    # EMOJI
+    # =========================================================
 
-    @staticmethod
-    def get_channel_icon(channel):
-
-        if isinstance(
-            channel,
-            discord.TextChannel
-        ):
-            return "💬"
-
-        if isinstance(
-            channel,
-            discord.VoiceChannel
-        ):
-            return "🔊"
-
-        if isinstance(
-            channel,
-            discord.ForumChannel
-        ):
-            return "📝"
-
-        if isinstance(
-            channel,
-            discord.StageChannel
-        ):
-            return "🎙️"
-
-        return "📁"
-
-    # ============================================================
-    # CUSTOM EMOJI
-    # ============================================================
-
-    @staticmethod
     def get_custom_emoji(
-        guild,
-        emoji_id,
-        fallback
+        self,
+        guild: discord.Guild,
+        emoji_id: int
     ):
-
-        emoji = guild.get_emoji(
+        return guild.get_emoji(
             emoji_id
         )
 
-        if emoji:
-            return str(emoji)
-
-        return fallback
-
-    # ============================================================
-    # BUILD CHANNEL LINE
-    # ============================================================
+    # =========================================================
+    # CHANNEL LINE
+    # =========================================================
 
     def build_channel_line(
         self,
         channel,
-        arrow_blue
-    ):
-
-        icon = self.get_channel_icon(
-            channel
-        )
+        blue_arrow
+    ) -> str:
 
         description = self.get_channel_description(
-            channel
+            channel.name
         )
 
-        if not description:
-            description = "Belum ada deskripsi."
+        if blue_arrow:
+            arrow = str(blue_arrow)
+        else:
+            arrow = "🔵"
 
         return (
-            f"{arrow_blue} {icon} "
-            f"{channel.mention}\n"
-            f"> {description}"
+            f"{arrow} {channel.mention}\n"
+            f"> {description}\n"
         )
 
-    # ============================================================
-    # CREATE EMBED
-    # ============================================================
+    # =========================================================
+    # EMBED TEXT
+    # =========================================================
 
     @staticmethod
-    def create_embed(
-        arrow_purple
-    ):
-
-        return discord.Embed(
-            title=(
-                f"{arrow_purple} "
-                f"NANZ CHANNEL GUIDE"
-            ),
-            color=discord.Color.from_rgb(
-                124,
-                58,
-                237
-            )
-        )
-
-    # ============================================================
-    # TAMBAHKAN TEXT KE EMBED
-    # ============================================================
-
     def add_text_to_embed(
-        self,
-        embeds,
-        current_embed,
-        text
+        embed: discord.Embed,
+        text: str,
+        max_length: int = 3900
     ):
+        """
+        Menambahkan text ke embed.
+        Jika melewati batas, dikembalikan sebagai chunk baru.
+        """
 
-        current_description = (
-            current_embed.description
-            or ""
+        if not embed.description:
+            embed.description = text
+            return None
+
+        new_description = (
+            embed.description
+            + "\n"
+            + text
         )
 
-        # --------------------------------------------------------
-        # Kalau masih muat
-        # --------------------------------------------------------
+        if len(new_description) <= max_length:
+            embed.description = new_description
+            return None
 
-        if (
-            len(current_description)
-            + len(text)
-            <= self.MAX_DESCRIPTION_LENGTH
-        ):
+        return text
 
-            current_embed.description = (
-                current_description
-                + text
+    # =========================================================
+    # CREATE EMBED
+    # =========================================================
+
+    def create_embed(
+        self,
+        category,
+        blue_arrow
+    ) -> discord.Embed:
+
+        embed = discord.Embed(
+            color=discord.Color.blurple()
+        )
+
+        # =====================================================
+        # CATEGORY
+        # HANYA BOLD
+        # =====================================================
+
+        category_title = (
+            f"**{category.name}**"
+        )
+
+        category_description = (
+            self.get_category_description(
+                category.name
+            )
+        )
+
+        embed.description = (
+            f"{category_title}\n"
+            f"> {category_description}\n"
+        )
+
+        # =====================================================
+        # CHANNEL
+        # =====================================================
+
+        channels = sorted(
+            [
+                channel
+                for channel in category.channels
+                if self.can_murid_view_channel(
+                    category.guild,
+                    channel
+                )
+            ],
+            key=lambda c: c.position
+        )
+
+        for channel in channels:
+
+            channel_text = self.build_channel_line(
+                channel,
+                blue_arrow
             )
 
-            return current_embed
-
-        # --------------------------------------------------------
-        # Simpan embed lama
-        # --------------------------------------------------------
-
-        embeds.append(
-            current_embed
-        )
-
-        # --------------------------------------------------------
-        # Buat embed baru
-        # --------------------------------------------------------
-
-        new_embed = self.create_embed(
-            self.current_arrow_purple
-        )
-
-        # --------------------------------------------------------
-        # Kalau text masih muat
-        # --------------------------------------------------------
-
-        if len(text) <= self.MAX_DESCRIPTION_LENGTH:
-
-            new_embed.description = text
-
-            return new_embed
-
-        # --------------------------------------------------------
-        # Safety split
-        # --------------------------------------------------------
-
-        chunks = []
-
-        while len(text) > self.MAX_DESCRIPTION_LENGTH:
-
-            split_at = text.rfind(
-                "\n",
-                0,
+            new_text = self.add_text_to_embed(
+                embed,
+                channel_text,
                 self.MAX_DESCRIPTION_LENGTH
             )
 
-            if split_at <= 0:
+            if new_text is not None:
+                break
 
-                split_at = (
-                    self.MAX_DESCRIPTION_LENGTH
-                )
+        return embed
 
-            chunks.append(
-                text[:split_at]
-            )
-
-            text = text[
-                split_at:
-            ].lstrip("\n")
-
-        if text:
-            chunks.append(text)
-
-        new_embed.description = chunks[0]
-
-        for chunk in chunks[1:]:
-
-            embeds.append(
-                new_embed
-            )
-
-            new_embed = self.create_embed(
-                self.current_arrow_purple
-            )
-
-            new_embed.description = chunk
-
-        return new_embed
-
-    # ============================================================
-    # COMMAND !CHANNELGUIDE
-    # ============================================================
+    # =========================================================
+    # COMMAND
+    # =========================================================
 
     @commands.command(
-        name="channelguide"
+        name="channelguide",
+        aliases=[
+            "channel-guide",
+            "guidechannel",
+            "guide"
+        ]
     )
     @commands.guild_only()
     async def channelguide(
         self,
-        ctx
+        ctx: commands.Context
     ):
+        """
+        !channelguide
 
-        guild = ctx.guild
+        Hanya Murid / Calon Murid yang dapat menjalankan
+        command.
 
-        # ========================================================
-        # CEK ROLE USER
-        # ========================================================
+        Namun daftar channel berdasarkan permission role:
+        Murid OR Calon Murid.
+        """
+
+        # =====================================================
+        # CEK USER
+        # =====================================================
+
+        if not isinstance(
+            ctx.author,
+            discord.Member
+        ):
+            return
 
         if not self.has_member_role(
             ctx.author
         ):
-
             await ctx.send(
-                "Kamu tidak memiliki akses untuk "
-                "melihat Channel Guide nanZ."
+                "Kamu tidak memiliki akses "
+                "untuk melihat Channel Guide nanZ."
             )
-
             return
 
-        # ========================================================
-        # CUSTOM ARROW
-        # ========================================================
+        guild = ctx.guild
 
-        arrow_purple = self.get_custom_emoji(
+        # =====================================================
+        # CUSTOM EMOJI
+        # =====================================================
+
+        blue_arrow = self.get_custom_emoji(
             guild,
-            self.PURPLE_ARROW_ID,
-            "🟣"
+            self.BLUE_ARROW_ID
         )
 
-        arrow_blue = self.get_custom_emoji(
-            guild,
-            self.BLUE_ARROW_ID,
-            "🔵"
-        )
-
-        self.current_arrow_purple = (
-            arrow_purple
-        )
-
-        # ========================================================
+        # =====================================================
         # AMBIL CATEGORY
-        # ========================================================
+        # =====================================================
 
-        categories = []
+        categories = [
+            category
+            for category in guild.categories
+            if category.id not in self.EXCLUDED_CATEGORY_IDS
+        ]
 
-        for category in guild.categories:
+        # =====================================================
+        # SORT CATEGORY SESUAI POSISI
+        # =====================================================
 
-            # ----------------------------------------------------
-            # Skip excluded category
-            # ----------------------------------------------------
+        categories.sort(
+            key=lambda category: category.position
+        )
 
-            if (
-                category.id
-                in self.EXCLUDED_CATEGORY_IDS
-            ):
-                continue
+        # =====================================================
+        # HEADER
+        # =====================================================
 
-            # ----------------------------------------------------
-            # Channel yang bisa dilihat Murid /
-            # Calon Murid
-            # ----------------------------------------------------
+        purple_arrow = self.get_custom_emoji(
+            guild,
+            self.PURPLE_ARROW_ID
+        )
 
-            visible_channels = []
+        if purple_arrow:
+            header_arrow = str(
+                purple_arrow
+            )
+        else:
+            header_arrow = "🟣"
 
-            for channel in category.channels:
+        header = discord.Embed(
+            description=(
+                f"{header_arrow} **NANZ CHANNEL GUIDE**"
+            ),
+            color=discord.Color.blurple()
+        )
 
-                if self.can_murid_view_channel(
-                    guild,
+        try:
+
+            await ctx.send(
+                embed=header
+            )
+
+            await asyncio.sleep(1)
+
+            # =================================================
+            # SETIAP CATEGORY
+            # =================================================
+
+            for category in categories:
+
+                # ---------------------------------------------
+                # Hanya proses category yang memiliki channel
+                # yang dapat dilihat Murid / Calon Murid.
+                # ---------------------------------------------
+
+                visible_channels = [
                     channel
-                ):
-
-                    visible_channels.append(
+                    for channel in category.channels
+                    if self.can_murid_view_channel(
+                        guild,
                         channel
                     )
+                ]
 
-            # ----------------------------------------------------
-            # Jika tidak ada channel yang bisa diakses
-            # ----------------------------------------------------
+                if not visible_channels:
+                    continue
 
-            if not visible_channels:
-                continue
-
-            categories.append(
-                (
-                    category,
-                    visible_channels
-                )
-            )
-
-        # ========================================================
-        # JIKA TIDAK ADA CATEGORY
-        # ========================================================
-
-        if not categories:
-
-            await ctx.send(
-                "Tidak ada channel yang dapat ditampilkan."
-            )
-
-            return
-
-        # ========================================================
-        # BUILD EMBEDS
-        # ========================================================
-
-        embeds = []
-
-        current_embed = self.create_embed(
-            arrow_purple
-        )
-
-        current_embed.description = (
-            "Panduan channel untuk membantu murid "
-            "menemukan ruang yang sesuai."
-        )
-
-        # ========================================================
-        # CATEGORY LOOP
-        # ========================================================
-
-        for category, channels in categories:
-
-            category_description = (
-                self.get_category_description(
-                    category
-                )
-            )
-
-            # ----------------------------------------------------
-            # Category header
-            # ----------------------------------------------------
-
-            category_header = (
-                f"\n\n"
-                f"{arrow_purple} ▬『 "
-                f"{category.name} "
-                f"』▬"
-            )
-
-            if category_description:
-
-                category_header += (
-                    f"\n> "
-                    f"{category_description}"
+                visible_channels.sort(
+                    key=lambda c: c.position
                 )
 
-            category_header += "\n"
+                # ---------------------------------------------
+                # Buat embed pertama
+                # ---------------------------------------------
 
-            # ----------------------------------------------------
-            # Add category
-            # ----------------------------------------------------
-
-            current_embed = (
-                self.add_text_to_embed(
-                    embeds,
-                    current_embed,
-                    category_header
-                )
-            )
-
-            # ----------------------------------------------------
-            # Add channel
-            # ----------------------------------------------------
-
-            for channel in channels:
-
-                channel_line = (
-                    self.build_channel_line(
-                        channel,
-                        arrow_blue
-                    )
-                    + "\n"
+                embed = discord.Embed(
+                    color=discord.Color.blurple()
                 )
 
-                current_embed = (
-                    self.add_text_to_embed(
-                        embeds,
-                        current_embed,
-                        channel_line
+                category_title = (
+                    f"**{category.name}**"
+                )
+
+                category_description = (
+                    self.get_category_description(
+                        category.name
                     )
                 )
 
-        # ========================================================
-        # SIMPAN EMBED TERAKHIR
-        # ========================================================
-
-        if (
-            current_embed.description
-            and current_embed not in embeds
-        ):
-
-            embeds.append(
-                current_embed
-            )
-
-        # ========================================================
-        # FOOTER
-        # ========================================================
-
-        for index, embed in enumerate(
-            embeds
-        ):
-
-            embed.set_footer(
-                text=(
-                    f"nanZ Server • Stay Solid! "
-                    f"• Halaman "
-                    f"{index + 1}/{len(embeds)}"
-                )
-            )
-
-        # ========================================================
-        # SEND EMBEDS
-        # ========================================================
-
-        for index, embed in enumerate(
-            embeds
-        ):
-
-            try:
-
-                await ctx.send(
-                    embed=embed
+                embed.description = (
+                    f"{category_title}\n"
+                    f"> {category_description}\n"
                 )
 
-            except discord.HTTPException as e:
+                # ---------------------------------------------
+                # Tambahkan channel
+                # ---------------------------------------------
 
-                print(
-                    f"[NANZ CHANNEL GUIDE] "
-                    f"Gagal mengirim embed "
-                    f"{index + 1}: {e}"
-                )
+                for channel in visible_channels:
 
-                await asyncio.sleep(
-                    2
-                )
+                    channel_text = (
+                        self.build_channel_line(
+                            channel,
+                            blue_arrow
+                        )
+                    )
 
-                try:
+                    # Jika masih muat
+                    if len(
+                        embed.description
+                        + "\n"
+                        + channel_text
+                    ) <= self.MAX_DESCRIPTION_LENGTH:
+
+                        embed.description += (
+                            "\n"
+                            + channel_text
+                        )
+
+                    else:
+
+                        # Kirim embed sebelumnya
+                        await ctx.send(
+                            embed=embed
+                        )
+
+                        await asyncio.sleep(1)
+
+                        # Buat embed baru
+                        embed = discord.Embed(
+                            color=discord.Color.blurple()
+                        )
+
+                        embed.description = (
+                            f"**{category.name}**\n"
+                        )
+
+                        embed.description += (
+                            "\n"
+                            + channel_text
+                        )
+
+                # ---------------------------------------------
+                # Kirim sisa embed
+                # ---------------------------------------------
+
+                if embed.description:
 
                     await ctx.send(
                         embed=embed
                     )
 
-                except discord.HTTPException as retry_error:
+                    await asyncio.sleep(1)
 
-                    print(
-                        "[NANZ CHANNEL GUIDE] "
-                        f"Retry gagal: "
-                        f"{retry_error}"
-                    )
+        except discord.HTTPException as e:
 
-            # ----------------------------------------------------
-            # Jeda antar pesan
-            # ----------------------------------------------------
-
-            await asyncio.sleep(
-                1.0
+            # Discord error
+            print(
+                f"[ChannelGuide] HTTP Error: {e}"
             )
 
+    # =========================================================
+    # ERROR HANDLER
+    # =========================================================
 
-# ================================================================
-# SETUP
-# ================================================================
+    @channelguide.error
+    async def channelguide_error(
+        self,
+        ctx: commands.Context,
+        error
+    ):
+
+        if isinstance(
+            error,
+            commands.NoPrivateMessage
+        ):
+            return
+
+        print(
+            f"[ChannelGuide] Command Error: {error}"
+        )
+
 
 async def setup(bot):
-
     await bot.add_cog(
         NanzChannelGuide(bot)
     )
