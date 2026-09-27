@@ -9,18 +9,18 @@ class NanzChannelGuide(commands.Cog):
     """
     NANZ CHANNEL GUIDE
 
-    Semua deskripsi kategori dan channel disimpan langsung
-    di dalam source code.
-
-    Sistem:
+    Fitur:
+    - Deskripsi kategori hardcode di Python
+    - Deskripsi channel hardcode di Python
+    - Auto-normalize nama channel
+    - Emoji dan dekorasi nama channel diabaikan
     - Tidak menggunakan database
     - Tidak menggunakan JSON
-    - Tidak menggunakan panel konfigurasi
+    - Tidak menggunakan panel
     - Tidak menggunakan modal
     - Tidak menggunakan search
     - Tidak menggunakan role restriction
-
-    Akses channel mengikuti permission Discord masing-masing user.
+    - Channel mengikuti permission user
     """
 
     # ============================================================
@@ -45,7 +45,18 @@ class NanzChannelGuide(commands.Cog):
     BLUE_ARROW_ID = 1512787254312042496
 
     # ============================================================
-    # DESKRIPSI KATEGORI
+    # BATAS EMBED
+    #
+    # Discord:
+    # embed.description = maksimal 4096 karakter
+    #
+    # Kita gunakan 3900 supaya ada buffer.
+    # ============================================================
+
+    MAX_DESCRIPTION_LENGTH = 3900
+
+    # ============================================================
+    # DESKRIPSI CATEGORY
     # ============================================================
 
     CATEGORY_DESCRIPTIONS = {
@@ -301,27 +312,23 @@ class NanzChannelGuide(commands.Cog):
     }
 
     # ============================================================
-    # NORMALIZE NAME
+    # NORMALIZE NAMA
     # ============================================================
 
     @staticmethod
     def normalize_name(name: str) -> str:
         """
-        Membersihkan nama channel/category.
+        Membersihkan emoji dan dekorasi.
 
         Contoh:
 
         🎙️・Bermain Game
-        ↓
+        menjadi:
         bermain game
 
         💬・🗨️﹕ruang-ngobrol
-        ↓
+        menjadi:
         ruang-ngobrol
-
-        <:emoji:123456>・tata-tertib
-        ↓
-        tata-tertib
         """
 
         if not name:
@@ -363,11 +370,12 @@ class NanzChannelGuide(commands.Cog):
         )
 
         # --------------------------------------------------------
-        # Hapus karakter dekorasi
+        # Hapus dekorasi
         # --------------------------------------------------------
 
         name = re.sub(
-            r"[╭╮╰╯┇┆┊┋│┃━─═╍╾╼"
+            r"[╭╮╰╯┇┆┊┋│┃"
+            r"━─═╍╾╼"
             r"➜➤➢➣➥➦➧➨"
             r"・﹕:|/\\]+",
             " ",
@@ -381,7 +389,7 @@ class NanzChannelGuide(commands.Cog):
         name = name.replace("`", "")
 
         # --------------------------------------------------------
-        # Rapikan whitespace
+        # Rapikan spasi
         # --------------------------------------------------------
 
         name = re.sub(
@@ -402,16 +410,20 @@ class NanzChannelGuide(commands.Cog):
             channel.name
         )
 
-        # Direct lookup
+        # Direct
         if normalized_name in self.CHANNEL_DESCRIPTIONS:
+
             return self.CHANNEL_DESCRIPTIONS[
                 normalized_name
             ]
 
-        # Fallback normalization
+        # Fallback
         for name, description in self.CHANNEL_DESCRIPTIONS.items():
 
-            if self.normalize_name(name) == normalized_name:
+            if (
+                self.normalize_name(name)
+                == normalized_name
+            ):
                 return description
 
         return None
@@ -429,22 +441,26 @@ class NanzChannelGuide(commands.Cog):
             category.name
         )
 
-        # Direct lookup
+        # Direct
         if normalized_name in self.CATEGORY_DESCRIPTIONS:
+
             return self.CATEGORY_DESCRIPTIONS[
                 normalized_name
             ]
 
-        # Fallback normalization
+        # Fallback
         for name, description in self.CATEGORY_DESCRIPTIONS.items():
 
-            if self.normalize_name(name) == normalized_name:
+            if (
+                self.normalize_name(name)
+                == normalized_name
+            ):
                 return description
 
         return ""
 
     # ============================================================
-    # CHANNEL ICON
+    # ICON CHANNEL
     # ============================================================
 
     @staticmethod
@@ -497,7 +513,7 @@ class NanzChannelGuide(commands.Cog):
         return fallback
 
     # ============================================================
-    # CHECK CHANNEL VISIBILITY
+    # CHECK VIEW CHANNEL
     # ============================================================
 
     @staticmethod
@@ -513,7 +529,7 @@ class NanzChannelGuide(commands.Cog):
         return permissions.view_channel
 
     # ============================================================
-    # BUILD CHANNEL LINE
+    # BUILD CHANNEL
     # ============================================================
 
     def build_channel_line(
@@ -530,18 +546,152 @@ class NanzChannelGuide(commands.Cog):
             channel
         )
 
-        # --------------------------------------------------------
-        # Jika belum ada deskripsi
-        # --------------------------------------------------------
-
         if not description:
-            description = "Belum ada deskripsi."
+
+            description = (
+                "Belum ada deskripsi."
+            )
 
         return (
             f"{arrow_blue} {icon} "
             f"{channel.mention}\n"
             f"> {description}"
         )
+
+    # ============================================================
+    # CREATE EMBED
+    # ============================================================
+
+    @staticmethod
+    def create_embed(
+        arrow_purple
+    ):
+
+        return discord.Embed(
+            title=(
+                f"{arrow_purple} "
+                f"NANZ CHANNEL GUIDE"
+            ),
+            color=discord.Color.from_rgb(
+                124,
+                58,
+                237
+            )
+        )
+
+    # ============================================================
+    # ADD TEXT KE EMBED
+    # ============================================================
+
+    def add_text_to_embed(
+        self,
+        embeds,
+        current_embed,
+        text
+    ):
+        """
+        Menambahkan text dengan aman.
+
+        Maksimal description = 3900 karakter.
+        """
+
+        current_description = (
+            current_embed.description
+            or ""
+        )
+
+        # --------------------------------------------------------
+        # Jika text masih muat
+        # --------------------------------------------------------
+
+        if (
+            len(current_description)
+            + len(text)
+            <= self.MAX_DESCRIPTION_LENGTH
+        ):
+
+            current_embed.description = (
+                current_description
+                + text
+            )
+
+            return current_embed
+
+        # --------------------------------------------------------
+        # Simpan embed lama
+        # --------------------------------------------------------
+
+        embeds.append(
+            current_embed
+        )
+
+        # --------------------------------------------------------
+        # Buat embed baru
+        # --------------------------------------------------------
+
+        new_embed = self.create_embed(
+            self.current_arrow_purple
+        )
+
+        # --------------------------------------------------------
+        # Text harus lebih kecil dari limit
+        # --------------------------------------------------------
+
+        if len(text) <= self.MAX_DESCRIPTION_LENGTH:
+
+            new_embed.description = text
+
+            return new_embed
+
+        # --------------------------------------------------------
+        # Safety split
+        # --------------------------------------------------------
+
+        chunks = []
+
+        while len(text) > self.MAX_DESCRIPTION_LENGTH:
+
+            split_at = text.rfind(
+                "\n",
+                0,
+                self.MAX_DESCRIPTION_LENGTH
+            )
+
+            if split_at <= 0:
+
+                split_at = (
+                    self.MAX_DESCRIPTION_LENGTH
+                )
+
+            chunks.append(
+                text[:split_at]
+            )
+
+            text = text[
+                split_at:
+            ].lstrip("\n")
+
+        if text:
+
+            chunks.append(text)
+
+        # Embed pertama
+        new_embed.description = chunks[0]
+
+        # Embed berikutnya
+        for chunk in chunks[1:]:
+
+            embeds.append(
+                new_embed
+            )
+
+            new_embed = self.create_embed(
+                self.current_arrow_purple
+            )
+
+            new_embed.description = chunk
+
+        return new_embed
 
     # ============================================================
     # COMMAND !CHANNELGUIDE
@@ -555,9 +705,6 @@ class NanzChannelGuide(commands.Cog):
         self,
         ctx
     ):
-        """
-        Menampilkan Channel Guide nanZ.
-        """
 
         guild = ctx.guild
 
@@ -577,6 +724,11 @@ class NanzChannelGuide(commands.Cog):
             "🔵"
         )
 
+        # Dipakai oleh helper embed
+        self.current_arrow_purple = (
+            arrow_purple
+        )
+
         # --------------------------------------------------------
         # AMBIL CATEGORY
         # --------------------------------------------------------
@@ -585,16 +737,11 @@ class NanzChannelGuide(commands.Cog):
 
         for category in guild.categories:
 
-            # ----------------------------------------------------
-            # SKIP CATEGORY TERTENTU
-            # ----------------------------------------------------
-
-            if category.id in self.EXCLUDED_CATEGORY_IDS:
+            if (
+                category.id
+                in self.EXCLUDED_CATEGORY_IDS
+            ):
                 continue
-
-            # ----------------------------------------------------
-            # CHANNEL YANG BISA DILIHAT USER
-            # ----------------------------------------------------
 
             visible_channels = []
 
@@ -607,10 +754,6 @@ class NanzChannelGuide(commands.Cog):
                     visible_channels.append(
                         channel
                     )
-
-            # ----------------------------------------------------
-            # Kalau tidak ada channel yang bisa dilihat
-            # ----------------------------------------------------
 
             if not visible_channels:
                 continue
@@ -635,36 +778,29 @@ class NanzChannelGuide(commands.Cog):
             return
 
         # ========================================================
-        # EMBED
+        # BUILD EMBEDS
         # ========================================================
 
         embeds = []
 
-        current_embed = discord.Embed(
-            title=(
-                f"{arrow_purple} "
-                f"NANZ CHANNEL GUIDE"
-            ),
-            description=(
-                "Panduan channel untuk membantu murid "
-                "menemukan ruang yang sesuai."
-            ),
-            color=discord.Color.from_rgb(
-                124,
-                58,
-                237
-            )
+        current_embed = self.create_embed(
+            arrow_purple
+        )
+
+        # --------------------------------------------------------
+        # Intro
+        # --------------------------------------------------------
+
+        current_embed.description = (
+            "Panduan channel untuk membantu murid "
+            "menemukan ruang yang sesuai."
         )
 
         # ========================================================
-        # LOOP CATEGORY
+        # CATEGORY LOOP
         # ========================================================
 
         for category, channels in categories:
-
-            # ----------------------------------------------------
-            # CATEGORY HEADER
-            # ----------------------------------------------------
 
             category_description = (
                 self.get_category_description(
@@ -672,7 +808,12 @@ class NanzChannelGuide(commands.Cog):
                 )
             )
 
+            # ----------------------------------------------------
+            # CATEGORY HEADER
+            # ----------------------------------------------------
+
             category_header = (
+                f"\n\n"
                 f"{arrow_purple} ▬『 "
                 f"{category.name} "
                 f"』▬"
@@ -681,193 +822,55 @@ class NanzChannelGuide(commands.Cog):
             if category_description:
 
                 category_header += (
-                    f"\n> {category_description}"
+                    f"\n> "
+                    f"{category_description}"
                 )
 
+            category_header += "\n"
+
             # ----------------------------------------------------
-            # CHANNEL LIST
+            # Tambahkan header
             # ----------------------------------------------------
 
-            channel_lines = []
+            current_embed = (
+                self.add_text_to_embed(
+                    embeds,
+                    current_embed,
+                    category_header
+                )
+            )
+
+            # ----------------------------------------------------
+            # Channel
+            # ----------------------------------------------------
 
             for channel in channels:
 
-                channel_lines.append(
+                channel_line = (
                     self.build_channel_line(
                         channel,
                         arrow_blue
                     )
-                )
-
-            category_block = (
-                category_header
-                + "\n"
-                + "\n".join(channel_lines)
-            )
-
-            # ====================================================
-            # NORMAL CATEGORY
-            # ====================================================
-
-            if len(category_block) <= 3900:
-
-                current_description = (
-                    current_embed.description
-                    or ""
-                )
-
-                new_description = (
-                    current_description
-                    + "\n\n"
-                    + category_block
-                )
-
-                # ------------------------------------------------
-                # EMBED SUDAH PENUH
-                # ------------------------------------------------
-
-                if len(new_description) > 5800:
-
-                    embeds.append(
-                        current_embed
-                    )
-
-                    current_embed = discord.Embed(
-                        title=(
-                            f"{arrow_purple} "
-                            f"NANZ CHANNEL GUIDE"
-                        ),
-                        color=discord.Color.from_rgb(
-                            124,
-                            58,
-                            237
-                        )
-                    )
-
-                    current_embed.description = (
-                        category_block
-                    )
-
-                else:
-
-                    current_embed.description = (
-                        new_description
-                    )
-
-            # ====================================================
-            # CATEGORY TERLALU PANJANG
-            # ====================================================
-
-            else:
-
-                current_description = (
-                    current_embed.description
-                    or ""
-                )
-
-                # ------------------------------------------------
-                # HEADER
-                # ------------------------------------------------
-
-                header_text = (
-                    category_header
                     + "\n"
                 )
 
-                # ------------------------------------------------
-                # Jika header tidak muat
-                # ------------------------------------------------
-
-                if (
-                    len(current_description)
-                    + len(header_text)
-                    + 2
-                    > 5800
-                ):
-
-                    embeds.append(
-                        current_embed
+                current_embed = (
+                    self.add_text_to_embed(
+                        embeds,
+                        current_embed,
+                        channel_line
                     )
-
-                    current_embed = discord.Embed(
-                        title=(
-                            f"{arrow_purple} "
-                            f"NANZ CHANNEL GUIDE"
-                        ),
-                        color=discord.Color.from_rgb(
-                            124,
-                            58,
-                            237
-                        )
-                    )
-
-                    current_description = ""
-
-                current_embed.description = (
-                    current_description
-                    + "\n\n"
-                    + header_text
                 )
 
-                # ------------------------------------------------
-                # CHANNEL SATU PER SATU
-                # ------------------------------------------------
+        # --------------------------------------------------------
+        # Simpan embed terakhir
+        # --------------------------------------------------------
 
-                for line in channel_lines:
-
-                    current_description = (
-                        current_embed.description
-                        or ""
-                    )
-
-                    addition = (
-                        line
-                        + "\n"
-                    )
-
-                    # --------------------------------------------
-                    # EMBED PENUH
-                    # --------------------------------------------
-
-                    if (
-                        len(current_description)
-                        + len(addition)
-                        > 5800
-                    ):
-
-                        embeds.append(
-                            current_embed
-                        )
-
-                        current_embed = discord.Embed(
-                            title=(
-                                f"{arrow_purple} "
-                                f"NANZ CHANNEL GUIDE"
-                            ),
-                            color=discord.Color.from_rgb(
-                                124,
-                                58,
-                                237
-                            )
-                        )
-
-                        current_embed.description = (
-                            header_text
-                            + addition
-                        )
-
-                    else:
-
-                        current_embed.description = (
-                            current_description
-                            + addition
-                        )
-
-        # ========================================================
-        # EMBED TERAKHIR
-        # ========================================================
-
-        if current_embed.description:
+        if (
+            current_embed.description
+            and current_embed
+            not in embeds
+        ):
 
             embeds.append(
                 current_embed
@@ -890,17 +893,56 @@ class NanzChannelGuide(commands.Cog):
             )
 
         # ========================================================
-        # SEND EMBED
+        # SEND
         # ========================================================
 
-        for embed in embeds:
+        for index, embed in enumerate(
+            embeds
+        ):
 
-            await ctx.send(
-                embed=embed
-            )
+            try:
+
+                await ctx.send(
+                    embed=embed
+                )
+
+            except discord.HTTPException as e:
+
+                # -----------------------------------------------
+                # Kalau kena rate limit / HTTP error
+                # -----------------------------------------------
+
+                print(
+                    f"[NANZ CHANNEL GUIDE] "
+                    f"Gagal mengirim embed "
+                    f"{index + 1}: {e}"
+                )
+
+                # Jangan spam retry terlalu cepat
+                await asyncio.sleep(
+                    2
+                )
+
+                try:
+
+                    await ctx.send(
+                        embed=embed
+                    )
+
+                except discord.HTTPException as retry_error:
+
+                    print(
+                        "[NANZ CHANNEL GUIDE] "
+                        f"Retry gagal: "
+                        f"{retry_error}"
+                    )
+
+            # ----------------------------------------------------
+            # Jeda antar embed
+            # ----------------------------------------------------
 
             await asyncio.sleep(
-                0.3
+                1.0
             )
 
 
