@@ -479,6 +479,7 @@ class NanzChannelGuide(commands.Cog):
     # =====================================================
 
     async def generate_guide_embeds(self, guild):
+        """Generate satu panel/embed untuk setiap kategori."""
 
         purple_arrow = self.get_emoji(
             guild,
@@ -493,40 +494,22 @@ class NanzChannelGuide(commands.Cog):
         )
 
         visible_categories = self.get_visible_categories(guild)
+        embeds = []
+        total_channels = 0
 
         if not visible_categories:
-            embed = discord.Embed(
+            return [discord.Embed(
                 title=f"{purple_arrow} NANZ CHANNEL GUIDE",
                 description="Belum ada ruang yang tersedia.",
                 color=discord.Color.from_rgb(100, 70, 180)
-            )
-            return [embed]
+            )]
 
-        total_channels = 0
-        total_categories = len(visible_categories)
-        embeds = []
-
-        # Discord membatasi total karakter sebuah embed menjadi 6000.
-        # Kita sengaja memakai batas internal 4800 agar title, footer,
-        # description, dan field name tetap punya ruang yang aman.
-        EMBED_SAFE_LIMIT = 4800
-        MAX_FIELDS_PER_EMBED = 5
-
-        def create_embed():
-            return discord.Embed(
-                title=f"{purple_arrow} NANZ CHANNEL GUIDE",
-                description=(
-                    "Temukan ruang yang tersedia untuk "
-                    "member di **nanZ Server**."
-                ),
-                color=discord.Color.from_rgb(100, 70, 180)
-            )
-
-        current = create_embed()
-
+        # Setiap kategori menjadi 1 panel sendiri.
+        # Jika satu kategori terlalu besar, channel akan dibagi
+        # menjadi beberapa panel dengan nama kategori yang sama.
         for category in visible_categories:
-
             channels = self.get_visible_channels(category)
+
             if not channels:
                 continue
 
@@ -537,13 +520,13 @@ class NanzChannelGuide(commands.Cog):
                 category.id
             )
 
-            category_text = f"{purple_arrow} **{category.name}**"
-
+            header = f"{purple_arrow} **{category.name}**"
             if category_description:
-                category_text += f"\n　{category_description}"
+                header += f"\n\u3000{category_description}"
 
+            # Buat baris channel satu per satu agar kategori yang besar
+            # dapat dipecah tanpa melebihi batas embed Discord.
             channel_lines = []
-
             for channel in channels:
                 icon = self.get_channel_icon(channel)
                 description = self.get_channel_description(
@@ -552,57 +535,90 @@ class NanzChannelGuide(commands.Cog):
                 )
 
                 line = f"{blue_arrow} {icon} {channel.mention}"
-
                 if description:
-                    line += f"\n　└ {description}"
+                    line += f"\n\u3000└ {description}"
+
+                # Field value maksimal 1024 karakter.
+                if len(line) > 1000:
+                    line = line[:997] + "..."
 
                 channel_lines.append(line)
 
-            category_text += "\n" + "\n".join(channel_lines)
+            # Pecah channel menjadi panel-panel kategori jika perlu.
+            chunks = []
+            current_lines = []
+            current_length = len(header)
 
-            # Satu field Discord maksimal 1024 karakter.
-            if len(category_text) > 1024:
-                category_text = category_text[:1000] + "..."
+            for line in channel_lines:
+                extra = len(line) + (1 if current_lines else 0)
 
-            field_name = "\u200b"
+                # Sisakan ruang aman untuk embed metadata.
+                if current_lines and current_length + extra > 5000:
+                    chunks.append(current_lines)
+                    current_lines = []
+                    current_length = len(header)
 
-            # Hitung ukuran embed dengan benar, termasuk:
-            # title + description + field name + field value.
-            current_size = len(current.title or "")
-            current_size += len(current.description or "")
-            current_size += sum(
-                len(field.name or "") + len(field.value or "")
-                for field in current.fields
-            )
+                current_lines.append(line)
+                current_length += extra
 
-            field_size = len(field_name) + len(category_text)
+            if current_lines:
+                chunks.append(current_lines)
 
-            if current.fields and (
-                current_size + field_size > EMBED_SAFE_LIMIT
-                or len(current.fields) >= MAX_FIELDS_PER_EMBED
-            ):
-                embeds.append(current)
-                current = create_embed()
+            for part_index, lines in enumerate(chunks, start=1):
+                embed = discord.Embed(
+                    title=(
+                        f"{purple_arrow} NANZ CHANNEL GUIDE"
+                    ),
+                    description=header,
+                    color=discord.Color.from_rgb(100, 70, 180)
+                )
 
-            current.add_field(
-                name=field_name,
-                value=category_text,
-                inline=False
-            )
+                # Nomor bagian hanya muncul jika kategori memang terbagi.
+                if len(chunks) > 1:
+                    embed.description += (
+                        f"\n\n**Bagian {part_index}/{len(chunks)}**"
+                    )
 
-        # Jangan sampai footer membuat embed melewati batas Discord.
-        footer_text = (
-            f"nanZ Server • {total_categories} Category • "
-            f"{total_channels} Channel"
-        )
+                # Jangan menggunakan satu field besar >1024.
+                # Satu panel dapat memiliki beberapa field kecil.
+                field_lines = []
+                field_length = 0
 
-        current.set_footer(text=footer_text)
+                for line in lines:
+                    extra = len(line) + (1 if field_lines else 0)
+                    if field_lines and field_length + extra > 1000:
+                        embed.add_field(
+                            name="\u200b",
+                            value="\n".join(field_lines),
+                            inline=False
+                        )
+                        field_lines = []
+                        field_length = 0
 
-        if guild.icon:
-            current.set_thumbnail(url=guild.icon.url)
+                    field_lines.append(line)
+                    field_length += extra
 
-        if current.fields or not embeds:
-            embeds.append(current)
+                if field_lines:
+                    embed.add_field(
+                        name="\u200b",
+                        value="\n".join(field_lines),
+                        inline=False
+                    )
+
+                embed.set_footer(
+                    text=(
+                        f"nanZ Server • {len(channels)} Channel"
+                        + (
+                            f" • Bagian {part_index}/{len(chunks)}"
+                            if len(chunks) > 1 else ""
+                        )
+                    )
+                )
+
+                if guild.icon:
+                    embed.set_thumbnail(url=guild.icon.url)
+
+                embeds.append(embed)
 
         return embeds
 
