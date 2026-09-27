@@ -93,6 +93,7 @@ async def load_cogs():
         "cogs.verifysystem",
         "cogs.nanzkelasticket",
         "cogs.nanzkelasadmin",
+        "cogs.nanzchannelguide",
         "cogs.about",
         "cogs.hall_of_time",
         "cogs.welcome"
