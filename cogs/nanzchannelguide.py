@@ -346,19 +346,12 @@ class NanzChannelGuide(commands.Cog):
 
         for category in guild.categories:
 
-            if not self.is_category_visible_for_members(
-                category
-            ):
-                continue
-
-            # Category tetap bisa ditampilkan jika ada minimal
-            # satu channel yang dapat diakses role Murid/Calon Murid.
+            # Category ditampilkan apabila minimal satu channel
+            # di dalamnya dapat dilihat oleh Murid/Calon Murid.
             channels = self.get_visible_channels(category)
 
-            if not channels:
-                continue
-
-            categories.append(category)
+            if channels:
+                categories.append(category)
 
         return categories
 
@@ -375,7 +368,6 @@ class NanzChannelGuide(commands.Cog):
             if not self.is_visible_for_members(channel):
                 continue
 
-            # Hanya channel yang relevan untuk guide.
             if isinstance(
                 channel,
                 (
@@ -390,14 +382,16 @@ class NanzChannelGuide(commands.Cog):
         return channels
 
     # =====================================================
-    # GET ALL SELECTABLE ITEMS
+    # GET ALL SELECTABLE ITEMS FOR ADMIN CONFIG
     # =====================================================
 
     def get_selectable_items(self, guild):
 
         items = []
 
-        for category in self.get_visible_categories(guild):
+        # Admin dapat mencari SEMUA category/channel.
+        # Filter role hanya dipakai saat menampilkan guide ke member.
+        for category in guild.categories:
 
             items.append({
                 "type": "category",
@@ -406,8 +400,39 @@ class NanzChannelGuide(commands.Cog):
                 "channel": None
             })
 
-            for channel in self.get_visible_channels(category):
+            for channel in category.channels:
 
+                if isinstance(
+                    channel,
+                    (
+                        discord.TextChannel,
+                        discord.VoiceChannel,
+                        discord.ForumChannel,
+                        discord.StageChannel,
+                    )
+                ):
+                    items.append({
+                        "type": "channel",
+                        "id": channel.id,
+                        "name": channel.name,
+                        "channel": channel
+                    })
+
+        # Channel tanpa category juga ikut bisa dicari.
+        for channel in guild.channels:
+
+            if channel.category is not None:
+                continue
+
+            if isinstance(
+                channel,
+                (
+                    discord.TextChannel,
+                    discord.VoiceChannel,
+                    discord.ForumChannel,
+                    discord.StageChannel,
+                )
+            ):
                 items.append({
                     "type": "channel",
                     "id": channel.id,
@@ -453,7 +478,7 @@ class NanzChannelGuide(commands.Cog):
     # GENERATE GUIDE EMBED
     # =====================================================
 
-    async def generate_guide_embed(self, guild):
+    async def generate_guide_embeds(self, guild):
 
         purple_arrow = self.get_emoji(
             guild,
@@ -467,114 +492,106 @@ class NanzChannelGuide(commands.Cog):
             "└"
         )
 
-        embed = discord.Embed(
+        visible_categories = self.get_visible_categories(guild)
+
+        if not visible_categories:
+            embed = discord.Embed(
+                title=f"{purple_arrow} NANZ CHANNEL GUIDE",
+                description="Belum ada ruang yang tersedia.",
+                color=discord.Color.from_rgb(100, 70, 180)
+            )
+            return [embed]
+
+        embeds = []
+        current = discord.Embed(
             title=f"{purple_arrow} NANZ CHANNEL GUIDE",
             description=(
                 "Temukan ruang yang tersedia untuk "
                 "member di **nanZ Server**."
             ),
-            color=discord.Color.from_rgb(
-                100,
-                70,
-                180
-            )
+            color=discord.Color.from_rgb(100, 70, 180)
         )
 
-        visible_categories = self.get_visible_categories(guild)
-
-        if not visible_categories:
-            embed.description = (
-                "Belum ada ruang yang tersedia."
-            )
-            return embed
-
         total_channels = 0
+        total_categories = len(visible_categories)
 
         for category in visible_categories:
 
             channels = self.get_visible_channels(category)
-
             if not channels:
                 continue
 
             total_channels += len(channels)
 
-            category_description = (
-                self.get_category_description(
-                    guild,
-                    category.id
-                )
+            category_description = self.get_category_description(
+                guild, category.id
             )
 
-            category_text = (
-                f"{purple_arrow} "
-                f"**{category.name}**"
-            )
+            category_text = f"{purple_arrow} **{category.name}**"
 
             if category_description:
-                category_text += (
-                    f"\n"
-                    f"　{category_description}"
-                )
+                category_text += f"\n　{category_description}"
 
             channel_lines = []
 
             for channel in channels:
-
                 icon = self.get_channel_icon(channel)
-
-                description = (
-                    self.get_channel_description(
-                        guild,
-                        channel.id
-                    )
+                description = self.get_channel_description(
+                    guild, channel.id
                 )
 
-                line = (
-                    f"{blue_arrow} "
-                    f"{icon} {channel.mention}"
-                )
+                line = f"{blue_arrow} {icon} {channel.mention}"
 
                 if description:
-                    line += (
-                        f"\n"
-                        f"　└ {description}"
-                    )
+                    line += f"\n　└ {description}"
 
                 channel_lines.append(line)
 
-            category_text += (
-                "\n" +
-                "\n".join(channel_lines)
-            )
+            category_text += "\n" + "\n".join(channel_lines)
 
-            # Discord embed field maksimal 1024 karakter.
+            # Satu field maksimal 1024 karakter.
             if len(category_text) > 1024:
-                category_text = (
-                    category_text[:1000] +
-                    "..."
+                category_text = category_text[:1000] + "..."
+
+            # Jaga total ukuran embed tetap aman.
+            current_size = sum(
+                len(field.name) + len(field.value)
+                for field in current.fields
+            ) + len(current.description or "")
+
+            if current.fields and (
+                current_size + len(category_text) > 5000
+                or len(current.fields) >= 24
+            ):
+                embeds.append(current)
+                current = discord.Embed(
+                    title=f"{purple_arrow} NANZ CHANNEL GUIDE",
+                    color=discord.Color.from_rgb(100, 70, 180)
                 )
 
-            embed.add_field(
+            current.add_field(
                 name="\u200b",
                 value=category_text,
                 inline=False
             )
 
-        embed.set_footer(
+        current.set_footer(
             text=(
-                f"nanZ Server • "
-                f"{len(visible_categories)} Category • "
+                f"nanZ Server • {total_categories} Category • "
                 f"{total_channels} Channel"
             )
         )
 
         if guild.icon:
-            embed.set_thumbnail(
-                url=guild.icon.url
-            )
+            current.set_thumbnail(url=guild.icon.url)
 
-        return embed
+        embeds.append(current)
+        return embeds
+
+    async def generate_guide_embed(self, guild):
+        # Kompatibilitas untuk pemanggilan lama.
+        embeds = await self.generate_guide_embeds(guild)
+        return embeds[0]
 
     # =====================================================
     # DESCRIPTION MODAL
@@ -604,7 +621,7 @@ class NanzChannelGuide(commands.Cog):
             self.description_input = discord.ui.TextInput(
                 label=f"Deskripsi {item_name}",
                 placeholder="Tulis deskripsi yang ingin ditampilkan...",
-                default=existing_description[:4000],
+                default=existing_description[:1000],
                 style=discord.TextStyle.paragraph,
                 max_length=1000,
                 required=False
@@ -752,7 +769,7 @@ class NanzChannelGuide(commands.Cog):
 
                 if item["type"] == "category":
                     emoji = "📂"
-                    label = f"Kategori • {item['name']}"
+                    label = f"Kategori • {item['name']}"[:100]
                     description = "Atur deskripsi kategori"
                     value = f"category:{item['id']}"
 
@@ -846,7 +863,15 @@ class NanzChannelGuide(commands.Cog):
                     existing
                 )
 
-            await interaction.response.send_modal(modal)
+            try:
+                await interaction.response.send_modal(modal)
+            except Exception as e:
+                print(f"[NANZ CHANNEL GUIDE] Open description modal error: {e}")
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Gagal membuka form deskripsi.",
+                        ephemeral=True
+                    )
 
     # =====================================================
     # SEARCH RESULT VIEW
@@ -893,41 +918,17 @@ class NanzChannelGuide(commands.Cog):
             button
         ):
 
-            await interaction.response.send_modal(
-                self.cog.SearchModal(
-                    self.cog
+            try:
+                await interaction.response.send_modal(
+                    self.cog.SearchModal(self.cog)
                 )
-            )
-
-        @discord.ui.button(
-            label="Tampilkan Guide",
-            emoji="📖",
-            style=discord.ButtonStyle.success,
-            row=0
-        )
-        async def show_guide(
-            self,
-            interaction,
-            button
-        ):
-
-            guild = interaction.guild
-
-            if guild is None:
-                await interaction.response.send_message(
-                    "❌ Guild tidak ditemukan.",
-                    ephemeral=True
-                )
-                return
-
-            embed = await self.cog.generate_guide_embed(
-                guild
-            )
-
-            # Guide dikirim biasa agar dapat dilihat member.
-            await interaction.response.send_message(
-                embed=embed
-            )
+            except Exception as e:
+                print(f"[NANZ CHANNEL GUIDE] Search button error: {e}")
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Gagal membuka pencarian. Cek console bot untuk detail error.",
+                        ephemeral=True
+                    )
 
         @discord.ui.button(
             label="Refresh",
@@ -941,60 +942,59 @@ class NanzChannelGuide(commands.Cog):
             button
         ):
 
-            guild = interaction.guild
+            try:
+                guild = interaction.guild
 
-            if guild is None:
-                await interaction.response.send_message(
-                    "❌ Guild tidak ditemukan.",
-                    ephemeral=True
+                if guild is None:
+                    await interaction.response.send_message(
+                        "❌ Guild tidak ditemukan.",
+                        ephemeral=True
+                    )
+                    return
+
+                visible_categories = self.cog.get_visible_categories(guild)
+                total_channels = sum(
+                    len(self.cog.get_visible_channels(category))
+                    for category in visible_categories
                 )
-                return
 
-            visible_categories = (
-                self.cog.get_visible_categories(
-                    guild
+                embed = discord.Embed(
+                    title="⚙️ Channel Guide Settings",
+                    description=(
+                        "Gunakan panel ini untuk mengatur deskripsi "
+                        "channel dan kategori.\n\n"
+                        "Tekan **Cari Channel / Kategori**, cari nama "
+                        "yang diinginkan, lalu pilih hasilnya untuk "
+                        "mengisi deskripsi."
+                    ),
+                    color=discord.Color.from_rgb(100, 70, 180)
                 )
-            )
 
-            total_channels = sum(
-                len(
-                    self.cog.get_visible_channels(category)
+                embed.add_field(
+                    name="📚 Channel Guide",
+                    value=(
+                        f"**{len(visible_categories)}** kategori\n"
+                        f"**{total_channels}** channel"
+                    ),
+                    inline=False
                 )
-                for category in visible_categories
-            )
 
-            embed = discord.Embed(
-                title="⚙️ Channel Guide",
-                description=(
-                    "Cari channel atau kategori untuk "
-                    "mengatur deskripsinya.\n\n"
-                    "Guide dapat ditampilkan langsung "
-                    "untuk member menggunakan tombol "
-                    "**Tampilkan Guide**."
-                ),
-                color=discord.Color.from_rgb(
-                    100,
-                    70,
-                    180
+                embed.set_footer(
+                    text="Panel konfigurasi hanya untuk administrator."
                 )
-            )
 
-            embed.add_field(
-                name="📚 Tersedia",
-                value=(
-                    f"**{len(visible_categories)}** kategori\n"
-                    f"**{total_channels}** channel"
-                ),
-                inline=False
-            )
-
-            await interaction.response.edit_message(
-                embed=embed,
-                view=self.cog.GuidePanel(
-                    self.cog,
-                    guild
+                await interaction.response.edit_message(
+                    embed=embed,
+                    view=self.cog.GuidePanel(self.cog, guild)
                 )
-            )
+
+            except Exception as e:
+                print(f"[NANZ CHANNEL GUIDE] Refresh error: {e}")
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Gagal me-refresh panel.",
+                        ephemeral=True
+                    )
 
     # =====================================================
     # SHOW CHANNEL GUIDE
@@ -1015,16 +1015,16 @@ class NanzChannelGuide(commands.Cog):
             if guild is None:
                 return
 
-            embed = await self.generate_guide_embed(
-                guild
-            )
+            embeds = await self.generate_guide_embeds(guild)
 
             # Ini adalah command MEMBER-FACING.
-            # Tidak ada informasi internal mengenai
-            # permission/private channel di output.
-            await ctx.send(
-                embed=embed
-            )
+            # Tidak ada informasi internal mengenai permission
+            # atau aturan visibilitas di output.
+            # Discord mengizinkan maksimal 10 embed per pesan.
+            for index in range(0, len(embeds), 10):
+                await ctx.send(
+                    embeds=embeds[index:index + 10]
+                )
 
     # =====================================================
     # CHANNEL GUIDE CONFIG PANEL
@@ -1050,16 +1050,10 @@ class NanzChannelGuide(commands.Cog):
         if guild is None:
             return
 
-        visible_categories = (
-            self.get_visible_categories(
-                guild
-            )
-        )
+        visible_categories = self.get_visible_categories(guild)
 
         total_channels = sum(
-            len(
-                self.get_visible_channels(category)
-            )
+            len(self.get_visible_channels(category))
             for category in visible_categories
         )
 
