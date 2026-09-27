@@ -1026,6 +1026,38 @@ class NanzChannelGuide(commands.Cog):
                     embeds=embeds[index:index + 10]
                 )
 
+    @channel_guide.error
+    async def channel_guide_error(
+        self,
+        ctx,
+        error
+    ):
+
+        # Tampilkan error ke console supaya penyebabnya tidak
+        # menjadi "command diam" ketika terjadi exception.
+        original_error = getattr(
+            error,
+            "original",
+            error
+        )
+
+        print(
+            "[NANZ CHANNEL GUIDE] channelguide error: "
+            f"{type(original_error).__name__}: {original_error}"
+        )
+
+        try:
+            await ctx.send(
+                "❌ Channel Guide gagal ditampilkan.\n"
+                "Cek console bot untuk detail error.",
+                delete_after=10
+            )
+        except Exception as send_error:
+            print(
+                "[NANZ CHANNEL GUIDE] Gagal mengirim pesan error: "
+                f"{send_error}"
+            )
+
     # =====================================================
     # CHANNEL GUIDE CONFIG PANEL
     # =====================================================
