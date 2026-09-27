@@ -997,14 +997,11 @@ class NanzChannelGuide(commands.Cog):
             )
 
     # =====================================================
-    # CHANNEL GUIDE COMMAND
+    # SHOW CHANNEL GUIDE
     # =====================================================
 
     @commands.command(
         name="channelguide"
-    )
-    @commands.has_permissions(
-        administrator=True
     )
     async def channel_guide(
         self,
@@ -1018,57 +1015,97 @@ class NanzChannelGuide(commands.Cog):
             if guild is None:
                 return
 
-            visible_categories = (
-                self.get_visible_categories(
-                    guild
-                )
+            embed = await self.generate_guide_embed(
+                guild
             )
 
-            total_channels = sum(
-                len(
-                    self.get_visible_channels(category)
-                )
-                for category in visible_categories
-            )
-
-            embed = discord.Embed(
-                title="⚙️ Channel Guide",
-                description=(
-                    "Pilih channel atau kategori untuk "
-                    "mengatur deskripsinya.\n\n"
-                    "Deskripsi yang sudah diatur akan "
-                    "ditampilkan pada Channel Guide member."
-                ),
-                color=discord.Color.from_rgb(
-                    100,
-                    70,
-                    180
-                )
-            )
-
-            embed.add_field(
-                name="📚 Tersedia",
-                value=(
-                    f"**{len(visible_categories)}** kategori\n"
-                    f"**{total_channels}** channel"
-                ),
-                inline=False
-            )
-
+            # Ini adalah command MEMBER-FACING.
+            # Tidak ada informasi internal mengenai
+            # permission/private channel di output.
             await ctx.send(
-                embed=embed,
-                view=self.GuidePanel(
-                    self,
-                    guild
-                )
+                embed=embed
             )
+
+    # =====================================================
+    # CHANNEL GUIDE CONFIG PANEL
+    # =====================================================
+
+    @commands.command(
+        name="channelguideconfig",
+        aliases=[
+            "channelguidepanel",
+            "guideconfig"
+        ]
+    )
+    @commands.has_permissions(
+        administrator=True
+    )
+    async def channel_guide_config(
+        self,
+        ctx
+    ):
+
+        guild = ctx.guild
+
+        if guild is None:
+            return
+
+        visible_categories = (
+            self.get_visible_categories(
+                guild
+            )
+        )
+
+        total_channels = sum(
+            len(
+                self.get_visible_channels(category)
+            )
+            for category in visible_categories
+        )
+
+        embed = discord.Embed(
+            title="⚙️ Channel Guide Settings",
+            description=(
+                "Gunakan panel ini untuk mengatur "
+                "deskripsi channel dan kategori.\n\n"
+                "Tekan **Cari Channel / Kategori**, "
+                "cari nama yang diinginkan, lalu pilih "
+                "hasilnya untuk mengisi deskripsi."
+            ),
+            color=discord.Color.from_rgb(
+                100,
+                70,
+                180
+            )
+        )
+
+        embed.add_field(
+            name="📚 Channel Guide",
+            value=(
+                f"**{len(visible_categories)}** kategori\n"
+                f"**{total_channels}** channel"
+            ),
+            inline=False
+        )
+
+        embed.set_footer(
+            text="Panel konfigurasi hanya untuk administrator."
+        )
+
+        await ctx.send(
+            embed=embed,
+            view=self.GuidePanel(
+                self,
+                guild
+            )
+        )
 
     # =====================================================
     # ERROR HANDLER
     # =====================================================
 
-    @channel_guide.error
-    async def channel_guide_error(
+    @channel_guide_config.error
+    async def channel_guide_config_error(
         self,
         ctx,
         error
