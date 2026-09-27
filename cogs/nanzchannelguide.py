@@ -493,7 +493,12 @@ class NanzChannelGuide(commands.Cog):
     # =====================================================
 
     async def generate_guide_embeds(self, guild):
-        """Generate satu panel/embed untuk setiap kategori."""
+        """Generate guide yang aman dari batas ukuran Discord.
+
+        Setiap kategori tetap menjadi panel sendiri. Jika isi sebuah
+        kategori terlalu panjang karena deskripsi channel/kategori,
+        kategori tersebut otomatis dibagi menjadi beberapa panel.
+        """
 
         purple_arrow = self.get_emoji(
             guild,
@@ -509,7 +514,7 @@ class NanzChannelGuide(commands.Cog):
 
         visible_categories = self.get_visible_categories(guild)
         embeds = []
-        total_channels = 0
+        first_panel = True
 
         if not visible_categories:
             return [discord.Embed(
@@ -518,117 +523,161 @@ class NanzChannelGuide(commands.Cog):
                 color=discord.Color.from_rgb(100, 70, 180)
             )]
 
-        # Setiap kategori menjadi 1 panel sendiri.
-        # Jika satu kategori terlalu besar, channel akan dibagi
-        # menjadi beberapa panel dengan nama kategori yang sama.
-        # Judul utama hanya ditampilkan pada panel pertama.
-        first_panel = True
-
         for category in visible_categories:
             channels = self.get_visible_channels(category)
 
             if not channels:
                 continue
 
-            total_channels += len(channels)
-
             category_description = self.get_category_description(
                 guild,
                 category.id
             )
 
-            header = f"{purple_arrow} **{category.name}**"
+            # Deskripsi kategori dibatasi supaya tidak sendiri
+            # menghabiskan hampir seluruh kapasitas embed.
+            category_description = (category_description or "").strip()
+            if len(category_description) > 700:
+                category_description = category_description[:697] + "..."
+
+            header = f"{purple_arrow} **[ {category.name} ]**"
             if category_description:
                 header += f"\n\u3000{category_description}"
 
-            # Buat baris channel satu per satu agar kategori yang besar
-            # dapat dipecah tanpa melebihi batas embed Discord.
             channel_lines = []
+
             for channel in channels:
                 icon = self.get_channel_icon(channel)
                 description = self.get_channel_description(
                     guild,
                     channel.id
                 )
+                description = (description or "").strip()
+
+                # Satu baris channel dibatasi agar tidak membuat field
+                # melewati batas 1024 karakter.
+                if len(description) > 700:
+                    description = description[:697] + "..."
 
                 line = f"{blue_arrow} {icon} {channel.mention}"
+
                 if description:
                     line += f"\n\u3000└ {description}"
 
-                # Field value maksimal 1024 karakter.
-                if len(line) > 1000:
-                    line = line[:997] + "..."
+                if len(line) > 900:
+                    line = line[:897] + "..."
 
                 channel_lines.append(line)
 
-            # Pecah channel menjadi panel-panel kategori jika perlu.
-            chunks = []
-            current_lines = []
-            current_length = len(header)
+            # -------------------------------------------------
+            # PACKING AMAN
+            # -------------------------------------------------
+            # Discord punya batas total embed 6000 karakter.
+            # Kita gunakan batas internal yang konservatif:
+            # maksimal 5 field per panel, setiap field <= 900 karakter.
+            # Jadi deskripsi yang sudah diisi panjang pun tidak membuat
+            # satu kategori gagal dikirim.
+            # -------------------------------------------------
+
+            panels = []
+            current_fields = []
+            current_field = []
+            current_field_length = 0
+
+            def flush_field():
+                nonlocal current_field, current_field_length
+
+                if current_field:
+                    current_fields.append("\n".join(current_field))
+                    current_field = []
+                    current_field_length = 0
+
+            def flush_panel():
+                nonlocal current_fields
+
+                flush_field()
+                if current_fields:
+                    panels.append(current_fields)
+                    current_fields = []
 
             for line in channel_lines:
-                extra = len(line) + (1 if current_lines else 0)
+                extra = len(line) + (1 if current_field else 0)
 
-                # Sisakan ruang aman untuk embed metadata.
-                if current_lines and current_length + extra > 5000:
-                    chunks.append(current_lines)
-                    current_lines = []
-                    current_length = len(header)
+                if current_field and current_field_length + extra > 900:
+                    flush_field()
 
-                current_lines.append(line)
-                current_length += extra
+                current_field.append(line)
+                current_field_length += extra
 
-            if current_lines:
-                chunks.append(current_lines)
+                if len(current_fields) >= 5:
+                    flush_panel()
 
-            for part_index, lines in enumerate(chunks, start=1):
+            flush_panel()
+
+            # -------------------------------------------------
+            # Buat embed dari panel-panel kategori.
+            # -------------------------------------------------
+            for panel_index, fields in enumerate(panels, start=1):
+                description = header
+
+                if len(panels) > 1:
+                    description += (
+                        f"\n\n**Bagian {panel_index}/{len(panels)}**"
+                    )
+
                 embed = discord.Embed(
-                    description=header,
+                    description=description,
                     color=discord.Color.from_rgb(100, 70, 180)
                 )
 
-                # Judul utama hanya di panel pertama agar panel berikutnya
-                # tidak terlihat seperti panel yang terpisah-pisah.
                 if first_panel:
                     embed.title = f"{purple_arrow} NANZ CHANNEL GUIDE"
 
-                # Nomor bagian hanya muncul jika kategori memang terbagi.
-                if len(chunks) > 1:
-                    embed.description += (
-                        f"\n\n**Bagian {part_index}/{len(chunks)}**"
-                    )
-
-                # Jangan menggunakan satu field besar >1024.
-                # Satu panel dapat memiliki beberapa field kecil.
-                field_lines = []
-                field_length = 0
-
-                for line in lines:
-                    extra = len(line) + (1 if field_lines else 0)
-                    if field_lines and field_length + extra > 1000:
-                        embed.add_field(
-                            name="\u200b",
-                            value="\n".join(field_lines),
-                            inline=False
-                        )
-                        field_lines = []
-                        field_length = 0
-
-                    field_lines.append(line)
-                    field_length += extra
-
-                if field_lines:
+                for field_value in fields:
                     embed.add_field(
                         name="\u200b",
-                        value="\n".join(field_lines),
+                        value=field_value,
                         inline=False
                     )
 
-                # Tidak ada footer/jumlah channel agar antar panel
-                # terlihat bersih tanpa pemisah tambahan.
-                embeds.append(embed)
-                first_panel = False
+                # Guard terakhir. Dengan batas 5 x 900 karakter
+                # seharusnya embed sudah jauh di bawah 6000.
+                # Tetap cek ukuran aktual dari discord.py.
+                if len(embed) > 5800:
+                    # Pecah field menjadi panel yang lebih kecil.
+                    # Ini hanya fallback dan biasanya tidak terpanggil.
+                    smaller = []
+                    for field_value in fields:
+                        parts = [
+                            field_value[i:i + 650]
+                            for i in range(0, len(field_value), 650)
+                        ]
+                        smaller.extend(parts)
 
+                    # Buat satu panel fallback per maksimal 4 field.
+                    for chunk_start in range(0, len(smaller), 4):
+                        chunk = smaller[chunk_start:chunk_start + 4]
+                        safe_embed = discord.Embed(
+                            description=description,
+                            color=discord.Color.from_rgb(100, 70, 180)
+                        )
+                        if first_panel and not embeds:
+                            safe_embed.title = (
+                                f"{purple_arrow} NANZ CHANNEL GUIDE"
+                            )
+
+                        for value in chunk:
+                            safe_embed.add_field(
+                                name="\u200b",
+                                value=value,
+                                inline=False
+                            )
+
+                        embeds.append(safe_embed)
+                else:
+                    embeds.append(embed)
+
+                first_panel = False
         return embeds
 
     async def generate_guide_embed(self, guild):
