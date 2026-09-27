@@ -43,6 +43,17 @@ class NanzChannelGuide(commands.Cog):
         self.MURID_ROLE_ID = 1453095603008442510
         self.CALON_MURID_ROLE_ID = 1504467138440597604
 
+        # Category yang tidak ditampilkan di Channel Guide member
+        self.EXCLUDED_CATEGORY_IDS = {
+            1416639085757468784,
+            1485115656616546425,
+            1549446088992489473,
+            1489206200925946098,
+            1407220284217360434,
+            1486913064564555786,
+            1513028445423009923,
+        }
+
         # =================================================
         # EMOJI NANZ
         # =================================================
@@ -346,6 +357,9 @@ class NanzChannelGuide(commands.Cog):
 
         for category in guild.categories:
 
+            if category.id in self.EXCLUDED_CATEGORY_IDS:
+                continue
+
             # Category ditampilkan apabila minimal satu channel
             # di dalamnya dapat dilihat oleh Murid/Calon Murid.
             channels = self.get_visible_channels(category)
@@ -614,9 +628,6 @@ class NanzChannelGuide(commands.Cog):
                         )
                     )
                 )
-
-                if guild.icon:
-                    embed.set_thumbnail(url=guild.icon.url)
 
                 embeds.append(embed)
 
@@ -995,26 +1006,19 @@ class NanzChannelGuide(commands.Cog):
                 embed = discord.Embed(
                     title="⚙️ Channel Guide Settings",
                     description=(
-                        "Gunakan panel ini untuk mengatur deskripsi "
-                        "channel dan kategori.\n\n"
-                        "Tekan **Cari Channel / Kategori**, cari nama "
-                        "yang diinginkan, lalu pilih hasilnya untuk "
-                        "mengisi deskripsi."
+                        "Atur deskripsi channel dan kategori.\n"
+                        "Gunakan tombol pencarian untuk memilih item."
                     ),
                     color=discord.Color.from_rgb(100, 70, 180)
                 )
 
                 embed.add_field(
-                    name="📚 Channel Guide",
+                    name="Status",
                     value=(
-                        f"**{len(visible_categories)}** kategori\n"
-                        f"**{total_channels}** channel"
+                        f"{len(visible_categories)} kategori • "
+                        f"{total_channels} channel"
                     ),
                     inline=False
-                )
-
-                embed.set_footer(
-                    text="Panel konfigurasi hanya untuk administrator."
                 )
 
                 await interaction.response.edit_message(
@@ -1126,30 +1130,19 @@ class NanzChannelGuide(commands.Cog):
         embed = discord.Embed(
             title="⚙️ Channel Guide Settings",
             description=(
-                "Gunakan panel ini untuk mengatur "
-                "deskripsi channel dan kategori.\n\n"
-                "Tekan **Cari Channel / Kategori**, "
-                "cari nama yang diinginkan, lalu pilih "
-                "hasilnya untuk mengisi deskripsi."
+                "Atur deskripsi channel dan kategori.\n"
+                "Gunakan tombol pencarian untuk memilih item."
             ),
-            color=discord.Color.from_rgb(
-                100,
-                70,
-                180
-            )
+            color=discord.Color.from_rgb(100, 70, 180)
         )
 
         embed.add_field(
-            name="📚 Channel Guide",
+            name="Status",
             value=(
-                f"**{len(visible_categories)}** kategori\n"
-                f"**{total_channels}** channel"
+                f"{len(visible_categories)} kategori • "
+                f"{total_channels} channel"
             ),
             inline=False
-        )
-
-        embed.set_footer(
-            text="Panel konfigurasi hanya untuk administrator."
         )
 
         await ctx.send(
