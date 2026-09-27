@@ -502,18 +502,27 @@ class NanzChannelGuide(commands.Cog):
             )
             return [embed]
 
-        embeds = []
-        current = discord.Embed(
-            title=f"{purple_arrow} NANZ CHANNEL GUIDE",
-            description=(
-                "Temukan ruang yang tersedia untuk "
-                "member di **nanZ Server**."
-            ),
-            color=discord.Color.from_rgb(100, 70, 180)
-        )
-
         total_channels = 0
         total_categories = len(visible_categories)
+        embeds = []
+
+        # Discord membatasi total karakter sebuah embed menjadi 6000.
+        # Kita sengaja memakai batas internal 4800 agar title, footer,
+        # description, dan field name tetap punya ruang yang aman.
+        EMBED_SAFE_LIMIT = 4800
+        MAX_FIELDS_PER_EMBED = 5
+
+        def create_embed():
+            return discord.Embed(
+                title=f"{purple_arrow} NANZ CHANNEL GUIDE",
+                description=(
+                    "Temukan ruang yang tersedia untuk "
+                    "member di **nanZ Server**."
+                ),
+                color=discord.Color.from_rgb(100, 70, 180)
+            )
+
+        current = create_embed()
 
         for category in visible_categories:
 
@@ -524,7 +533,8 @@ class NanzChannelGuide(commands.Cog):
             total_channels += len(channels)
 
             category_description = self.get_category_description(
-                guild, category.id
+                guild,
+                category.id
             )
 
             category_text = f"{purple_arrow} **{category.name}**"
@@ -537,7 +547,8 @@ class NanzChannelGuide(commands.Cog):
             for channel in channels:
                 icon = self.get_channel_icon(channel)
                 description = self.get_channel_description(
-                    guild, channel.id
+                    guild,
+                    channel.id
                 )
 
                 line = f"{blue_arrow} {icon} {channel.mention}"
@@ -549,43 +560,50 @@ class NanzChannelGuide(commands.Cog):
 
             category_text += "\n" + "\n".join(channel_lines)
 
-            # Satu field maksimal 1024 karakter.
+            # Satu field Discord maksimal 1024 karakter.
             if len(category_text) > 1024:
                 category_text = category_text[:1000] + "..."
 
-            # Jaga total ukuran embed tetap aman.
-            current_size = sum(
-                len(field.name) + len(field.value)
+            field_name = "\u200b"
+
+            # Hitung ukuran embed dengan benar, termasuk:
+            # title + description + field name + field value.
+            current_size = len(current.title or "")
+            current_size += len(current.description or "")
+            current_size += sum(
+                len(field.name or "") + len(field.value or "")
                 for field in current.fields
-            ) + len(current.description or "")
+            )
+
+            field_size = len(field_name) + len(category_text)
 
             if current.fields and (
-                current_size + len(category_text) > 5000
-                or len(current.fields) >= 24
+                current_size + field_size > EMBED_SAFE_LIMIT
+                or len(current.fields) >= MAX_FIELDS_PER_EMBED
             ):
                 embeds.append(current)
-                current = discord.Embed(
-                    title=f"{purple_arrow} NANZ CHANNEL GUIDE",
-                    color=discord.Color.from_rgb(100, 70, 180)
-                )
+                current = create_embed()
 
             current.add_field(
-                name="\u200b",
+                name=field_name,
                 value=category_text,
                 inline=False
             )
 
-        current.set_footer(
-            text=(
-                f"nanZ Server • {total_categories} Category • "
-                f"{total_channels} Channel"
-            )
+        # Jangan sampai footer membuat embed melewati batas Discord.
+        footer_text = (
+            f"nanZ Server • {total_categories} Category • "
+            f"{total_channels} Channel"
         )
+
+        current.set_footer(text=footer_text)
 
         if guild.icon:
             current.set_thumbnail(url=guild.icon.url)
 
-        embeds.append(current)
+        if current.fields or not embeds:
+            embeds.append(current)
+
         return embeds
 
     async def generate_guide_embed(self, guild):
