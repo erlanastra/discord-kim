@@ -244,7 +244,7 @@ class NanzChannelGuide(commands.Cog):
     }
 
     # =========================================================
-    # NORMALIZE NAME
+    # NORMALIZE CHANNEL NAME
     # =========================================================
 
     @staticmethod
@@ -297,10 +297,16 @@ class NanzChannelGuide(commands.Cog):
             name
         )
 
+        # -----------------------------------------------------
         # Hapus backtick
+        # -----------------------------------------------------
+
         name = name.replace("`", "")
 
+        # -----------------------------------------------------
         # Rapikan spasi
+        # -----------------------------------------------------
+
         name = re.sub(
             r"\s+",
             " ",
@@ -346,10 +352,14 @@ class NanzChannelGuide(commands.Cog):
             self.CALON_MURID_ROLE_ID
         )
 
+        # Tidak ada kedua role
         if not murid_role and not calon_murid_role:
             return False
 
-        # Murid
+        # -----------------------------------------------------
+        # Cek role Murid
+        # -----------------------------------------------------
+
         if murid_role:
 
             permissions = channel.permissions_for(
@@ -359,7 +369,10 @@ class NanzChannelGuide(commands.Cog):
             if permissions.view_channel:
                 return True
 
-        # Calon Murid
+        # -----------------------------------------------------
+        # Cek role Calon Murid
+        # -----------------------------------------------------
+
         if calon_murid_role:
 
             permissions = channel.permissions_for(
@@ -384,7 +397,10 @@ class NanzChannelGuide(commands.Cog):
             channel_name
         )
 
+        # -----------------------------------------------------
         # Direct match
+        # -----------------------------------------------------
+
         description = (
             self.CHANNEL_DESCRIPTIONS.get(
                 normalized
@@ -394,7 +410,10 @@ class NanzChannelGuide(commands.Cog):
         if description:
             return description
 
+        # -----------------------------------------------------
         # Normalized fallback
+        # -----------------------------------------------------
+
         for key, description in (
             self.CHANNEL_DESCRIPTIONS.items()
         ):
@@ -447,69 +466,81 @@ class NanzChannelGuide(commands.Cog):
         )
 
     # =========================================================
-    # GET CATEGORIES
+    # GET SERVER STRUCTURE
     # =========================================================
 
-    def get_categories_in_discord_order(
+    def get_server_structure(
         self,
         guild: discord.Guild
     ):
-
         """
-        Menggunakan urutan kategori yang diberikan
-        oleh Discord.
+        Mengambil struktur channel menggunakan
+        guild.by_category().
 
-        Tidak melakukan sorting tambahan.
-        """
+        Discord.py mendokumentasikan by_category()
+        sebagai struktur yang mengikuti urutan resmi
+        Discord UI.
 
-        return [
-            category
-            for category in guild.categories
-            if category.id not in self.EXCLUDED_CATEGORY_IDS
-        ]
-
-    # =========================================================
-    # GET CHANNELS
-    # =========================================================
-
-    def get_channels_in_discord_order(
-        self,
-        guild: discord.Guild,
-        category
-    ):
-
-        """
-        Mengambil channel dari guild.channels
-        TANPA sorting ulang.
-
-        Tidak membedakan:
-        - Text
-        - Voice
-        - Stage
-
-        Semuanya mengikuti urutan Discord.
+        Tidak ada sorting manual di sini.
+        Tidak membedakan Text / Voice / Stage.
         """
 
-        visible_channels = []
+        structure = []
 
-        for channel in guild.channels:
+        for category, channels in guild.by_category():
 
-            # Pastikan channel berada di kategori ini
-            if channel.category_id != category.id:
+            # -------------------------------------------------
+            # Channel tanpa kategori
+            # -------------------------------------------------
+
+            if category is None:
                 continue
 
-            # Cek akses Murid / Calon Murid
-            if not self.can_murid_view_channel(
-                guild,
-                channel
-            ):
+            # -------------------------------------------------
+            # Kategori yang dikecualikan
+            # -------------------------------------------------
+
+            if category.id in self.EXCLUDED_CATEGORY_IDS:
                 continue
 
-            visible_channels.append(
-                channel
-            )
+            visible_channels = []
 
-        return visible_channels
+            # -------------------------------------------------
+            # PENTING:
+            #
+            # Jangan sort channels lagi.
+            #
+            # channels dari by_category() sudah diberikan
+            # dalam urutan resmi Discord UI.
+            # -------------------------------------------------
+
+            for channel in channels:
+
+                if not self.can_murid_view_channel(
+                    guild,
+                    channel
+                ):
+                    continue
+
+                visible_channels.append(
+                    channel
+                )
+
+            # -------------------------------------------------
+            # Hanya tampilkan kategori yang punya channel
+            # yang bisa dilihat Murid / Calon Murid.
+            # -------------------------------------------------
+
+            if visible_channels:
+
+                structure.append(
+                    (
+                        category,
+                        visible_channels
+                    )
+                )
+
+        return structure
 
     # =========================================================
     # SEND CATEGORY
@@ -547,7 +578,7 @@ class NanzChannelGuide(commands.Cog):
             )
 
             # -------------------------------------------------
-            # Masih muat dalam embed
+            # Masih muat
             # -------------------------------------------------
 
             if len(new_description) <= self.MAX_DESCRIPTION_LENGTH:
@@ -578,6 +609,10 @@ class NanzChannelGuide(commands.Cog):
                     f"**{category.name}**\n"
                     f"{channel_text}"
                 )
+
+        # -----------------------------------------------------
+        # Kirim embed terakhir
+        # -----------------------------------------------------
 
         if embed.description:
 
@@ -631,7 +666,7 @@ class NanzChannelGuide(commands.Cog):
         guild = ctx.guild
 
         # -----------------------------------------------------
-        # Emoji nanZ
+        # Ambil emoji nanZ
         # -----------------------------------------------------
 
         purple_arrow = (
@@ -653,10 +688,13 @@ class NanzChannelGuide(commands.Cog):
         # -----------------------------------------------------
 
         if purple_arrow:
+
             header_arrow = str(
                 purple_arrow
             )
+
         else:
+
             header_arrow = "🟣"
 
         header_embed = discord.Embed(
@@ -682,38 +720,20 @@ class NanzChannelGuide(commands.Cog):
             )
 
             # =================================================
-            # CATEGORY
+            # AMBIL STRUKTUR SERVER
             # =================================================
 
-            categories = (
-                self.get_categories_in_discord_order(
+            server_structure = (
+                self.get_server_structure(
                     guild
                 )
             )
 
             # =================================================
-            # PROCESS CATEGORY
+            # TAMPILKAN SETIAP KATEGORI
             # =================================================
 
-            for category in categories:
-
-                # -------------------------------------------------
-                # Ambil channel TANPA mengubah urutannya
-                # -------------------------------------------------
-
-                visible_channels = (
-                    self.get_channels_in_discord_order(
-                        guild,
-                        category
-                    )
-                )
-
-                if not visible_channels:
-                    continue
-
-                # -------------------------------------------------
-                # Kirim category
-                # -------------------------------------------------
+            for category, visible_channels in server_structure:
 
                 await self.send_category(
                     ctx,
@@ -727,7 +747,7 @@ class NanzChannelGuide(commands.Cog):
                 )
 
         # =====================================================
-        # HTTP ERROR
+        # DISCORD HTTP ERROR
         # =====================================================
 
         except discord.HTTPException as e:
