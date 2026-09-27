@@ -12,20 +12,16 @@ class NanzChannelGuide(commands.Cog):
     Semua deskripsi kategori dan channel disimpan langsung
     di dalam source code.
 
-    Tidak menggunakan:
-    - JSON
-    - Database
-    - Panel konfigurasi
-    - Modal
-    - Search system
+    Sistem:
+    - Tidak menggunakan database
+    - Tidak menggunakan JSON
+    - Tidak menggunakan panel konfigurasi
+    - Tidak menggunakan modal
+    - Tidak menggunakan search
+    - Tidak menggunakan role restriction
+
+    Akses channel mengikuti permission Discord masing-masing user.
     """
-
-    # ============================================================
-    # ROLE ACCESS
-    # ============================================================
-
-    MURID_ROLE_ID = 1453095603008442510
-    CALON_MURID_ROLE_ID = 1504467138440597604
 
     # ============================================================
     # CATEGORY YANG TIDAK DITAMPILKAN
@@ -93,9 +89,6 @@ class NanzChannelGuide(commands.Cog):
 
     # ============================================================
     # DESKRIPSI CHANNEL
-    #
-    # Nama di sini cukup nama normalnya.
-    # Emoji / dekorasi di Discord akan otomatis diabaikan.
     # ============================================================
 
     CHANNEL_DESCRIPTIONS = {
@@ -308,14 +301,13 @@ class NanzChannelGuide(commands.Cog):
     }
 
     # ============================================================
-    # NORMALIZER
+    # NORMALIZE NAME
     # ============================================================
 
     @staticmethod
     def normalize_name(name: str) -> str:
         """
-        Membersihkan nama channel/category agar pencocokan
-        tidak tergantung emoji atau dekorasi.
+        Membersihkan nama channel/category.
 
         Contoh:
 
@@ -323,7 +315,11 @@ class NanzChannelGuide(commands.Cog):
         ↓
         bermain game
 
-        💬・📝﹕tata-tertib
+        💬・🗨️﹕ruang-ngobrol
+        ↓
+        ruang-ngobrol
+
+        <:emoji:123456>・tata-tertib
         ↓
         tata-tertib
         """
@@ -332,13 +328,14 @@ class NanzChannelGuide(commands.Cog):
             return ""
 
         # --------------------------------------------------------
-        # Lowercase / case insensitive
+        # Case insensitive
         # --------------------------------------------------------
 
         name = name.casefold()
 
         # --------------------------------------------------------
-        # Hapus emoji Discord custom:
+        # Hapus custom emoji Discord
+        #
         # <:nama:id>
         # <a:nama:id>
         # --------------------------------------------------------
@@ -350,10 +347,7 @@ class NanzChannelGuide(commands.Cog):
         )
 
         # --------------------------------------------------------
-        # Hapus emoji unicode.
-        #
-        # Menghapus sebagian besar karakter emoji melalui
-        # rentang Unicode.
+        # Hapus Unicode Emoji
         # --------------------------------------------------------
 
         name = re.sub(
@@ -369,11 +363,13 @@ class NanzChannelGuide(commands.Cog):
         )
 
         # --------------------------------------------------------
-        # Ubah karakter dekorasi menjadi spasi
+        # Hapus karakter dekorasi
         # --------------------------------------------------------
 
         name = re.sub(
-            r"[╭╮╰╯┇┆┊┋│┃━─═╍╾╼➜➤➢➣➥➦➧➨・﹕:|/\\]+",
+            r"[╭╮╰╯┇┆┊┋│┃━─═╍╾╼"
+            r"➜➤➢➣➥➦➧➨"
+            r"・﹕:|/\\]+",
             " ",
             name
         )
@@ -388,54 +384,43 @@ class NanzChannelGuide(commands.Cog):
         # Rapikan whitespace
         # --------------------------------------------------------
 
-        name = re.sub(r"\s+", " ", name)
-
-        # --------------------------------------------------------
-        # Trim
-        # --------------------------------------------------------
+        name = re.sub(
+            r"\s+",
+            " ",
+            name
+        )
 
         return name.strip()
 
     # ============================================================
-    # CARI DESKRIPSI CHANNEL
+    # GET CHANNEL DESCRIPTION
     # ============================================================
 
-    def get_channel_description(self, channel: discord.abc.GuildChannel):
-        """
-        Mencari deskripsi channel dengan nama yang sudah
-        dinormalisasi.
+    def get_channel_description(self, channel):
 
-        Jadi emoji/dekorasi tidak mempengaruhi pencarian.
-        """
-
-        normalized_channel_name = self.normalize_name(
+        normalized_name = self.normalize_name(
             channel.name
         )
 
-        # Pencarian langsung
-        if normalized_channel_name in self.CHANNEL_DESCRIPTIONS:
+        # Direct lookup
+        if normalized_name in self.CHANNEL_DESCRIPTIONS:
             return self.CHANNEL_DESCRIPTIONS[
-                normalized_channel_name
+                normalized_name
             ]
 
-        # Fallback: normalisasi key dictionary
+        # Fallback normalization
         for name, description in self.CHANNEL_DESCRIPTIONS.items():
 
-            normalized_key = self.normalize_name(name)
-
-            if normalized_key == normalized_channel_name:
+            if self.normalize_name(name) == normalized_name:
                 return description
 
         return None
 
     # ============================================================
-    # CARI DESKRIPSI CATEGORY
+    # GET CATEGORY DESCRIPTION
     # ============================================================
 
     def get_category_description(self, category):
-        """
-        Mencari deskripsi kategori dengan sistem normalisasi.
-        """
 
         if not category:
             return ""
@@ -444,49 +429,67 @@ class NanzChannelGuide(commands.Cog):
             category.name
         )
 
+        # Direct lookup
         if normalized_name in self.CATEGORY_DESCRIPTIONS:
             return self.CATEGORY_DESCRIPTIONS[
                 normalized_name
             ]
 
+        # Fallback normalization
         for name, description in self.CATEGORY_DESCRIPTIONS.items():
 
-            normalized_key = self.normalize_name(name)
-
-            if normalized_key == normalized_name:
+            if self.normalize_name(name) == normalized_name:
                 return description
 
         return ""
 
     # ============================================================
-    # ICON CHANNEL
+    # CHANNEL ICON
     # ============================================================
 
     @staticmethod
     def get_channel_icon(channel):
 
-        if isinstance(channel, discord.TextChannel):
+        if isinstance(
+            channel,
+            discord.TextChannel
+        ):
             return "💬"
 
-        if isinstance(channel, discord.VoiceChannel):
+        if isinstance(
+            channel,
+            discord.VoiceChannel
+        ):
             return "🔊"
 
-        if isinstance(channel, discord.ForumChannel):
+        if isinstance(
+            channel,
+            discord.ForumChannel
+        ):
             return "📝"
 
-        if isinstance(channel, discord.StageChannel):
+        if isinstance(
+            channel,
+            discord.StageChannel
+        ):
             return "🎙️"
 
         return "📁"
 
     # ============================================================
-    # EMOJI PANAH
+    # CUSTOM EMOJI
     # ============================================================
 
     @staticmethod
-    def get_custom_emoji(guild, emoji_id, fallback):
+    def get_custom_emoji(
+        guild,
+        emoji_id,
+        fallback
+    ):
 
-        emoji = guild.get_emoji(emoji_id)
+        emoji = guild.get_emoji(
+            emoji_id
+        )
 
         if emoji:
             return str(emoji)
@@ -494,30 +497,18 @@ class NanzChannelGuide(commands.Cog):
         return fallback
 
     # ============================================================
-    # CEK AKSES
-    # ============================================================
-
-    def has_access(self, member):
-
-        role_ids = {
-            role.id
-            for role in member.roles
-        }
-
-        return (
-            self.MURID_ROLE_ID in role_ids
-            or
-            self.CALON_MURID_ROLE_ID in role_ids
-        )
-
-    # ============================================================
-    # CEK CHANNEL TERLIHAT
+    # CHECK CHANNEL VISIBILITY
     # ============================================================
 
     @staticmethod
-    def can_view_channel(member, channel):
+    def can_view_channel(
+        member,
+        channel
+    ):
 
-        permissions = channel.permissions_for(member)
+        permissions = channel.permissions_for(
+            member
+        )
 
         return permissions.view_channel
 
@@ -531,14 +522,16 @@ class NanzChannelGuide(commands.Cog):
         arrow_blue
     ):
 
-        icon = self.get_channel_icon(channel)
+        icon = self.get_channel_icon(
+            channel
+        )
 
         description = self.get_channel_description(
             channel
         )
 
         # --------------------------------------------------------
-        # Kalau deskripsi belum tersedia
+        # Jika belum ada deskripsi
         # --------------------------------------------------------
 
         if not description:
@@ -551,7 +544,7 @@ class NanzChannelGuide(commands.Cog):
         )
 
     # ============================================================
-    # COMMAND
+    # COMMAND !CHANNELGUIDE
     # ============================================================
 
     @commands.command(
@@ -563,26 +556,13 @@ class NanzChannelGuide(commands.Cog):
         ctx
     ):
         """
-        Menampilkan panduan channel nanZ.
+        Menampilkan Channel Guide nanZ.
         """
-
-        # --------------------------------------------------------
-        # CEK ROLE
-        # --------------------------------------------------------
-
-        if not self.has_access(ctx.author):
-
-            await ctx.send(
-                "Kamu tidak memiliki akses untuk melihat "
-                "Channel Guide nanZ."
-            )
-
-            return
 
         guild = ctx.guild
 
         # --------------------------------------------------------
-        # CUSTOM EMOJI
+        # CUSTOM ARROW
         # --------------------------------------------------------
 
         arrow_purple = self.get_custom_emoji(
@@ -598,22 +578,22 @@ class NanzChannelGuide(commands.Cog):
         )
 
         # --------------------------------------------------------
-        # AMBIL SEMUA CATEGORY
+        # AMBIL CATEGORY
         # --------------------------------------------------------
 
         categories = []
 
         for category in guild.categories:
 
+            # ----------------------------------------------------
+            # SKIP CATEGORY TERTENTU
+            # ----------------------------------------------------
+
             if category.id in self.EXCLUDED_CATEGORY_IDS:
                 continue
 
-            # Hanya category yang punya channel
-            if not category.channels:
-                continue
-
             # ----------------------------------------------------
-            # Cek apakah user bisa melihat minimal satu channel
+            # CHANNEL YANG BISA DILIHAT USER
             # ----------------------------------------------------
 
             visible_channels = []
@@ -624,7 +604,13 @@ class NanzChannelGuide(commands.Cog):
                     ctx.author,
                     channel
                 ):
-                    visible_channels.append(channel)
+                    visible_channels.append(
+                        channel
+                    )
+
+            # ----------------------------------------------------
+            # Kalau tidak ada channel yang bisa dilihat
+            # ----------------------------------------------------
 
             if not visible_channels:
                 continue
@@ -637,7 +623,7 @@ class NanzChannelGuide(commands.Cog):
             )
 
         # --------------------------------------------------------
-        # KALAU TIDAK ADA CATEGORY
+        # TIDAK ADA CHANNEL
         # --------------------------------------------------------
 
         if not categories:
@@ -648,14 +634,17 @@ class NanzChannelGuide(commands.Cog):
 
             return
 
-        # --------------------------------------------------------
-        # BUAT EMBED
-        # --------------------------------------------------------
+        # ========================================================
+        # EMBED
+        # ========================================================
 
         embeds = []
 
         current_embed = discord.Embed(
-            title=f"{arrow_purple} NANZ CHANNEL GUIDE",
+            title=(
+                f"{arrow_purple} "
+                f"NANZ CHANNEL GUIDE"
+            ),
             description=(
                 "Panduan channel untuk membantu murid "
                 "menemukan ruang yang sesuai."
@@ -667,25 +656,21 @@ class NanzChannelGuide(commands.Cog):
             )
         )
 
-        # --------------------------------------------------------
+        # ========================================================
         # LOOP CATEGORY
-        # --------------------------------------------------------
+        # ========================================================
 
         for category, channels in categories:
 
-            category_name = self.normalize_name(
-                category.name
-            )
+            # ----------------------------------------------------
+            # CATEGORY HEADER
+            # ----------------------------------------------------
 
             category_description = (
                 self.get_category_description(
                     category
                 )
             )
-
-            # ----------------------------------------------------
-            # HEADER CATEGORY
-            # ----------------------------------------------------
 
             category_header = (
                 f"{arrow_purple} ▬『 "
@@ -700,19 +685,19 @@ class NanzChannelGuide(commands.Cog):
                 )
 
             # ----------------------------------------------------
-            # BUAT SEMUA CHANNEL
+            # CHANNEL LIST
             # ----------------------------------------------------
 
             channel_lines = []
 
             for channel in channels:
 
-                line = self.build_channel_line(
-                    channel,
-                    arrow_blue
+                channel_lines.append(
+                    self.build_channel_line(
+                        channel,
+                        arrow_blue
+                    )
                 )
-
-                channel_lines.append(line)
 
             category_block = (
                 category_header
@@ -720,12 +705,9 @@ class NanzChannelGuide(commands.Cog):
                 + "\n".join(channel_lines)
             )
 
-            # ----------------------------------------------------
-            # DISCORD EMBED LIMIT
-            # ----------------------------------------------------
-
-            # Jika field/category terlalu panjang,
-            # pecah menjadi beberapa bagian.
+            # ====================================================
+            # NORMAL CATEGORY
+            # ====================================================
 
             if len(category_block) <= 3900:
 
@@ -740,9 +722,9 @@ class NanzChannelGuide(commands.Cog):
                     + category_block
                 )
 
-                # -----------------------------------------------
-                # Kalau embed sudah mendekati batas
-                # -----------------------------------------------
+                # ------------------------------------------------
+                # EMBED SUDAH PENUH
+                # ------------------------------------------------
 
                 if len(new_description) > 5800:
 
@@ -772,22 +754,29 @@ class NanzChannelGuide(commands.Cog):
                         new_description
                     )
 
-            else:
+            # ====================================================
+            # CATEGORY TERLALU PANJANG
+            # ====================================================
 
-                # ------------------------------------------------
-                # CATEGORY TERLALU PANJANG
-                # Pecah berdasarkan channel
-                # ------------------------------------------------
+            else:
 
                 current_description = (
                     current_embed.description
                     or ""
                 )
 
+                # ------------------------------------------------
+                # HEADER
+                # ------------------------------------------------
+
                 header_text = (
                     category_header
                     + "\n"
                 )
+
+                # ------------------------------------------------
+                # Jika header tidak muat
+                # ------------------------------------------------
 
                 if (
                     len(current_description)
@@ -820,9 +809,9 @@ class NanzChannelGuide(commands.Cog):
                     + header_text
                 )
 
-                # -----------------------------------------------
-                # Tambahkan channel satu per satu
-                # -----------------------------------------------
+                # ------------------------------------------------
+                # CHANNEL SATU PER SATU
+                # ------------------------------------------------
 
                 for line in channel_lines:
 
@@ -835,6 +824,10 @@ class NanzChannelGuide(commands.Cog):
                         line
                         + "\n"
                     )
+
+                    # --------------------------------------------
+                    # EMBED PENUH
+                    # --------------------------------------------
 
                     if (
                         len(current_description)
@@ -870,9 +863,9 @@ class NanzChannelGuide(commands.Cog):
                             + addition
                         )
 
-        # --------------------------------------------------------
-        # SIMPAN EMBED TERAKHIR
-        # --------------------------------------------------------
+        # ========================================================
+        # EMBED TERAKHIR
+        # ========================================================
 
         if current_embed.description:
 
@@ -880,22 +873,25 @@ class NanzChannelGuide(commands.Cog):
                 current_embed
             )
 
-        # --------------------------------------------------------
+        # ========================================================
         # FOOTER
-        # --------------------------------------------------------
+        # ========================================================
 
-        for index, embed in enumerate(embeds):
+        for index, embed in enumerate(
+            embeds
+        ):
 
             embed.set_footer(
                 text=(
                     f"nanZ Server • Stay Solid! "
-                    f"• Halaman {index + 1}/{len(embeds)}"
+                    f"• Halaman "
+                    f"{index + 1}/{len(embeds)}"
                 )
             )
 
-        # --------------------------------------------------------
-        # KIRIM
-        # --------------------------------------------------------
+        # ========================================================
+        # SEND EMBED
+        # ========================================================
 
         for embed in embeds:
 
