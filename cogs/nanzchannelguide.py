@@ -6,11 +6,11 @@ from discord.ext import commands
 
 
 class NanzChannelGuide(commands.Cog):
+
     # =========================================================
     # CONFIG
     # =========================================================
 
-    # Category yang tidak ditampilkan di Channel Guide
     EXCLUDED_CATEGORY_IDS = {
         1416639085757468784,
         1485115656616546425,
@@ -21,18 +21,13 @@ class NanzChannelGuide(commands.Cog):
         1513028445423009923,
     }
 
-    # Role yang boleh menggunakan !channelguide
     MURID_ROLE_ID = 1453095603008442510
     CALON_MURID_ROLE_ID = 1504467138440597604
 
-    # Emoji khas nanZ
     PURPLE_ARROW_ID = 1512787191234035803
     BLUE_ARROW_ID = 1512787254312042496
 
-    # Batas aman Embed Description Discord
     MAX_DESCRIPTION_LENGTH = 3900
-
-    # Jeda antar pengiriman embed
     SEND_DELAY = 1.0
 
     # =========================================================
@@ -41,44 +36,40 @@ class NanzChannelGuide(commands.Cog):
 
     CHANNEL_DESCRIPTIONS = {
 
-        # =====================================================
         # MADING SEKOLAH
-        # =====================================================
 
         "tata-tertib":
-            "Tempat membaca dan memahami seluruh aturan yang berlaku di server nanZ.",
+            "Tempat membaca dan memahami aturan yang berlaku di server nanZ.",
 
         "sambutan":
-            "Tempat menyambut dan mengenalkan informasi penting bagi murid yang baru bergabung.",
+            "Tempat menyambut dan mengenalkan informasi penting bagi murid baru.",
 
         "atribut":
-            "Tempat melihat informasi mengenai role, atribut, dan identitas yang tersedia di nanZ.",
+            "Tempat melihat informasi role, atribut, dan identitas yang tersedia di nanZ.",
 
         "staff-sekolah":
-            "Tempat melihat daftar staff nanZ beserta informasi mengenai kepengurusan server.",
+            "Tempat melihat daftar staff dan informasi kepengurusan nanZ.",
 
         "giveaway":
-            "Tempat mendapatkan informasi mengenai giveaway dan kegiatan berhadiah yang sedang berlangsung.",
+            "Tempat mendapatkan informasi giveaway dan kegiatan berhadiah.",
 
         "booster-notifikasi":
-            "Tempat menerima informasi dan notifikasi khusus yang berkaitan dengan Booster nanZ.",
+            "Tempat menerima informasi khusus mengenai Booster nanZ.",
 
         "req-role-booster":
-            "Tempat mengajukan permintaan untuk mendapatkan role Booster sesuai ketentuan yang berlaku.",
+            "Tempat mengajukan permintaan role Booster sesuai ketentuan.",
 
         "perpisahan":
-            "Tempat memberikan ucapan dan pesan kepada murid atau staff yang akan meninggalkan nanZ.",
+            "Tempat memberikan ucapan dan pesan kepada murid atau staff yang meninggalkan nanZ.",
 
 
-        # =====================================================
         # HALAMAN SEKOLAH
-        # =====================================================
 
         "ruang-ngobrol":
-            "Tempat untuk berbincang santai, berkenalan, dan berinteraksi dengan murid lainnya.",
+            "Tempat berbincang santai, berkenalan, dan berinteraksi dengan murid lainnya.",
 
         "bahas-rp":
-            "Tempat berdiskusi dan berbagi hal seputar Roleplay bersama murid lainnya.",
+            "Tempat berdiskusi dan berbagi hal seputar Roleplay.",
 
         "ulang-tahun":
             "Tempat merayakan dan memberikan ucapan ulang tahun kepada murid nanZ.",
@@ -87,212 +78,167 @@ class NanzChannelGuide(commands.Cog):
             "Tempat mengirimkan pesan secara anonim tanpa menampilkan identitas pengirim.",
 
         "setup-kata":
-            "Tempat mengatur dan menggunakan berbagai fitur yang berkaitan dengan kata di nanZ.",
+            "Tempat menggunakan fitur quote yang hasilnya ditampilkan di Pojok Kata.",
 
         "pojok-kata":
-            "Tempat berbagi kata, cerita singkat, pemikiran, atau pesan yang ingin disampaikan.",
+            "Tempat berbagi kutipan, cerita singkat, pemikiran, atau pesan.",
 
 
-        # =====================================================
         # RUANG KELAS
-        # =====================================================
 
         "tanya-ai":
-            "Tempat bertanya kepada AI nanZ untuk mendapatkan bantuan, informasi, atau jawaban atas pertanyaan.",
+            "Tempat bertanya kepada AI nanZ untuk mendapatkan bantuan dan informasi.",
 
         "kelas-umum":
-            "Tempat berbagi materi, pengetahuan, dan pembahasan umum yang dapat dipelajari bersama.",
+            "Tempat berbagi materi, pengetahuan, dan pembahasan umum.",
 
         "info-menarik":
-            "Tempat menemukan berbagai fakta, informasi unik, dan hal menarik untuk diketahui.",
+            "Tempat menemukan fakta, informasi unik, dan hal menarik.",
 
 
-        # =====================================================
         # RUANG VIP OWNER
-        # =====================================================
 
         "streaming-youtube":
-            "Tempat mendapatkan informasi mengenai jadwal dan kegiatan streaming YouTube dari Guru Besar.",
+            "Tempat mendapatkan informasi mengenai streaming YouTube dari Guru Besar.",
 
         "donasi-penonton":
-            "Tempat memberikan dukungan atau donasi kepada kegiatan dan konten yang dibuat oleh Guru Besar.",
+            "Tempat memberikan dukungan atau donasi untuk konten Guru Besar.",
 
 
-        # =====================================================
         # RUANG KREATIVITAS
-        # =====================================================
 
         "berbagi-konten":
-            "Tempat membagikan berbagai konten, hasil karya, atau kreativitas yang ingin diperlihatkan kepada murid lainnya.",
+            "Tempat membagikan konten, hasil karya, dan kreativitas.",
 
         "daftar-event":
-            "Tempat melihat informasi event yang tersedia sekaligus melakukan pendaftaran untuk ikut berpartisipasi.",
+            "Tempat melihat informasi dan mendaftar berbagai event nanZ.",
 
         "galeri-siswa":
-            "Tempat memamerkan dan menikmati berbagai karya kreatif yang dibuat oleh murid nanZ.",
+            "Tempat memamerkan dan menikmati karya kreatif murid nanZ.",
 
 
-        # =====================================================
         # ZONA PERMAINAN BOT
-        # =====================================================
 
         "perintah-bot":
-            "Tempat menjalankan berbagai command bot yang tersedia untuk digunakan oleh murid nanZ.",
+            "Tempat menjalankan berbagai command bot yang tersedia di nanZ.",
 
         "owo¹":
-            "Tempat memainkan berbagai fitur permainan OwO bersama murid lainnya.",
+            "Tempat memainkan berbagai fitur permainan OwO.",
 
         "owo²":
-            "Tempat memainkan berbagai fitur permainan OwO bersama murid lainnya.",
+            "Tempat memainkan berbagai fitur permainan OwO.",
 
         "owo³":
-            "Tempat memainkan berbagai fitur permainan OwO bersama murid lainnya.",
+            "Tempat memainkan berbagai fitur permainan OwO.",
 
         "tebak-bendera":
-            "Tempat bermain tebak-tebakan bendera dan menguji pengetahuan tentang negara di dunia.",
+            "Tempat bermain tebak bendera dan menguji pengetahuan tentang negara.",
 
         "ethera-bot":
-            "Tempat memainkan berbagai permainan dan fitur yang tersedia dari Ethera Bot.",
+            "Tempat memainkan berbagai permainan dan fitur Ethera Bot.",
 
         "area-mancing":
-            "Tempat menggunakan fitur memancing dan menjalankan berbagai aktivitas yang berkaitan dengan fishing.",
+            "Tempat menggunakan fitur memancing dan aktivitas fishing.",
 
 
-        # =====================================================
         # ZONA PERMAINAN
-        # =====================================================
 
         "dokumentasi-game":
-            "Tempat membagikan screenshot, video, atau dokumentasi dari game yang sedang dimainkan.",
+            "Tempat membagikan screenshot, video, dan dokumentasi game.",
 
         "bermain game":
-            "Voice channel untuk bermain game dan berkomunikasi bersama murid lainnya.",
+            "Voice channel untuk bermain game dan berkomunikasi bersama.",
 
 
-        # =====================================================
         # RUANG BK
-        # =====================================================
 
         "pusat-bantuan":
-            "Tempat mencari bantuan, menyampaikan kendala, atau mendapatkan arahan mengenai masalah di nanZ.",
+            "Tempat mencari bantuan dan menyampaikan kendala di nanZ.",
 
         "curhat bk":
-            "Voice channel untuk bercerita, mencurahkan isi hati, atau berbicara secara lebih pribadi.",
+            "Voice channel untuk bercerita dan berbicara secara lebih pribadi.",
 
 
-        # =====================================================
         # RUANG NOBAR
-        # =====================================================
 
         "vote-film":
-            "Tempat memberikan pilihan dan menentukan film yang akan ditonton bersama dalam kegiatan nobar.",
+            "Tempat memilih film yang akan ditonton bersama dalam event nobar.",
 
         "diskusi-film":
-            "Tempat membahas film, memberikan pendapat, dan berdiskusi mengenai tontonan bersama.",
+            "Tempat membahas film dan berdiskusi mengenai tontonan bersama.",
 
         "nobar":
-            "Voice channel yang digunakan untuk menikmati kegiatan nonton bersama murid nanZ.",
+            "Voice channel untuk pelaksanaan event nonton bersama.",
 
 
-        # =====================================================
         # RUANG TEATER
-        # =====================================================
 
         "podcast":
-            "Voice channel untuk podcast, bincang santai, dan berbagai percakapan bersama murid lainnya.",
+            "Voice channel untuk pelaksanaan event podcast dan bincang bersama.",
 
         "games":
-            "Voice channel untuk bermain berbagai permainan dan bersenang-senang bersama murid nanZ.",
+            "Voice channel untuk pelaksanaan event games bersama murid nanZ.",
 
 
-        # =====================================================
         # RUANG DONATUR
-        # =====================================================
 
         "info-donasi":
-            "Tempat melihat informasi mengenai donasi, dukungan, dan hal yang berkaitan dengan donatur nanZ.",
+            "Tempat melihat informasi mengenai donasi dan dukungan untuk nanZ.",
 
         "area-donasi":
-            "Tempat khusus bagi donatur untuk beraktivitas dan berinteraksi di area yang telah disediakan.",
+            "Tempat khusus donatur untuk beraktivitas dan berinteraksi.",
 
         "top-donatur":
-            "Tempat melihat daftar murid dengan kontribusi donasi tertinggi di nanZ.",
+            "Tempat melihat daftar murid dengan kontribusi donasi tertinggi.",
 
         "interface-vip":
-            "Tempat mengakses informasi dan fasilitas khusus yang tersedia untuk murid dengan akses VIP.",
+            "Tempat mengakses informasi dan fasilitas khusus VIP.",
 
         "custom room vip":
-            "Voice channel khusus VIP yang dapat digunakan untuk berbincang atau beraktivitas bersama.",
+            "Voice channel khusus VIP untuk berbincang dan beraktivitas bersama.",
 
 
-        # =====================================================
         # AREA SEKOLAH
-        # =====================================================
 
         "pengaturan-voice":
-            "Tempat mengatur berbagai kebutuhan voice channel sesuai fitur yang tersedia di nanZ.",
+            "Tempat mengatur berbagai kebutuhan voice channel di nanZ.",
 
         "daftar-bot-music":
-            "Tempat melihat daftar bot musik yang dapat digunakan untuk menemani aktivitas di voice channel.",
+            "Tempat melihat bot musik yang dapat digunakan di voice channel.",
 
         "girls corners":
-            "Voice channel khusus siswi untuk berbincang dan melakukan aktivitas bersama.",
+            "Voice channel khusus siswi untuk berbincang dan beraktivitas bersama.",
 
         "obrolan terbuka":
-            "Voice channel umum yang dapat digunakan murid untuk berbincang dan bersosialisasi bersama.",
+            "Voice channel umum untuk berbincang dan bersosialisasi.",
 
         "custom room 1":
-            "Voice channel custom yang dapat digunakan untuk membuat ruang obrolan bersama.",
+            "Voice channel custom untuk membuat ruang obrolan bersama.",
 
         "custom room 2":
-            "Voice channel custom yang dapat digunakan untuk membuat ruang obrolan bersama.",
+            "Voice channel custom untuk membuat ruang obrolan bersama.",
     }
 
     # =========================================================
-    # NORMALIZE NAME
+    # NORMALIZE CHANNEL NAME
     # =========================================================
 
     @staticmethod
     def normalize_name(name: str) -> str:
-        """
-        Membersihkan nama channel dari:
-        - Custom Discord Emoji
-        - Unicode Emoji
-        - Dekorasi
-        - Separator
-        - Backtick
-
-        Contoh:
-
-        🎙️・Bermain Game
-        -> bermain game
-
-        💬・🗨️﹕ruang-ngobrol
-        -> ruang-ngobrol
-        """
 
         if not name:
             return ""
 
-        # Case insensitive
         name = name.casefold()
 
-        # -----------------------------------------------------
         # Custom Discord Emoji
-        # <:nama:id>
-        # <a:nama:id>
-        # -----------------------------------------------------
-
         name = re.sub(
             r"<a?:\w+:\d+>",
             "",
             name
         )
 
-        # -----------------------------------------------------
         # Unicode Emoji
-        # -----------------------------------------------------
-
         name = re.sub(
             r"[\U0001F000-\U0001FAFF"
             r"\U00002700-\U000027BF"
@@ -305,10 +251,7 @@ class NanzChannelGuide(commands.Cog):
             name
         )
 
-        # -----------------------------------------------------
         # Dekorasi / separator
-        # -----------------------------------------------------
-
         name = re.sub(
             r"[╭╮╰╯┇┆┊┋│┃"
             r"━─═╍╾╼"
@@ -318,10 +261,8 @@ class NanzChannelGuide(commands.Cog):
             name
         )
 
-        # Hapus backtick
         name = name.replace("`", "")
 
-        # Rapikan spasi
         name = re.sub(
             r"\s+",
             " ",
@@ -350,7 +291,7 @@ class NanzChannelGuide(commands.Cog):
         )
 
     # =========================================================
-    # CHECK CHANNEL ACCESS
+    # CHECK CHANNEL VISIBILITY
     # =========================================================
 
     def can_murid_view_channel(
@@ -358,13 +299,6 @@ class NanzChannelGuide(commands.Cog):
         guild: discord.Guild,
         channel
     ) -> bool:
-        """
-        Channel ditampilkan jika:
-
-        Murid bisa View Channel
-        ATAU
-        Calon Murid bisa View Channel.
-        """
 
         murid_role = guild.get_role(
             self.MURID_ROLE_ID
@@ -377,10 +311,7 @@ class NanzChannelGuide(commands.Cog):
         if not murid_role and not calon_murid_role:
             return False
 
-        # -----------------------------------------------------
-        # Cek Murid
-        # -----------------------------------------------------
-
+        # Murid
         if murid_role:
 
             permissions = channel.permissions_for(
@@ -390,10 +321,7 @@ class NanzChannelGuide(commands.Cog):
             if permissions.view_channel:
                 return True
 
-        # -----------------------------------------------------
-        # Cek Calon Murid
-        # -----------------------------------------------------
-
+        # Calon Murid
         if calon_murid_role:
 
             permissions = channel.permissions_for(
@@ -406,7 +334,7 @@ class NanzChannelGuide(commands.Cog):
         return False
 
     # =========================================================
-    # GET CHANNEL DESCRIPTION
+    # GET DESCRIPTION
     # =========================================================
 
     def get_channel_description(
@@ -418,13 +346,11 @@ class NanzChannelGuide(commands.Cog):
             channel_name
         )
 
-        # Direct lookup
         if normalized in self.CHANNEL_DESCRIPTIONS:
             return self.CHANNEL_DESCRIPTIONS[
                 normalized
             ]
 
-        # Fallback normalization
         for key, description in self.CHANNEL_DESCRIPTIONS.items():
 
             if self.normalize_name(key) == normalized:
@@ -456,12 +382,11 @@ class NanzChannelGuide(commands.Cog):
         blue_arrow
     ) -> str:
 
-        if blue_arrow:
-            arrow = str(
-                blue_arrow
-            )
-        else:
-            arrow = "🔵"
+        arrow = (
+            str(blue_arrow)
+            if blue_arrow
+            else "🔵"
+        )
 
         description = (
             self.get_channel_description(
@@ -475,19 +400,40 @@ class NanzChannelGuide(commands.Cog):
         )
 
     # =========================================================
-    # SORT CATEGORY
+    # GET CHANNELS IN DISCORD ORDER
+    # =========================================================
+
+    def get_category_channels_in_discord_order(
+        self,
+        guild: discord.Guild,
+        category
+    ):
+
+        """
+        Mengikuti urutan asli channel di Discord.
+
+        Text, Voice, dan Stage diperlakukan sama.
+        Tidak ada channel yang diprioritaskan.
+        """
+
+        return [
+            channel
+            for channel in guild.channels
+            if channel.category_id == category.id
+            and self.can_murid_view_channel(
+                guild,
+                channel
+            )
+        ]
+
+    # =========================================================
+    # SORT CATEGORIES
     # =========================================================
 
     @staticmethod
     def sort_categories_discord_order(
         categories
     ):
-        """
-        Mengurutkan kategori berdasarkan posisi asli
-        di server Discord.
-
-        Tidak berdasarkan nama.
-        """
 
         return sorted(
             categories,
@@ -498,62 +444,16 @@ class NanzChannelGuide(commands.Cog):
         )
 
     # =========================================================
-    # SORT CHANNEL
-    # =========================================================
-
-    @staticmethod
-    def sort_channels_discord_order(
-        channels
-    ):
-        """
-        Mengurutkan channel berdasarkan posisi asli
-        di dalam server Discord.
-
-        Tidak berdasarkan nama.
-        """
-
-        return sorted(
-            channels,
-            key=lambda channel: (
-                channel.position,
-                channel.id
-            )
-        )
-
-    # =========================================================
     # SEND CATEGORY
     # =========================================================
 
     async def send_category(
         self,
-        ctx: commands.Context,
+        ctx,
         category,
         visible_channels,
         blue_arrow
     ):
-        """
-        Format:
-
-        **NAMA KATEGORI**
-        🔵 #channel
-        > deskripsi
-        🔵 #channel
-        > deskripsi
-        """
-
-        # =====================================================
-        # Pastikan channel mengikuti posisi Discord
-        # =====================================================
-
-        visible_channels = (
-            self.sort_channels_discord_order(
-                visible_channels
-            )
-        )
-
-        # =====================================================
-        # Embed awal
-        # =====================================================
 
         embed = discord.Embed(
             color=discord.Color.blurple()
@@ -562,10 +462,6 @@ class NanzChannelGuide(commands.Cog):
         embed.description = (
             f"**{category.name}**"
         )
-
-        # =====================================================
-        # CHANNEL
-        # =====================================================
 
         for channel in visible_channels:
 
@@ -576,27 +472,20 @@ class NanzChannelGuide(commands.Cog):
                 )
             )
 
-            # Antar-channel hanya satu newline
             new_description = (
                 embed.description
                 + "\n"
                 + channel_text
             )
 
-            # -------------------------------------------------
-            # Masih muat
-            # -------------------------------------------------
-
+            # Masih dalam batas Embed
             if len(new_description) <= self.MAX_DESCRIPTION_LENGTH:
 
                 embed.description = (
                     new_description
                 )
 
-            # -------------------------------------------------
-            # Embed penuh
-            # -------------------------------------------------
-
+            # Embed sudah penuh
             else:
 
                 await ctx.send(
@@ -607,20 +496,14 @@ class NanzChannelGuide(commands.Cog):
                     self.SEND_DELAY
                 )
 
-                # Embed baru
                 embed = discord.Embed(
                     color=discord.Color.blurple()
                 )
 
                 embed.description = (
-                    f"**{category.name}**"
-                    f"\n"
+                    f"**{category.name}**\n"
                     f"{channel_text}"
                 )
-
-        # =====================================================
-        # Kirim embed terakhir
-        # =====================================================
 
         if embed.description:
 
@@ -629,7 +512,7 @@ class NanzChannelGuide(commands.Cog):
             )
 
     # =========================================================
-    # CHANNEL GUIDE COMMAND
+    # COMMAND
     # =========================================================
 
     @commands.command(
@@ -643,18 +526,18 @@ class NanzChannelGuide(commands.Cog):
     @commands.guild_only()
     async def channelguide(
         self,
-        ctx: commands.Context
+        ctx
     ):
-
-        # =====================================================
-        # CHECK USER
-        # =====================================================
 
         if not isinstance(
             ctx.author,
             discord.Member
         ):
             return
+
+        # -----------------------------------------------------
+        # Hanya Murid / Calon Murid
+        # -----------------------------------------------------
 
         if not self.has_member_role(
             ctx.author
@@ -669,9 +552,9 @@ class NanzChannelGuide(commands.Cog):
 
         guild = ctx.guild
 
-        # =====================================================
-        # GET CUSTOM EMOJI
-        # =====================================================
+        # -----------------------------------------------------
+        # Custom Emoji
+        # -----------------------------------------------------
 
         purple_arrow = (
             self.get_custom_emoji(
@@ -687,16 +570,15 @@ class NanzChannelGuide(commands.Cog):
             )
         )
 
-        # =====================================================
-        # HEADER
-        # =====================================================
+        header_arrow = (
+            str(purple_arrow)
+            if purple_arrow
+            else "🟣"
+        )
 
-        if purple_arrow:
-            header_arrow = str(
-                purple_arrow
-            )
-        else:
-            header_arrow = "🟣"
+        # -----------------------------------------------------
+        # Header
+        # -----------------------------------------------------
 
         header_embed = discord.Embed(
             description=(
@@ -708,10 +590,6 @@ class NanzChannelGuide(commands.Cog):
 
         try:
 
-            # =================================================
-            # KIRIM HEADER
-            # =================================================
-
             await ctx.send(
                 embed=header_embed
             )
@@ -720,9 +598,9 @@ class NanzChannelGuide(commands.Cog):
                 self.SEND_DELAY
             )
 
-            # =================================================
-            # AMBIL SEMUA CATEGORY
-            # =================================================
+            # -------------------------------------------------
+            # Semua kategori kecuali excluded
+            # -------------------------------------------------
 
             categories = [
                 category
@@ -730,13 +608,9 @@ class NanzChannelGuide(commands.Cog):
                 if category.id not in self.EXCLUDED_CATEGORY_IDS
             ]
 
-            # =================================================
-            # URUTAN CATEGORY
-            # =================================================
-            #
-            # Mengikuti posisi kategori di Discord.
-            #
-            # =================================================
+            # -------------------------------------------------
+            # Urutan kategori mengikuti Discord
+            # -------------------------------------------------
 
             categories = (
                 self.sort_categories_discord_order(
@@ -744,44 +618,22 @@ class NanzChannelGuide(commands.Cog):
                 )
             )
 
-            # =================================================
-            # PROCESS CATEGORY
-            # =================================================
+            # -------------------------------------------------
+            # Process kategori
+            # -------------------------------------------------
 
             for category in categories:
 
-                # -------------------------------------------------
-                # Cari channel yang dapat dilihat oleh:
-                #
-                # Murid OR Calon Murid
-                # -------------------------------------------------
-
-                visible_channels = [
-                    channel
-                    for channel in category.channels
-                    if self.can_murid_view_channel(
-                        guild,
-                        channel
-                    )
-                ]
-
-                # Tidak ada channel yang bisa dilihat
-                if not visible_channels:
-                    continue
-
-                # -------------------------------------------------
-                # Urutkan sesuai posisi asli Discord
-                # -------------------------------------------------
-
+                # Ambil channel berdasarkan urutan Discord
                 visible_channels = (
-                    self.sort_channels_discord_order(
-                        visible_channels
+                    self.get_category_channels_in_discord_order(
+                        guild,
+                        category
                     )
                 )
 
-                # -------------------------------------------------
-                # Kirim kategori
-                # -------------------------------------------------
+                if not visible_channels:
+                    continue
 
                 await self.send_category(
                     ctx,
@@ -794,19 +646,11 @@ class NanzChannelGuide(commands.Cog):
                     self.SEND_DELAY
                 )
 
-        # =====================================================
-        # HTTP ERROR
-        # =====================================================
-
         except discord.HTTPException as e:
 
             print(
                 f"[ChannelGuide] HTTP Error: {e}"
             )
-
-        # =====================================================
-        # GENERAL ERROR
-        # =====================================================
 
         except Exception as e:
 
@@ -821,7 +665,7 @@ class NanzChannelGuide(commands.Cog):
     @channelguide.error
     async def channelguide_error(
         self,
-        ctx: commands.Context,
+        ctx,
         error
     ):
 
