@@ -304,7 +304,7 @@ class Ticket(commands.Cog):
 
         embed = discord.Embed(
             description=(
-                "# <a:support:1553706267816493060> nanZ Support\n",
+                "# <a:support:1553706267816493060> nanZ Support\n"
                 "<a:blue:1512787254312042496> **Keluhan**\n"
                 "> Laporkan pengalaman tidak nyaman atau masalah yang kamu alami.\n"
 
@@ -324,7 +324,7 @@ class Ticket(commands.Cog):
         )
 
         embed.set_footer(
-            text="Ruang BK"
+            text="nanZ Server • Ruang BK"
         )
 
         await ctx.send(
