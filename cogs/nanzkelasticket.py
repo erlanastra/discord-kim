@@ -2,6 +2,8 @@ import asyncio
 import io
 import json
 import logging
+import math
+import random
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +11,7 @@ import aiohttp
 import aiomysql
 import discord
 from discord.ext import commands
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
 # =========================================================
@@ -148,8 +151,141 @@ async def send_log(bot, guild, message):
 
 
 # =========================================================
-# CLASS CARD
+# TEMA VISUAL (ungu-biru, gaya welcome GIF): CARD, BANNER, EMBED
 # =========================================================
+
+FONT_BOLD = "fonts/LEMONMILK-Bold.otf"
+FONT_MEDIUM = "fonts/LEMONMILK-Medium.otf"
+FONT_REGULAR = "fonts/LEMONMILK-Regular.otf"
+FONT_LIGHT = "fonts/LEMONMILK-Light.otf"
+_FONT_FALLBACKS = (
+    "DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "arial.ttf",
+)
+
+BG_TOP, BG_BOT = (18, 10, 45), (40, 20, 80)
+THEME_PURPLE = (130, 80, 255)
+THEME_BLUE = (80, 180, 255)
+CARD_BG = (30, 15, 65)
+SOFT_PURPLE = (160, 120, 255)
+SOFT_BLUE = (150, 210, 255)
+OK_GREEN = (90, 220, 150)
+WARN_ORANGE = (255, 170, 60)
+BAD_RED = (235, 85, 95)
+MUTED_GRAY = (120, 120, 145)
+
+CARD_W, CARD_H = 1200, 650
+CARD_RECT = (25, 25, CARD_W - 25, CARD_H - 25)
+LOGO_SIZE = 150
+LOGO_CX, LOGO_CY = 177, 175
+RX0, RX1 = 340, CARD_W - 70
+
+EMBED_PURPLE = discord.Color.from_rgb(*THEME_PURPLE)
+EMBED_BLUE = discord.Color.from_rgb(*THEME_BLUE)
+DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+FOOTER_TEXT = "nanZ Server • Berbeda Kelas, Tetap Satu Sekolah."
+DASHBOARD_MARKER = "NANZ_STAFF_DASHBOARD"
+BANNER_NAME = "banner.png"
+
+STATUS_LABEL = {
+    "Active": "ACTIVE",
+    "Grace": "GRACE",
+    "Inactive": "INACTIVE",
+    "Dissolved": "DIBUBARKAN",
+}
+
+STATUS_META = {
+    "Active": "🟢 Aktif",
+    "Grace": "🟠 Masa Grace",
+    "Inactive": "🔴 Nonaktif",
+    "Dissolved": "⚫ Dibubarkan",
+}
+
+BILLING_META = {
+    "Paid": "✅ Lunas",
+    "Unpaid": "⏳ Belum Lunas",
+}
+
+
+# ---------- helper umum ----------
+
+def slot_bar(count, total=MAX_MEMBER, length=10):
+    ratio = min(max(count / total, 0), 1) if total else 0
+    filled = round(length * ratio)
+    return "▰" * filled + "▱" * (length - filled)
+
+
+def style_embed(embed, footer=None):
+    embed.set_footer(text=footer or FOOTER_TEXT)
+    return embed
+
+
+def stamp(value, style="F"):
+    dt = db_dt(value)
+    return f"<t:{int(dt.timestamp())}:{style}>" if dt else "-"
+
+
+def _card_font(path, size):
+    for p in (path, *_FONT_FALLBACKS):
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _lerp_color(c1, c2, t):
+    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+
+
+def _clamp(v, lo=0, hi=255):
+    return max(lo, min(hi, int(v)))
+
+
+def hex_rgb(value):
+    value = (value or "").lstrip("#")
+
+    try:
+        return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+    except Exception:
+        return THEME_PURPLE
+
+
+def _fit_font(draw, text, path, start, max_w, min_size=14):
+    size = start
+    while size > min_size:
+        f = _card_font(path, size)
+        b = draw.textbbox((0, 0), text, font=f)
+        if b[2] - b[0] <= max_w:
+            return f, text
+        size -= 2
+    f = _card_font(path, min_size)
+    while text and draw.textbbox((0, 0), text + "…", font=f)[2] > max_w:
+        text = text[:-1]
+    return f, text + "…"
+
+
+def _wrap_lines(draw, text, font, max_w, max_lines=2):
+    words = (text or "-").split()
+    lines, current = [], ""
+
+    for word in words:
+        test = (current + " " + word).strip()
+        if draw.textlength(test, font=font) <= max_w:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+
+    if current:
+        lines.append(current)
+
+    return lines[:max_lines]
+
+
+# ---------- gambar: logo / avatar ----------
 
 async def load_logo(url):
     if not url:
@@ -165,11 +301,8 @@ async def load_logo(url):
 
                 data = await response.read()
 
-        from PIL import Image
-
-        image = Image.open(io.BytesIO(data))
-        image = image.convert("RGBA")
-        image.thumbnail((150, 150))
+        image = Image.open(io.BytesIO(data)).convert("RGBA")
+        image.thumbnail((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
 
         return image
 
@@ -178,13 +311,303 @@ async def load_logo(url):
         return None
 
 
-def hex_rgb(value):
-    value = value.lstrip("#")
-
+async def load_avatar(user):
     try:
-        return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+        data = await user.display_avatar.replace(size=128, format="png").read()
+        return Image.open(io.BytesIO(data)).convert("RGBA")
     except Exception:
-        return (52, 152, 219)
+        return None
+
+
+def _circle_image(img, size, text="nZ"):
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+
+    if img:
+        img = img.copy()
+        img.thumbnail((size, size), Image.LANCZOS)
+        canvas.paste(img, ((size - img.width) // 2, (size - img.height) // 2), img)
+    else:
+        d = ImageDraw.Draw(canvas)
+        d.ellipse((0, 0, size, size), fill=(*THEME_PURPLE, 120))
+        d.text(
+            (size // 2, size // 2),
+            text,
+            fill=(240, 242, 245, 255),
+            font=_card_font(FONT_BOLD, int(size * 0.31)),
+            anchor="mm",
+        )
+
+    mask = Image.new("L", (size * 4, size * 4), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size * 4, size * 4), fill=255)
+    mask = mask.resize((size, size), Image.LANCZOS)
+
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(canvas, (0, 0), mask)
+
+    return out
+
+
+# ---------- gambar: background bersama ----------
+
+def _backdrop(W, H, seed=7):
+    rng = random.Random(seed)
+
+    bg = Image.new("RGB", (W, H))
+    bd = ImageDraw.Draw(bg)
+    for y in range(H):
+        bd.line([(0, y), (W, y)], fill=_lerp_color(BG_TOP, BG_BOT, y / H))
+    base = bg.convert("RGBA")
+
+    orbs = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(orbs)
+    size = max(W, H) * 0.17
+    for ox, oy, br, oc in [
+        (W * .08, H * .18, size, THEME_PURPLE),
+        (W * .93, H * .78, size, THEME_BLUE),
+        (W * .62, H * .02, size * .65, THEME_PURPLE),
+    ]:
+        for st in range(int(br), 0, -6):
+            od.ellipse([ox - st, oy - st, ox + st, oy + st],
+                       fill=(*oc, _clamp(55 * (st / br) ** 2.8)))
+    base = Image.alpha_composite(base, orbs)
+
+    aur = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ad = ImageDraw.Draw(aur)
+    for by, amp, k, off, col, a in [
+        (H - 90, 34, 2, 0.0, THEME_BLUE, 55),
+        (H - 55, 26, 3, 2.0, THEME_PURPLE, 70),
+        (H - 20, 20, 4, 4.0, SOFT_BLUE, 45),
+    ]:
+        pts = [(x, by + amp * math.sin(math.tau * k * x / W + off)) for x in range(0, W + 10, 12)]
+        ad.polygon(pts + [(W, H), (0, H)], fill=(*col, a))
+    base = Image.alpha_composite(base, aur.filter(ImageFilter.GaussianBlur(7)))
+
+    fl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(fl)
+    for _ in range(int(W * H / 8000)):
+        x, y, r = rng.uniform(0, W), rng.uniform(0, H), rng.uniform(1.0, 2.6)
+        fd.ellipse([x - r, y - r, x + r, y + r], fill=(*SOFT_BLUE, rng.randint(80, 190)))
+    for _ in range(max(int(W * H / 50000), 6)):
+        x, y = rng.uniform(15, W - 15), rng.uniform(12, H - 12)
+        sz = rng.uniform(5, 10)
+        q = sz * 0.25
+        fd.polygon(
+            [(x, y - sz), (x + q, y - q), (x + sz, y), (x + q, y + q),
+             (x, y + sz), (x - q, y + q), (x - sz, y), (x - q, y - q)],
+            fill=(*SOFT_PURPLE, rng.randint(90, 220)),
+        )
+    return Image.alpha_composite(base, fl)
+
+
+def _glass_card(base, rect, radius=30):
+    W, H = base.size
+    pl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(pl)
+    pd.rounded_rectangle(rect, radius=radius, fill=(*CARD_BG, 200))
+    pd.rounded_rectangle(rect, radius=radius, outline=(*THEME_PURPLE, 90), width=2)
+    return Image.alpha_composite(base, pl)
+
+
+def _shimmer(base, rect, radius=30, pos=0.62):
+    W, H = base.size
+    sh = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sh)
+    sp = int(W * pos)
+    for k in range(-30, 31):
+        sd.line([(sp + k + 80, 0), (sp + k - 80, H)],
+                fill=(255, 255, 255, _clamp(22 * (1 - abs(k) / 30))), width=2)
+    cm = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(cm).rounded_rectangle(rect, radius=radius, fill=255)
+    sh.putalpha(Image.composite(sh.getchannel("A"), Image.new("L", (W, H), 0), cm))
+    return Image.alpha_composite(base, sh)
+
+
+def _icon_with_orbit(base, cx, cy, icon, size, accent):
+    W, H = base.size
+    rr = size // 2 + 12
+
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse(
+        [cx - rr - 8, cy - rr - 8, cx + rr + 8, cy + rr + 8],
+        fill=(*_lerp_color(THEME_BLUE, THEME_PURPLE, 0.6), 90),
+    )
+    base = Image.alpha_composite(base, glow.filter(ImageFilter.GaussianBlur(14)))
+
+    orb = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(orb)
+    box = [cx - rr, cy - rr, cx + rr, cy + rr]
+    od.ellipse(box, outline=(255, 255, 255, 55), width=2)
+    od.arc(box, -40, 90, fill=(*accent, 255), width=5)
+    od.arc(box, 150, 260, fill=(*SOFT_PURPLE, 255), width=5)
+    base = Image.alpha_composite(base, orb)
+    base.alpha_composite(icon, (cx - size // 2, cy - size // 2))
+    return base
+
+
+def _chip(draw, x, cy, text, font, dot, h=36):
+    w = int(draw.textlength(text, font=font)) + 58
+    draw.rounded_rectangle([x, cy - h // 2, x + w, cy + h // 2], radius=h // 2,
+                           fill=(*dot, 40), outline=(*dot, 200), width=1)
+    draw.ellipse([x + 16, cy - 6, x + 28, cy + 6], fill=(*dot, 255))
+    draw.text((x + 40, cy), text, font=font, fill=(255, 255, 255, 245), anchor="lm")
+    return x + w
+
+
+def _draw_ring(draw, cx, cy, r, ratio, width=13):
+    box = [cx - r, cy - r, cx + r, cy + r]
+    draw.arc(box, 0, 360, fill=(255, 255, 255, 40), width=width)
+
+    steps = int(120 * min(max(ratio, 0), 1))
+    for s in range(steps):
+        a0 = -90 + s * 3
+        c = _lerp_color(THEME_BLUE, THEME_PURPLE, s / 120)
+        draw.arc(box, a0, a0 + 4, fill=(*c, 255), width=width)
+
+
+# ---------- gambar: CARD KELAS (panel publik) ----------
+
+def _render_class_card_sync(d, logo, accent):
+    W, H = CARD_W, CARD_H
+    count = d["member_count"]
+    ratio = min(count / MAX_MEMBER, 1)
+    now = utc_now()
+
+    status = d["status"]
+    status_color = {
+        "Active": accent,
+        "Grace": WARN_ORANGE,
+        "Inactive": BAD_RED,
+        "Dissolved": MUTED_GRAY,
+    }.get(status, accent)
+
+    base = _backdrop(W, H, 7)
+    base = _glass_card(base, CARD_RECT)
+
+    # panel kiri
+    pl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(pl)
+    left = (55, 55, 300, 595)
+    pd.rounded_rectangle(left, radius=22, fill=(*THEME_PURPLE, 38))
+    pd.rounded_rectangle(left, radius=22, outline=(*SOFT_PURPLE, 70), width=1)
+    for i in range(55, 596):
+        c = _lerp_color(THEME_BLUE, THEME_PURPLE, (i - 55) / 540)
+        pd.point((314, i), fill=(*c, 200))
+        pd.point((315, i), fill=(*c, 200))
+    base = Image.alpha_composite(base, pl)
+
+    base = _icon_with_orbit(base, LOGO_CX, LOGO_CY, _circle_image(logo, LOGO_SIZE), LOGO_SIZE, accent)
+
+    tl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    td = ImageDraw.Draw(tl)
+
+    f_pill = _card_font(FONT_MEDIUM, 19)
+    f_label = _card_font(FONT_LIGHT, 14)
+    f_small = _card_font(FONT_REGULAR, 17)
+    f_body = _card_font(FONT_REGULAR, 18)
+    f_chip = _card_font(FONT_MEDIUM, 16)
+
+    # kode kelas (kiri)
+    if d.get("class_id"):
+        code = f"KELAS #{int(d['class_id']):03}"
+        cw = int(td.textlength(code, font=f_label)) + 34
+        td.rounded_rectangle([LOGO_CX - cw // 2, 288, LOGO_CX + cw // 2, 314], radius=13,
+                             fill=(*THEME_PURPLE, 90), outline=(*SOFT_PURPLE, 200), width=1)
+        td.text((LOGO_CX, 301), code, font=f_label, fill=(255, 255, 255, 255), anchor="mm")
+
+    # ring progres siswa (kiri)
+    _draw_ring(td, LOGO_CX, 425, 62, ratio)
+    td.text((LOGO_CX, 415), str(count), font=_card_font(FONT_BOLD, 44), fill=(255, 255, 255, 255), anchor="mm")
+    td.text((LOGO_CX, 449), f"/ {MAX_MEMBER}", font=_card_font(FONT_MEDIUM, 17), fill=(*SOFT_BLUE, 230), anchor="mm")
+    td.text((LOGO_CX, 520), "SISWA TERDAFTAR", font=f_label, fill=(*SOFT_BLUE, 220), anchor="mm")
+    td.text((LOGO_CX, 548), f"{int(ratio * 100)}% terisi", font=f_small, fill=(255, 255, 255, 230), anchor="mm")
+
+    # header kanan
+    status_text = STATUS_LABEL.get(status, str(status).upper())
+    pw = int(td.textlength(status_text, font=f_pill)) + 44
+    td.rounded_rectangle([RX1 - pw, 58, RX1, 102], radius=22, fill=(*status_color, 235))
+    td.text((RX1 - pw / 2, 80), status_text, font=f_pill, fill=(255, 255, 255, 255), anchor="mm")
+
+    f_name, name_fit = _fit_font(td, d["class_name"], FONT_BOLD, 44, RX1 - RX0 - pw - 24)
+    td.text((RX0, 80), name_fit, font=f_name, fill=(255, 255, 255, 255), anchor="lm")
+    td.text((RX0, 134), d["motto"] or "-", font=_card_font(FONT_MEDIUM, 22), fill=(*accent, 255), anchor="lm")
+
+    for i, line in enumerate(_wrap_lines(td, d["description"], f_body, RX1 - RX0, max_lines=2)):
+        td.text((RX0, 178 + i * 27), line, font=f_body, fill=(220, 220, 240, 235), anchor="lm")
+
+    # kotak info 3 x 2
+    top, bot = 256, 394
+    td.rounded_rectangle([RX0, top, RX1, bot], radius=16, fill=(*THEME_PURPLE, 30),
+                         outline=(*SOFT_PURPLE, 75), width=1)
+
+    due = d["due_date"]
+    if due:
+        days = (due - now).days
+        remaining = f"{days} hari" if days >= 0 else f"Lewat {abs(days)} hari"
+    else:
+        days, remaining = None, "-"
+
+    pairs = [
+        ("STAFF PENDAMPING", d["staff_name"] or "-"),
+        ("OWNER KELAS", d["owner_name"] or "-"),
+        ("SISA WAKTU", remaining),
+        ("BERDIRI SEJAK", d["created_at"].strftime("%d %b %Y") if d["created_at"] else "-"),
+        ("AKTIF SAMPAI", due.strftime("%d %b %Y") if due else "-"),
+        ("KODE KELAS", f"#{int(d['class_id']):03}" if d.get("class_id") else "-"),
+    ]
+    col_w = (RX1 - RX0 - 48) // 3
+    for i, (label, value) in enumerate(pairs):
+        col, row = i % 3, i // 3
+        x = RX0 + 24 + col * col_w
+        y = top + 28 + row * 62
+        f_val, val_fit = _fit_font(td, value, FONT_REGULAR, 19, col_w - 18, min_size=12)
+        td.text((x, y), label, font=f_label, fill=(*SOFT_BLUE, 210), anchor="lm")
+        td.text((x, y + 24), val_fit, font=f_val, fill=(255, 255, 255, 245), anchor="lm")
+
+    # slot bar
+    bar_y = 424
+    td.rounded_rectangle([RX0, bar_y, RX1, bar_y + 16], radius=8, fill=(50, 45, 80, 220))
+    if ratio > 0:
+        fx = RX0 + int((RX1 - RX0) * ratio)
+        td.rounded_rectangle([RX0, bar_y, fx, bar_y + 16], radius=8,
+                             fill=(*_lerp_color(THEME_BLUE, accent, 0.5), 255))
+        td.ellipse([fx - 9, bar_y - 1, fx + 3, bar_y + 17], fill=(255, 255, 255, 170))
+    slot_text = "PENUH" if count >= MAX_MEMBER else f"{MAX_MEMBER - count} slot tersisa"
+    td.text((RX0, bar_y + 36), slot_text, font=f_label, fill=(*SOFT_BLUE, 220), anchor="lm")
+    td.text((RX1, bar_y + 36), f"{count} dari {MAX_MEMBER} kursi terisi", font=f_label,
+            fill=(*SOFT_PURPLE, 220), anchor="rm")
+
+    # chips
+    cy = 500
+    x = RX0
+    billing = d.get("billing_status")
+    if billing == "Paid":
+        x = _chip(td, x, cy, "Tagihan Lunas", f_chip, OK_GREEN) + 12
+    elif billing == "Unpaid":
+        x = _chip(td, x, cy, "Tagihan Belum Lunas", f_chip, WARN_ORANGE) + 12
+    open_reg = status == "Active" and count < MAX_MEMBER
+    x = _chip(td, x, cy, "Pendaftaran Dibuka" if open_reg else "Pendaftaran Ditutup",
+              f_chip, THEME_BLUE if open_reg else MUTED_GRAY) + 12
+    _chip(td, x, cy, f"Kapasitas {MAX_MEMBER} siswa", f_chip, SOFT_PURPLE)
+
+    # bar masa aktif
+    if days is not None:
+        tr = min(max(days / 30, 0), 1)
+        td.text((RX0, 540), "MASA AKTIF", font=f_label, fill=(*SOFT_BLUE, 210), anchor="lm")
+        td.rounded_rectangle([RX0, 556, RX1, 566], radius=5, fill=(50, 45, 80, 220))
+        if tr > 0:
+            td.rounded_rectangle([RX0, 556, RX0 + int((RX1 - RX0) * tr), 566], radius=5,
+                                 fill=(*_lerp_color(SOFT_PURPLE, THEME_BLUE, tr), 255))
+
+    td.text((55, H - 42), "Berbeda Kelas, Tetap Satu Sekolah.", font=f_label, fill=(*SOFT_PURPLE, 190), anchor="lm")
+    td.text((RX1 + 30, H - 42), "nanZ Server", font=f_label, fill=(*SOFT_BLUE, 190), anchor="rm")
+
+    base = Image.alpha_composite(base, tl)
+    base = _shimmer(base, CARD_RECT)
+
+    buffer = io.BytesIO()
+    base.convert("RGB").save(buffer, format="PNG", optimize=True)
+    buffer.seek(0)
+    return buffer
 
 
 async def generate_class_card(
@@ -199,317 +622,114 @@ async def generate_class_card(
     status,
     created_at,
     due_date,
+    owner_name=None,
+    class_id=None,
+    billing_status=None,
 ):
     """
-    Panel PNG final Kelas nanZ.
-
-    Layout:
-    - accent line
-    - logo
-    - nama kelas
-    - motto
-    - deskripsi
-    - Staff Pendamping
-    - Siswa
-    - Status
-    - Berdiri Sejak
-    - Aktif Sampai
-    - Slot
+    Panel PNG Kelas nanZ (tema ungu-biru ala welcome GIF).
+    Argumen tambahan (owner_name, class_id, billing_status) opsional,
+    jadi pemanggil lama tetap kompatibel.
     """
-
-    from PIL import Image, ImageDraw, ImageFont
-
-    WIDTH = 1200
-    HEIGHT = 650
-
-    bg = (18, 20, 27)
-    card = (25, 28, 37)
-    white = (240, 242, 245)
-    muted = (165, 170, 180)
-
-    accent = hex_rgb(color_hex)
-
-    image = Image.new("RGB", (WIDTH, HEIGHT), bg)
-    draw = ImageDraw.Draw(image)
-
-    # -----------------------------------------------------
-    # FONT
-    # -----------------------------------------------------
-
-    font_candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    ]
-
-    regular_path = font_candidates[0]
-    bold_path = font_candidates[1]
-
-    try:
-        title_font = ImageFont.truetype(bold_path, 42)
-        motto_font = ImageFont.truetype(regular_path, 24)
-        text_font = ImageFont.truetype(regular_path, 21)
-        label_font = ImageFont.truetype(bold_path, 18)
-        small_font = ImageFont.truetype(regular_path, 17)
-        status_font = ImageFont.truetype(bold_path, 19)
-    except Exception:
-        title_font = ImageFont.load_default()
-        motto_font = ImageFont.load_default()
-        text_font = ImageFont.load_default()
-        label_font = ImageFont.load_default()
-        small_font = ImageFont.load_default()
-        status_font = ImageFont.load_default()
-
-    # -----------------------------------------------------
-    # CARD
-    # -----------------------------------------------------
-
-    draw.rounded_rectangle(
-        (25, 25, WIDTH - 25, HEIGHT - 25),
-        radius=28,
-        fill=card,
-    )
-
-    # Accent line
-    draw.rounded_rectangle(
-        (25, 25, WIDTH - 25, 37),
-        radius=6,
-        fill=accent,
-    )
-
-    # -----------------------------------------------------
-    # LOGO
-    # -----------------------------------------------------
-
     logo = await load_logo(logo_url)
 
-    logo_x = 70
-    logo_y = 75
-    logo_size = 150
-
-    draw.rounded_rectangle(
-        (
-            logo_x - 5,
-            logo_y - 5,
-            logo_x + logo_size + 5,
-            logo_y + logo_size + 5,
-        ),
-        radius=25,
-        fill=accent,
-    )
-
-    if logo:
-        logo.thumbnail((logo_size, logo_size))
-
-        lx = logo_x + (logo_size - logo.width) // 2
-        ly = logo_y + (logo_size - logo.height) // 2
-
-        image.paste(
-            logo,
-            (lx, ly),
-            logo,
-        )
-    else:
-        # fallback
-        draw.text(
-            (
-                logo_x + logo_size // 2,
-                logo_y + logo_size // 2,
-            ),
-            "nZ",
-            fill=white,
-            font=title_font,
-            anchor="mm",
-        )
-
-    # -----------------------------------------------------
-    # HEADER
-    # -----------------------------------------------------
-
-    text_x = 270
-
-    draw.text(
-        (text_x, 75),
-        class_name,
-        fill=white,
-        font=title_font,
-    )
-
-    draw.text(
-        (text_x, 130),
-        motto or "-",
-        fill=accent,
-        font=motto_font,
-    )
-
-    # Description
-    desc = description or "-"
-
-    words = desc.split()
-    lines = []
-    current = ""
-
-    for word in words:
-        test = (current + " " + word).strip()
-
-        if draw.textlength(test, font=text_font) <= 800:
-            current = test
-        else:
-            if current:
-                lines.append(current)
-            current = word
-
-    if current:
-        lines.append(current)
-
-    lines = lines[:2]
-
-    for index, line in enumerate(lines):
-        draw.text(
-            (text_x, 180 + index * 28),
-            line,
-            fill=muted,
-            font=text_font,
-        )
-
-    # -----------------------------------------------------
-    # STATUS
-    # -----------------------------------------------------
-
-    status_map = {
-        "Active": "ACTIVE",
-        "Grace": "GRACE",
-        "Inactive": "INACTIVE",
-        "Dissolved": "DIBUBARKAN",
+    data = {
+        "class_name": class_name,
+        "motto": motto,
+        "description": description,
+        "staff_name": staff_name,
+        "owner_name": owner_name,
+        "class_id": class_id,
+        "billing_status": billing_status,
+        "member_count": member_count,
+        "status": status,
+        "created_at": created_at,
+        "due_date": due_date,
     }
 
-    status_text = status_map.get(status, status.upper())
-
-    draw.rounded_rectangle(
-        (950, 80, 1125, 125),
-        radius=20,
-        fill=accent,
+    return await asyncio.to_thread(
+        _render_class_card_sync, data, logo, hex_rgb(color_hex)
     )
 
-    draw.text(
-        (1037, 102),
-        status_text,
-        fill=white,
-        font=status_font,
-        anchor="mm",
-    )
 
-    # -----------------------------------------------------
-    # INFO
-    # -----------------------------------------------------
+# ---------- gambar: BANNER panel ----------
 
-    info_y = 290
+def _render_banner_sync(title, subtitle, badge, chips, icon, accent):
+    W, H = 1000, 300
+    accent = accent or THEME_PURPLE
 
-    info = [
-        ("Staff Pendamping", staff_name or "-"),
-        ("Siswa", f"{member_count}/{MAX_MEMBER}"),
-        (
-            "Berdiri Sejak",
-            created_at.astimezone(timezone.utc).strftime("%d %b %Y")
-            if created_at
-            else "-",
-        ),
-        (
-            "Aktif Sampai",
-            due_date.astimezone(timezone.utc).strftime("%d %b %Y")
-            if due_date
-            else "-",
-        ),
-    ]
+    base = _backdrop(W, H, 11)
+    rect = (20, 20, W - 20, H - 20)
+    base = _glass_card(base, rect, radius=28)
 
-    for index, (label, value) in enumerate(info):
-        col = index % 2
-        row = index // 2
+    ICON = 120
+    cx, cy = 140, H // 2
+    base = _icon_with_orbit(base, cx, cy, _circle_image(icon, ICON), ICON, accent)
 
-        x = 70 + col * 550
-        y = info_y + row * 90
+    tl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    td = ImageDraw.Draw(tl)
 
-        draw.text(
-            (x, y),
-            label.upper(),
-            fill=muted,
-            font=label_font,
-        )
+    for i in range(50, H - 50):
+        c = _lerp_color(THEME_BLUE, THEME_PURPLE, (i - 50) / (H - 100))
+        td.point((262, i), fill=(*c, 200))
+        td.point((263, i), fill=(*c, 200))
 
-        draw.text(
-            (x, y + 30),
-            value,
-            fill=white,
-            font=text_font,
-        )
+    TX0, TX1 = 292, W - 56
+    f_badge = _card_font(FONT_MEDIUM, 16)
+    bw = 0
+    if badge:
+        bw = int(td.textlength(badge, font=f_badge)) + 36
+        td.rounded_rectangle([TX1 - bw, 46, TX1, 78], radius=16, fill=(*accent, 235))
+        td.text((TX1 - bw / 2, 62), badge, font=f_badge, fill=(255, 255, 255, 255), anchor="mm")
 
-    # -----------------------------------------------------
-    # SLOT BAR
-    # -----------------------------------------------------
+    f_title, title_fit = _fit_font(td, title, FONT_BOLD, 40, TX1 - TX0 - bw - 20, min_size=20)
+    td.text((TX0, 66), title_fit, font=f_title, fill=(255, 255, 255, 255), anchor="lm")
 
-    bar_x = 70
-    bar_y = 480
-    bar_width = 1060
-    bar_height = 18
+    if subtitle:
+        f_sub, sub_fit = _fit_font(td, subtitle, FONT_MEDIUM, 22, TX1 - TX0, min_size=14)
+        td.text((TX0, 112), sub_fit, font=f_sub, fill=(*accent, 255), anchor="lm")
 
-    draw.rounded_rectangle(
-        (
-            bar_x,
-            bar_y,
-            bar_x + bar_width,
-            bar_y + bar_height,
-        ),
-        radius=9,
-        fill=(55, 58, 68),
-    )
+    # chips info
+    chips = list(chips)[:3]
+    if chips:
+        gap = 14
+        cw = (TX1 - TX0 - gap * (len(chips) - 1)) // len(chips)
+        f_l = _card_font(FONT_LIGHT, 12)
+        for i, (label, value) in enumerate(chips):
+            x = TX0 + i * (cw + gap)
+            td.rounded_rectangle([x, 158, x + cw, 232], radius=14, fill=(*THEME_PURPLE, 34),
+                                 outline=(*SOFT_PURPLE, 90), width=1)
+            td.text((x + 16, 180), str(label).upper(), font=f_l, fill=(*SOFT_BLUE, 220), anchor="lm")
+            f_v, v_fit = _fit_font(td, str(value), FONT_MEDIUM, 20, cw - 32, min_size=12)
+            td.text((x + 16, 208), v_fit, font=f_v, fill=(255, 255, 255, 250), anchor="lm")
 
-    ratio = min(member_count / MAX_MEMBER, 1)
+    td.text((TX0, H - 42), "nanZ Server  •  Berbeda Kelas, Tetap Satu Sekolah.",
+            font=_card_font(FONT_LIGHT, 13), fill=(*SOFT_PURPLE, 190), anchor="lm")
 
-    if ratio > 0:
-        draw.rounded_rectangle(
-            (
-                bar_x,
-                bar_y,
-                bar_x + int(bar_width * ratio),
-                bar_y + bar_height,
-            ),
-            radius=9,
-            fill=accent,
-        )
-
-    if member_count >= MAX_MEMBER:
-        slot_text = "PENUH"
-    else:
-        slot_text = f"{MAX_MEMBER - member_count} slot tersisa"
-
-    draw.text(
-        (70, 515),
-        slot_text,
-        fill=muted,
-        font=small_font,
-    )
-
-    # -----------------------------------------------------
-    # FOOTER
-    # -----------------------------------------------------
-
-    draw.text(
-        (70, 585),
-        "Berbeda Kelas, Tetap Satu Sekolah.",
-        fill=muted,
-        font=small_font,
-    )
+    base = Image.alpha_composite(base, tl)
+    base = _shimmer(base, rect, radius=28, pos=0.7)
 
     buffer = io.BytesIO()
-
-    image.save(
-        buffer,
-        format="PNG",
-        optimize=True,
-    )
-
+    base.convert("RGB").save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
-
     return buffer
+
+
+async def make_banner_file(
+    *,
+    title,
+    subtitle="",
+    badge=None,
+    chips=(),
+    icon=None,
+    accent=None,
+    filename=BANNER_NAME,
+):
+    """Buat banner PNG bertema nanZ sebagai discord.File siap kirim."""
+    buffer = await asyncio.to_thread(
+        _render_banner_sync, title, subtitle, badge, list(chips), icon, accent
+    )
+    return discord.File(buffer, filename=filename)
 
 
 # =========================================================
@@ -575,6 +795,9 @@ async def update_public_panel(bot, class_id):
     created_at = db_dt(cls["created_at"])
     due_date = db_dt(cls["due_date"])
 
+    owner = bot.get_user(int(cls["owner_id"])) if cls["owner_id"] else None
+    owner_name = owner.display_name if owner else f"User {cls['owner_id']}"
+
     image = await generate_class_card(
         class_name=cls["name"],
         motto=cls["motto"],
@@ -586,6 +809,9 @@ async def update_public_panel(bot, class_id):
         status=cls["status"],
         created_at=created_at,
         due_date=due_date,
+        owner_name=owner_name,
+        class_id=class_id,
+        billing_status=cls.get("billing_status"),
     )
 
     view = ClassPublicPanel(class_id)
@@ -857,8 +1083,21 @@ class ClassCreationModal(discord.ui.Modal):
         )
 
         try:
+            banner = await make_banner_file(
+                title="Pengajuan Kelas Baru",
+                subtitle=name,
+                badge="MENUNGGU",
+                chips=[
+                    ("Pemohon", interaction.user.display_name),
+                    ("Request ID", f"#{request_id}"),
+                    ("Warna", color_hex),
+                ],
+                icon=await load_avatar(interaction.user),
+                accent=hex_rgb(color_hex),
+            )
             await approval_channel.send(
                 embed=embed,
+                file=banner,
                 view=ClassApprovalView(request_id),
             )
         except Exception:
@@ -883,28 +1122,45 @@ class ClassCreationModal(discord.ui.Modal):
 def build_creation_request_embed(request_id, request):
     staff_id = int(request.get("staff_id") or 0)
 
+    steps = (
+        f"{'✅' if staff_id else '⬜'} **1.** Pilih Staff Pendamping\n"
+        "⬜ **2.** Approve atau Reject pengajuan"
+    )
+
     embed = discord.Embed(
         title="🏫 Pengajuan Kelas Baru",
-        description="Pengajuan menunggu pemilihan Staff Pendamping dan persetujuan Staff/Administrator.",
+        description=(
+            f"**{request['name']}**\n"
+            f"*“{request['motto']}”*\n"
+            f"{DIVIDER}\n"
+            f"{request['description']}"
+        ),
         color=discord.Color.from_str(request["color_hex"]),
         timestamp=utc_now(),
     )
 
-    embed.add_field(name="Nama Kelas", value=request["name"], inline=False)
-    embed.add_field(name="Motto", value=request["motto"], inline=False)
-    embed.add_field(name="Deskripsi", value=request["description"], inline=False)
-    embed.add_field(name="Pemilik", value=f"<@{request['owner_id']}>", inline=True)
+    embed.add_field(name="👤 Pemilik", value=f"<@{request['owner_id']}>", inline=True)
     embed.add_field(
-        name="Staff Pendamping",
+        name="🧑‍💼 Staff Pendamping",
         value=f"<@{staff_id}>" if staff_id else "⚠️ Belum dipilih",
         inline=True,
     )
-    embed.add_field(name="Request ID", value=f"`{request_id}`", inline=True)
+    embed.add_field(name="🆔 Request ID", value=f"`#{request_id}`", inline=True)
+    embed.add_field(name="🎨 Warna Kelas", value=f"`{request['color_hex']}`", inline=True)
+    embed.add_field(
+        name="🖼️ Logo",
+        value="✅ Terlampir" if request.get("logo_url") else "➖ Default nZ",
+        inline=True,
+    )
+    embed.add_field(name="📋 Status", value="⏳ Menunggu", inline=True)
+    embed.add_field(name="🧭 Langkah Proses", value=steps, inline=False)
 
     if request.get("logo_url"):
         embed.set_thumbnail(url=request["logo_url"])
 
-    return embed
+    embed.set_image(url=f"attachment://{BANNER_NAME}")
+
+    return style_embed(embed)
 
 
 # =========================================================
@@ -1018,16 +1274,47 @@ class StaffDashboardView(discord.ui.View):
 
 
 def build_staff_dashboard_embed():
-    return discord.Embed(
-        title="🛡️ Dashboard Staff Kelas",
+    embed = discord.Embed(
+        title="🛡️ Pusat Kendali Kelas nanZ",
         description=(
-            "Panel pengelolaan Kelas nanZ.\n\n"
-            "• Pilih Voice Channel kelas untuk membuka panel management.\n"
-            "• Hanya Staff yang ditugaskan ke kelas tersebut atau Administrator yang dapat mengelola.\n"
-            "• Approval member tetap dapat dilakukan oleh Owner, Staff Pendamping, atau Administrator melalui `request-gabung`."
+            "Selamat datang di **Dashboard Staff**!\n"
+            "Kelola seluruh Kelas nanZ dari satu tempat.\n"
+            f"{DIVIDER}"
         ),
-        color=discord.Color.blurple(),
+        color=EMBED_PURPLE,
     )
+
+    embed.add_field(
+        name="🎯 Cara Menggunakan",
+        value=(
+            "**1.** Pilih Voice Channel kelas di menu bawah\n"
+            "**2.** Panel management muncul khusus untukmu\n"
+            "**3.** Edit info, kelola member, ganti staff, atau perpanjang masa aktif"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="🔐 Hak Akses",
+        value=(
+            "• **Staff Pendamping** → mengelola kelas yang dipegangnya\n"
+            "• **Administrator** → akses ke semua kelas\n"
+            "• **Owner & Staff** → memproses request gabung di `request-gabung`"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="⚡ Fitur Tersedia",
+        value=(
+            "`👥 Kelola Member`  `📝 Edit Kelas`  `🧑‍💼 Ganti Staff`\n"
+            "`🔄 Perpanjang`  `🗑️ Bubarkan`  `🔄 Refresh`"
+        ),
+        inline=False,
+    )
+
+    embed.set_image(url=f"attachment://{BANNER_NAME}")
+
+    # marker dipakai ensure_staff_dashboard untuk menemukan pesan ini
+    return style_embed(embed, footer=f"{DASHBOARD_MARKER} • nanZ Server")
 
 
 # =========================================================
@@ -1296,16 +1583,40 @@ class ClassApprovalView(discord.ui.View):
                 pass
 
             embed = discord.Embed(
-                title="🏫 Kelas Disetujui",
-                color=discord.Color.green(),
+                title="🏫 Kelas Resmi Berdiri!",
+                description=(
+                    f"**{request['name']}**\n"
+                    f"*“{request['motto']}”*\n"
+                    f"{DIVIDER}\n"
+                    "Selamat! Kelas baru sudah aktif dan siap menerima siswa. 🎉"
+                ),
+                color=discord.Color.from_str(request["color_hex"]),
                 timestamp=utc_now(),
             )
-            embed.add_field(name="Kelas", value=request["name"], inline=False)
-            embed.add_field(name="Pemilik", value=f"<@{request['owner_id']}>", inline=True)
-            embed.add_field(name="Staff Pendamping", value=f"<@{staff_id}>", inline=True)
-            embed.add_field(name="Class ID", value=f"`{class_id}`", inline=True)
+            embed.add_field(name="👤 Pemilik", value=f"<@{request['owner_id']}>", inline=True)
+            embed.add_field(name="🧑‍💼 Staff Pendamping", value=f"<@{staff_id}>", inline=True)
+            embed.add_field(name="🆔 Class ID", value=f"`#{class_id}`", inline=True)
+            embed.add_field(name="🎙️ Voice Channel", value=voice.mention, inline=True)
+            embed.add_field(name="🏷️ Role Kelas", value=role.mention, inline=True)
+            embed.add_field(name="✅ Disetujui oleh", value=interaction.user.mention, inline=True)
+            embed.add_field(name="⏳ Aktif Sampai", value=stamp(due_date, "F"), inline=False)
+            embed.set_image(url=f"attachment://{BANNER_NAME}")
+            style_embed(embed)
 
-            await interaction.message.edit(embed=embed, view=None)
+            result_banner = await make_banner_file(
+                title="Kelas Disetujui",
+                subtitle=request["name"],
+                badge="APPROVED",
+                chips=[
+                    ("Pemilik", owner.display_name),
+                    ("Staff", staff.display_name),
+                    ("Class ID", f"#{class_id}"),
+                ],
+                icon=await load_avatar(owner),
+                accent=OK_GREEN,
+            )
+
+            await interaction.message.edit(embed=embed, attachments=[result_banner], view=None)
 
             await send_log(
                 interaction.client,
@@ -1365,16 +1676,37 @@ class ClassApprovalView(discord.ui.View):
             (db_now(), interaction.user.id, self.request_id),
         )
 
+        applicant = interaction.guild.get_member(int(request["owner_id"]))
+
         embed = discord.Embed(
             title="❌ Pengajuan Kelas Ditolak",
-            description=f"Pengajuan **{request['name']}** telah ditolak.",
-            color=discord.Color.red(),
+            description=(
+                f"**{request['name']}**\n"
+                f"{DIVIDER}\n"
+                "Pengajuan ini tidak disetujui oleh Staff."
+            ),
+            color=discord.Color.from_rgb(*BAD_RED),
             timestamp=utc_now(),
         )
-        embed.add_field(name="Pemohon", value=f"<@{request['owner_id']}>")
-        embed.add_field(name="Diproses oleh", value=interaction.user.mention)
+        embed.add_field(name="👤 Pemohon", value=f"<@{request['owner_id']}>", inline=True)
+        embed.add_field(name="🛡️ Diproses oleh", value=interaction.user.mention, inline=True)
+        embed.add_field(name="🆔 Request ID", value=f"`#{self.request_id}`", inline=True)
+        embed.set_image(url=f"attachment://{BANNER_NAME}")
+        style_embed(embed)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        result_banner = await make_banner_file(
+            title="Pengajuan Ditolak",
+            subtitle=request["name"],
+            badge="REJECTED",
+            chips=[
+                ("Pemohon", applicant.display_name if applicant else "-"),
+                ("Diproses", interaction.user.display_name),
+                ("Request ID", f"#{self.request_id}"),
+            ],
+            accent=BAD_RED,
+        )
+
+        await interaction.response.edit_message(embed=embed, attachments=[result_banner], view=None)
 
         await send_log(
             interaction.client,
@@ -1397,23 +1729,60 @@ async def build_class_management_embed(bot, class_id):
 
     count = await get_member_count(class_id)
     staff_id = int(cls["staff_id"] or 0)
+    status = str(cls["status"])
 
     embed = discord.Embed(
         title=f"🛠️ Kelola Kelas — {cls['name']}",
-        description=cls["description"] or "-",
+        description=(
+            f"*“{cls['motto'] or '-'}”*\n"
+            f"{DIVIDER}\n"
+            f"{cls['description'] or '-'}"
+        ),
         color=discord.Color.from_str(cls["color_hex"]),
+        timestamp=utc_now(),
     )
-    embed.add_field(name="Owner", value=f"<@{cls['owner_id']}>", inline=True)
+
+    embed.add_field(name="👑 Owner", value=f"<@{cls['owner_id']}>", inline=True)
     embed.add_field(
-        name="Staff",
+        name="🧑‍💼 Staff Pendamping",
         value=f"<@{staff_id}>" if staff_id else "-",
         inline=True,
     )
-    embed.add_field(name="Anggota", value=f"{count}/{MAX_MEMBER}", inline=True)
-    embed.add_field(name="Status", value=str(cls["status"]), inline=True)
-    embed.add_field(name="Class ID", value=f"`{cls['class_id']}`", inline=True)
+    embed.add_field(name="📊 Status", value=STATUS_META.get(status, status), inline=True)
 
-    return embed
+    embed.add_field(
+        name="👥 Anggota",
+        value=f"`{slot_bar(count)}`\n**{count}/{MAX_MEMBER}** siswa • {max(MAX_MEMBER - count, 0)} slot tersisa",
+        inline=True,
+    )
+    embed.add_field(
+        name="💳 Tagihan",
+        value=BILLING_META.get(str(cls.get("billing_status")), "-"),
+        inline=True,
+    )
+    embed.add_field(name="🆔 Class ID", value=f"`#{cls['class_id']}`", inline=True)
+
+    embed.add_field(name="📅 Berdiri Sejak", value=stamp(cls["created_at"], "D"), inline=True)
+    embed.add_field(
+        name="⏳ Aktif Sampai",
+        value=f"{stamp(cls['due_date'], 'D')}\n{stamp(cls['due_date'], 'R')}",
+        inline=True,
+    )
+    embed.add_field(
+        name="🛟 Batas Grace",
+        value=f"{stamp(cls['grace_until'], 'D')}\n{stamp(cls['grace_until'], 'R')}",
+        inline=True,
+    )
+
+    if cls.get("vc_id"):
+        embed.add_field(name="🎙️ Voice Channel", value=f"<#{cls['vc_id']}>", inline=True)
+    if cls.get("role_id"):
+        embed.add_field(name="🏷️ Role Kelas", value=f"<@&{cls['role_id']}>", inline=True)
+
+    if cls.get("logo_url"):
+        embed.set_thumbnail(url=cls["logo_url"])
+
+    return style_embed(embed, footer="Panel Kelola Kelas • nanZ Server")
 
 
 class ClassEditModal(discord.ui.Modal):
@@ -1614,8 +1983,16 @@ class ClassMemberManageView(discord.ui.View):
         selected = self.member_select.values[0]
         self.selected_user_id = int(selected.id)
         await interaction.response.send_message(
-            f"👤 Anggota terpilih: <@{self.selected_user_id}>\n"
-            "Tekan **Keluarkan** untuk menghapusnya dari kelas.",
+            embed=style_embed(
+                discord.Embed(
+                    title="👤 Anggota Terpilih",
+                    description=(
+                        f"<@{self.selected_user_id}>\n{DIVIDER}\n"
+                        "Tekan **🚫 Keluarkan** untuk menghapusnya dari kelas."
+                    ),
+                    color=EMBED_BLUE,
+                )
+            ),
             ephemeral=True,
         )
 
@@ -1833,8 +2210,18 @@ class ClassManagementView(discord.ui.View):
         return True
 
     async def manage_members(self, interaction):
+        embed = discord.Embed(
+            title="👥 Kelola Anggota",
+            description=(
+                f"{DIVIDER}\n"
+                "**1.** Pilih anggota dari menu di bawah\n"
+                "**2.** Tekan **🚫 Keluarkan** untuk menghapusnya dari kelas\n\n"
+                "*Owner kelas tidak dapat dikeluarkan.*"
+            ),
+            color=EMBED_PURPLE,
+        )
         await interaction.response.send_message(
-            "👥 **Kelola Anggota**\nPilih anggota lalu tekan Keluarkan.",
+            embed=style_embed(embed),
             view=ClassMemberManageView(self.class_id),
             ephemeral=True,
         )
@@ -1871,10 +2258,21 @@ class ClassManagementView(discord.ui.View):
             await interaction.response.send_message("❌ Kelas tidak ditemukan.", ephemeral=True)
             return
 
+        embed = discord.Embed(
+            title=f"⚠️ Bubarkan {cls['name']}?",
+            description=(
+                f"{DIVIDER}\n"
+                "Tindakan ini **tidak dapat dibatalkan** dan akan:\n\n"
+                "🗑️ Menghapus panel publik kelas\n"
+                "🎙️ Menghapus Voice Channel kelas\n"
+                "🏷️ Menghapus role kelas\n"
+                "👥 Menghapus seluruh data anggota\n"
+                "📥 Membatalkan request gabung yang pending"
+            ),
+            color=discord.Color.from_rgb(*BAD_RED),
+        )
         await interaction.response.send_message(
-            f"⚠️ **Bubarkan {cls['name']}?**\n\n"
-            "Tindakan ini akan menghapus panel publik, Voice Channel, role kelas, "
-            "data anggota, dan membatalkan request yang masih pending.",
+            embed=style_embed(embed, footer="Konfirmasi dalam 60 detik"),
             view=ClassDeleteConfirmView(self.class_id),
             ephemeral=True,
         )
@@ -1947,6 +2345,8 @@ class ClassPublicPanel(discord.ui.View):
             await interaction.response.send_message("⏳ Request kamu masih diproses.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         request_id = await execute(
             """
             INSERT INTO nanz_class_join_requests (class_id,user_id,status,created_at)
@@ -1963,34 +2363,85 @@ class ClassPublicPanel(discord.ui.View):
                 "DELETE FROM nanz_class_join_requests WHERE request_id=%s",
                 (request_id,),
             )
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ Channel `request-gabung` tidak tersedia. Request dibatalkan agar tidak menggantung.",
                 ephemeral=True,
             )
             return
 
+        applicant = interaction.user
+
         embed = discord.Embed(
             title="📥 Request Gabung Kelas",
-            description="Menunggu Owner, Staff Pendamping, atau Administrator.",
-            color=discord.Color.blurple(),
+            description=(
+                f"{applicant.mention} ingin bergabung ke **{cls['name']}**\n"
+                f"{DIVIDER}\n"
+                "Menunggu keputusan **Owner**, **Staff Pendamping**, atau **Administrator**."
+            ),
+            color=EMBED_BLUE,
             timestamp=utc_now(),
         )
-        embed.add_field(name="Kelas", value=cls["name"], inline=False)
-        embed.add_field(name="Pemohon", value=interaction.user.mention, inline=True)
-        embed.add_field(name="Owner", value=f"<@{cls['owner_id']}>", inline=True)
-        embed.add_field(name="Staff", value=f"<@{cls['staff_id']}>", inline=True)
-        embed.add_field(name="Request ID", value=f"`{request_id}`", inline=True)
-
-        await request_channel.send(
-            content=f"<@{cls['staff_id']}>",
-            embed=embed,
-            view=JoinRequestView(request_id),
+        embed.add_field(name="🎓 Pemohon", value=applicant.mention, inline=True)
+        embed.add_field(name="🏫 Kelas", value=cls["name"], inline=True)
+        embed.add_field(name="🆔 Request ID", value=f"`#{request_id}`", inline=True)
+        embed.add_field(name="👑 Owner", value=f"<@{cls['owner_id']}>", inline=True)
+        embed.add_field(name="🧑‍💼 Staff", value=f"<@{cls['staff_id']}>", inline=True)
+        embed.add_field(
+            name="👥 Kapasitas",
+            value=f"`{slot_bar(count)}`\n**{count}/{MAX_MEMBER}** siswa",
+            inline=True,
         )
-
-        await interaction.response.send_message(
-            "✅ Request bergabung berhasil dikirim. Tunggu persetujuan.",
-            ephemeral=True,
+        embed.add_field(name="🗓️ Akun Dibuat", value=stamp(applicant.created_at, "R"), inline=True)
+        embed.add_field(
+            name="📥 Masuk Server",
+            value=stamp(getattr(applicant, "joined_at", None), "R"),
+            inline=True,
         )
+        embed.set_thumbnail(url=applicant.display_avatar.url)
+        embed.set_image(url=f"attachment://{BANNER_NAME}")
+        style_embed(embed)
+
+        try:
+            banner = await make_banner_file(
+                title="Request Gabung Kelas",
+                subtitle=cls["name"],
+                badge="PENDING",
+                chips=[
+                    ("Pemohon", applicant.display_name),
+                    ("Kelas", cls["name"]),
+                    ("Kapasitas", f"{count}/{MAX_MEMBER}"),
+                ],
+                icon=await load_avatar(applicant),
+                accent=hex_rgb(cls["color_hex"]),
+            )
+            await request_channel.send(
+                content=f"<@{cls['staff_id']}>",
+                embed=embed,
+                file=banner,
+                view=JoinRequestView(request_id),
+            )
+        except Exception:
+            log.exception("Gagal mengirim request gabung.")
+            await execute(
+                "DELETE FROM nanz_class_join_requests WHERE request_id=%s",
+                (request_id,),
+            )
+            await interaction.followup.send(
+                "❌ Gagal mengirim request. Silakan coba lagi.",
+                ephemeral=True,
+            )
+            return
+
+        done = discord.Embed(
+            title="✅ Request Terkirim!",
+            description=(
+                f"Permintaan bergabung ke **{cls['name']}** sudah dikirim.\n"
+                f"{DIVIDER}\n"
+                "Tunggu persetujuan dari Owner atau Staff Pendamping ya."
+            ),
+            color=discord.Color.from_rgb(*OK_GREEN),
+        )
+        await interaction.followup.send(embed=style_embed(done), ephemeral=True)
 
     async def view_members(self, interaction):
         cls = await get_class(self.class_id)
@@ -2010,16 +2461,39 @@ class ClassPublicPanel(discord.ui.View):
             await interaction.response.send_message("Belum ada anggota di kelas ini.", ephemeral=True)
             return
 
+        owner_id = int(cls["owner_id"] or 0)
+        staff_id = int(cls["staff_id"] or 0)
+
         lines = []
         for index, row in enumerate(members, start=1):
-            lines.append(f"`{index:02}` <@{row['user_id']}>")
+            uid = int(row["user_id"])
+            icon = "👑" if uid == owner_id else "🎓"
+            lines.append(f"`{index:02}` {icon} <@{uid}> • {stamp(row['joined_at'], 'R')}")
+
+        total = len(members)
 
         embed = discord.Embed(
-            title=f"👥 Anggota — {cls['name']}",
-            description="\n".join(lines),
-            color=discord.Color.blurple(),
+            title=f"👥 Daftar Siswa — {cls['name']}",
+            description=(
+                f"*“{cls['motto'] or '-'}”*\n"
+                f"{DIVIDER}\n"
+                + "\n".join(lines)
+            ),
+            color=discord.Color.from_str(cls["color_hex"]),
+            timestamp=utc_now(),
         )
-        embed.set_footer(text=f"Total {len(members)}/{MAX_MEMBER} siswa")
+        embed.add_field(
+            name="📊 Kapasitas",
+            value=f"`{slot_bar(total)}`\n**{total}/{MAX_MEMBER}** siswa • {max(MAX_MEMBER - total, 0)} slot tersisa",
+            inline=True,
+        )
+        embed.add_field(name="🧑‍💼 Staff Pendamping", value=f"<@{staff_id}>" if staff_id else "-", inline=True)
+        embed.add_field(name="📌 Status", value=STATUS_META.get(str(cls["status"]), str(cls["status"])), inline=True)
+
+        if cls.get("logo_url"):
+            embed.set_thumbnail(url=cls["logo_url"])
+
+        style_embed(embed, footer=f"👑 Owner • 🎓 Siswa • Total {total}/{MAX_MEMBER}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def leave_class(self, interaction):
@@ -2206,13 +2680,43 @@ class JoinRequestView(discord.ui.View):
 
             await update_public_panel(interaction.client, request["class_id"])
 
+            new_count = count + 1
+
             embed = discord.Embed(
                 title="✅ Request Diterima",
-                description=f"{member.mention} sekarang menjadi anggota **{request['name']}**.",
-                color=discord.Color.green(),
+                description=(
+                    f"{member.mention} resmi menjadi siswa **{request['name']}**! 🎉\n"
+                    f"{DIVIDER}"
+                ),
+                color=discord.Color.from_rgb(*OK_GREEN),
+                timestamp=utc_now(),
             )
-            embed.add_field(name="Diproses oleh", value=interaction.user.mention)
-            await interaction.message.edit(embed=embed, view=None)
+            embed.add_field(name="🎓 Siswa Baru", value=member.mention, inline=True)
+            embed.add_field(name="🏫 Kelas", value=request["name"], inline=True)
+            embed.add_field(name="🛡️ Diproses oleh", value=interaction.user.mention, inline=True)
+            embed.add_field(
+                name="👥 Kapasitas Sekarang",
+                value=f"`{slot_bar(new_count)}` **{new_count}/{MAX_MEMBER}**",
+                inline=False,
+            )
+            embed.set_thumbnail(url=member.display_avatar.url)
+            embed.set_image(url=f"attachment://{BANNER_NAME}")
+            style_embed(embed)
+
+            result_banner = await make_banner_file(
+                title="Selamat Datang di Kelas!",
+                subtitle=request["name"],
+                badge="DITERIMA",
+                chips=[
+                    ("Siswa Baru", member.display_name),
+                    ("Diproses", interaction.user.display_name),
+                    ("Kapasitas", f"{new_count}/{MAX_MEMBER}"),
+                ],
+                icon=await load_avatar(member),
+                accent=OK_GREEN,
+            )
+
+            await interaction.message.edit(embed=embed, attachments=[result_banner], view=None)
 
             await send_log(
                 interaction.client,
@@ -2257,14 +2761,37 @@ class JoinRequestView(discord.ui.View):
             (db_now(), interaction.user.id, self.request_id),
         )
 
+        applicant = interaction.guild.get_member(int(request["user_id"]))
+
         embed = discord.Embed(
             title="❌ Request Ditolak",
-            description=f"Request bergabung ke **{request['name']}** ditolak.",
-            color=discord.Color.red(),
+            description=(
+                f"Request bergabung ke **{request['name']}** ditolak.\n"
+                f"{DIVIDER}"
+            ),
+            color=discord.Color.from_rgb(*BAD_RED),
+            timestamp=utc_now(),
         )
-        embed.add_field(name="Diproses oleh", value=interaction.user.mention)
+        embed.add_field(name="🎓 Pemohon", value=f"<@{request['user_id']}>", inline=True)
+        embed.add_field(name="🛡️ Diproses oleh", value=interaction.user.mention, inline=True)
+        embed.add_field(name="🆔 Request ID", value=f"`#{request['request_id']}`", inline=True)
+        embed.set_image(url=f"attachment://{BANNER_NAME}")
+        style_embed(embed)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        result_banner = await make_banner_file(
+            title="Request Ditolak",
+            subtitle=request["name"],
+            badge="DITOLAK",
+            chips=[
+                ("Pemohon", applicant.display_name if applicant else "-"),
+                ("Diproses", interaction.user.display_name),
+                ("Request ID", f"#{request['request_id']}"),
+            ],
+            icon=await load_avatar(applicant) if applicant else None,
+            accent=BAD_RED,
+        )
+
+        await interaction.response.edit_message(embed=embed, attachments=[result_banner], view=None)
         await send_log(
             interaction.client,
             interaction.guild,
@@ -2359,7 +2886,7 @@ class NanzKelasCog(commands.Cog):
                 )
                 return
 
-        marker = "NANZ_STAFF_DASHBOARD"
+        marker = DASHBOARD_MARKER
         existing = None
 
         try:
@@ -2372,13 +2899,22 @@ class NanzKelasCog(commands.Cog):
             log.exception("Gagal mencari dashboard Staff.")
 
         embed = build_staff_dashboard_embed()
-        embed.set_footer(text=marker)
 
         try:
+            banner = await make_banner_file(
+                title="Dashboard Staff Kelas",
+                subtitle="Pusat Kendali Kelas nanZ",
+                badge="STAFF ONLY",
+                chips=[
+                    ("Akses", "Staff & Admin"),
+                    ("Kapasitas Kelas", f"{MAX_MEMBER} siswa"),
+                    ("Sistem", "Kelas nanZ"),
+                ],
+            )
             if existing:
-                await existing.edit(embed=embed, view=StaffDashboardView())
+                await existing.edit(embed=embed, attachments=[banner], view=StaffDashboardView())
             else:
-                await channel.send(embed=embed, view=StaffDashboardView())
+                await channel.send(embed=embed, file=banner, view=StaffDashboardView())
         except Exception:
             log.exception("Gagal membuat/memperbarui dashboard Staff.")
 
@@ -2386,11 +2922,53 @@ class NanzKelasCog(commands.Cog):
     @commands.guild_only()
     @commands.check(lambda ctx: has_staff_role(ctx.author))
     async def buat_kelas(self, ctx):
-        await ctx.send(
-            "🏫 **Panel Pembuatan Kelas nanZ**\n"
-            "Panel ini khusus Staff/Administrator.",
-            view=ClassFormTriggerView(),
+        embed = discord.Embed(
+            title="🏫 Panel Pembuatan Kelas nanZ",
+            description=(
+                "Wujudkan kelas impianmu di **nanZ Server**!\n"
+                f"{DIVIDER}"
+            ),
+            color=EMBED_PURPLE,
         )
+        embed.add_field(
+            name="📝 Alur Pembuatan",
+            value=(
+                "**1.** Tekan tombol **Buka Form Kelas**\n"
+                "**2.** Isi nama, motto, deskripsi, warna & logo\n"
+                "**3.** Staff memilih Staff Pendamping & menyetujui\n"
+                "**4.** Voice Channel + role kelas dibuat otomatis"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="✨ Yang Kamu Dapatkan",
+            value=(
+                "🎙️ Voice Channel khusus\n"
+                "🏷️ Role kelas dengan warna sendiri\n"
+                "🪪 Card kelas di daftar kelas\n"
+                f"👥 Kapasitas hingga **{MAX_MEMBER} siswa**"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="🔐 Akses Panel",
+            value="Khusus **Staff** dan **Administrator**.",
+            inline=True,
+        )
+        embed.set_image(url=f"attachment://{BANNER_NAME}")
+        style_embed(embed)
+
+        banner = await make_banner_file(
+            title="Buat Kelas Baru",
+            subtitle="Panel Pembuatan Kelas nanZ",
+            badge="STAFF ONLY",
+            chips=[
+                ("Kapasitas", f"{MAX_MEMBER} siswa"),
+                ("Persetujuan", "Staff"),
+                ("Fasilitas", "VC + Role"),
+            ],
+        )
+        await ctx.send(embed=embed, file=banner, view=ClassFormTriggerView())
 
 
 async def setup(bot):

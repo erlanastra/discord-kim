@@ -6,7 +6,11 @@ import discord
 from discord.ext import commands, tasks
 
 from cogs.nanzkelasticket import (
+    BANNER_NAME,
     DAFTAR_KELAS_CHANNEL_ID,
+    DIVIDER,
+    OK_GREEN,
+    WARN_ORANGE,
     LOG_KELAS_CHANNEL_ID,
     STAFF_ROLE_ID,
     can_manage_class,
@@ -15,6 +19,9 @@ from cogs.nanzkelasticket import (
     get_class,
     get_member_count,
     has_staff_role,
+    make_banner_file,
+    stamp,
+    style_embed,
     update_public_panel,
 )
 
@@ -154,6 +161,8 @@ class BillingView(discord.ui.View):
         new_due = base_due
         new_grace = new_due + timedelta(days=GRACE_DAYS)
 
+        await interaction.response.defer(ephemeral=True)
+
         await execute(
             """
             UPDATE nanz_classes
@@ -173,14 +182,37 @@ class BillingView(discord.ui.View):
         )
 
         try:
-            await interaction.message.edit(
-                embed=discord.Embed(
-                    title="💰 Tagihan Kelas — LUNAS",
-                    description=f"Pembayaran **{cls['name']}** telah ditandai lunas.",
-                    color=discord.Color.green(),
+            embed = discord.Embed(
+                title="💰 Tagihan Kelas — LUNAS",
+                description=(
+                    f"Pembayaran **{cls['name']}** telah ditandai lunas. 🎉\n"
+                    f"{DIVIDER}"
                 ),
-                view=None,
+                color=discord.Color.from_rgb(*OK_GREEN),
+                timestamp=datetime.now(timezone.utc),
             )
+            embed.add_field(name="🏫 Kelas", value=cls["name"], inline=True)
+            embed.add_field(name="💳 Status", value="✅ Lunas", inline=True)
+            embed.add_field(name="🛡️ Diverifikasi oleh", value=interaction.user.mention, inline=True)
+            embed.add_field(name="⏳ Aktif Sampai", value=f"{stamp(new_due, 'F')}\n{stamp(new_due, 'R')}", inline=True)
+            embed.add_field(name="🛟 Batas Grace", value=stamp(new_grace, "D"), inline=True)
+            embed.add_field(name="💰 Biaya", value=f"`{CLASS_PRICE:,}` OwO Cash", inline=True)
+            embed.set_image(url=f"attachment://{BANNER_NAME}")
+            style_embed(embed)
+
+            banner = await make_banner_file(
+                title="Tagihan Lunas",
+                subtitle=cls["name"],
+                badge="LUNAS",
+                chips=[
+                    ("Kelas", cls["name"]),
+                    ("Aktif Sampai", new_due.strftime("%d %b %Y")),
+                    ("Diverifikasi", interaction.user.display_name),
+                ],
+                accent=OK_GREEN,
+            )
+
+            await interaction.message.edit(embed=embed, attachments=[banner], view=None)
         except (discord.NotFound, discord.HTTPException):
             pass
 
@@ -192,7 +224,7 @@ class BillingView(discord.ui.View):
             f"Aktif sampai <t:{int(new_due.timestamp())}:F>.",
         )
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"✅ Pembayaran **{cls['name']}** ditandai lunas.\n"
             f"Aktif sampai <t:{int(new_due.timestamp())}:F>.",
             ephemeral=True,
@@ -302,26 +334,36 @@ class NanzKelasAdmin(commands.Cog):
             return
 
         due = db_dt(cls["due_date"])
+        grace = db_dt(cls["grace_until"])
 
         if stage == "H-3":
             title = "💰 Tagihan Kelas"
-            color = discord.Color.orange()
+            color = discord.Color.from_rgb(255, 170, 60)
+            badge, banner_title, accent = "H-3", "Tagihan Kelas", None
             description = (
-                f"Tagihan kelas **{cls['name']}** akan jatuh tempo <t:{int(due.timestamp())}:R>.\n\n"
-                f"**Biaya:** `{CLASS_PRICE:,}` OwO Cash\n"
-                f"**Jatuh tempo:** <t:{int(due.timestamp())}:F>\n\n"
-                "Silakan lakukan pembayaran dan tunggu Staff memverifikasi pembayaran."
+                f"Tagihan kelas **{cls['name']}** akan jatuh tempo {stamp(due, 'R')}.\n"
+                f"{DIVIDER}\n"
+                "Segera selesaikan pembayaran agar kelas tetap aktif."
+            )
+            steps = (
+                "**1.** Lakukan pembayaran sebesar biaya di atas\n"
+                "**2.** Tunggu Staff memverifikasi pembayaran\n"
+                "**3.** Status berubah menjadi ✅ **Lunas**"
             )
         else:
             title = "⚠️ Masa Grace Kelas"
-            color = discord.Color.gold()
-            grace = db_dt(cls["grace_until"])
+            color = discord.Color.from_rgb(235, 85, 95)
+            badge, banner_title, accent = "GRACE", "Masa Grace Kelas", WARN_ORANGE
             description = (
-                f"Tagihan **{cls['name']}** belum tercatat lunas.\n\n"
-                "Kelas sekarang memasuki **Grace Period 7 hari**.\n\n"
-                f"**Biaya:** `{CLASS_PRICE:,}` OwO Cash\n"
-                f"**Grace sampai:** <t:{int(grace.timestamp())}:F>\n\n"
+                f"Tagihan **{cls['name']}** belum tercatat lunas.\n"
+                f"{DIVIDER}\n"
+                f"Kelas kini memasuki **Grace Period {GRACE_DAYS} hari**. "
                 "Jika belum dibayar sampai masa grace berakhir, status kelas menjadi **Inactive**."
+            )
+            steps = (
+                "**1.** Segera lakukan pembayaran\n"
+                "**2.** Hubungi Staff Pendamping untuk verifikasi\n"
+                "**3.** Kelas kembali ✅ **Active** setelah lunas"
             )
 
         embed = discord.Embed(
@@ -330,13 +372,31 @@ class NanzKelasAdmin(commands.Cog):
             color=color,
             timestamp=now,
         )
-        embed.add_field(name="Status Pembayaran", value="Belum Lunas", inline=True)
-        embed.add_field(name="Kelas", value=cls["name"], inline=True)
+        embed.add_field(name="🏫 Kelas", value=cls["name"], inline=True)
+        embed.add_field(name="💳 Status", value="⏳ Belum Lunas", inline=True)
+        embed.add_field(name="💰 Biaya", value=f"`{CLASS_PRICE:,}` OwO Cash", inline=True)
+        embed.add_field(name="📅 Jatuh Tempo", value=f"{stamp(due, 'F')}\n{stamp(due, 'R')}", inline=True)
+        embed.add_field(name="🛟 Batas Grace", value=f"{stamp(grace, 'D')}\n{stamp(grace, 'R')}", inline=True)
+        embed.add_field(name="🧭 Langkah Pembayaran", value=steps, inline=False)
+        embed.set_image(url=f"attachment://{BANNER_NAME}")
+        style_embed(embed)
 
         try:
+            banner = await make_banner_file(
+                title=banner_title,
+                subtitle=cls["name"],
+                badge=badge,
+                chips=[
+                    ("Biaya", f"{CLASS_PRICE:,} OwO"),
+                    ("Jatuh Tempo", due.strftime("%d %b %Y")),
+                    ("Status", "Belum Lunas"),
+                ],
+                accent=accent,
+            )
             message = await vc.send(
                 content=role.mention if role else None,
                 embed=embed,
+                file=banner,
                 view=BillingView(int(cls["class_id"])),
             )
         except Exception:
