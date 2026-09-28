@@ -7,7 +7,7 @@ import re
 # CONFIG
 # =========================================================
 
-VERIF_CHANNEL_ID = 1486913580161962054
+VERIF_CHANNEL_ID = 1508683781698224241
 
 # Channel engagement / divisi yang menangani verifikasi
 ENGAGEMENT_CHANNEL_ID = 1525136678442893352
@@ -226,6 +226,31 @@ async def send_voice_notice(interaction, target):
     )
 
 
+async def send_voice_notice_for_member(bot, member, target):
+    guild = member.guild
+    engagement = bot.get_channel(ENGAGEMENT_CHANNEL_ID)
+    if not engagement:
+        return
+
+    embed = discord.Embed(
+        title="Member Masuk Voice Verifikasi",
+        description=(
+            f"{NANZ_ARROW_BLUE} {member.mention} sudah masuk ke **{target.name}**.\n"
+            f"{NANZ_ARROW_PURPLE} Staff dapat masuk ke voice tersebut untuk melakukan konfirmasi data."
+        ),
+        color=0x5865F2,
+    )
+    embed.add_field(name="Member", value=f"{member.mention}\n`{member.id}`", inline=True)
+    embed.add_field(name="Voice Verifikasi", value=f"<#{target.id}>", inline=True)
+    embed.set_thumbnail(url=member.display_avatar.url)
+
+    await engagement.send(
+        embed=embed,
+        view=StaffVoiceNoticeView(guild.id, target.id),
+        allowed_mentions=discord.AllowedMentions(users=True),
+    )
+
+
 async def handle_voice_verif(interaction):
     guild = interaction.guild
     member = interaction.user
@@ -266,11 +291,8 @@ async def handle_voice_verif(interaction):
                 ephemeral=True,
             )
 
-        await send_voice_notice(
-            interaction,
-            target,
-        )
-
+        # Engagement is notified by on_voice_state_update so both manual
+        # joins and bot-assisted joins are detected exactly once.
         return await interaction.response.send_message(
             (
                 f"{NANZ_ARROW_BLUE} Kamu sudah diarahkan ke "
@@ -379,7 +401,49 @@ class VerifyModal(
             )
 
         # =====================================================
-        # NOTIF DATA KE ENGAGEMENT
+        # DATA LENGKAP -> CHANNEL VERIFIKASI MASUK
+        # =====================================================
+
+        verif_channel = interaction.client.get_channel(
+            VERIF_CHANNEL_ID
+        )
+
+        if verif_channel:
+            embed = discord.Embed(
+                title="Data Verifikasi Baru",
+                description=(
+                    f"{NANZ_ARROW_BLUE} "
+                    f"{interaction.user.mention} telah mengirim data verifikasi.\n"
+                    f"{NANZ_GEAR} Silakan cek data dan lakukan **Approve** "
+                    "atau **Deny** di channel ini."
+                ),
+                color=0x5865F2,
+            )
+
+            embed.add_field(name="Member", value=(f"{interaction.user.mention}\n" f"`{interaction.user.id}`"), inline=False)
+            embed.add_field(name="Nama", value=self.nama.value, inline=True)
+            embed.add_field(name="Asal", value=self.asal.value, inline=True)
+            embed.add_field(name="Umur", value=self.umur, inline=True)
+            embed.add_field(name="Gender", value="Siswa" if self.gender == "L" else "Siswi", inline=True)
+            embed.add_field(name="Medsos", value=medsos_final, inline=False)
+            embed.add_field(name="Followers", value=followers, inline=True)
+
+            if link:
+                embed.add_field(name="Profile", value=f"{NANZ_LINK} [Buka Profile]({link})", inline=False)
+
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+            view = VerifyView(self.bot, interaction.user.id, self.nama.value, self.asal.value, self.umur, self.gender, medsos_final, followers, link)
+
+            await verif_channel.send(
+                content=f"**Verifikasi baru:** {interaction.user.mention}",
+                embed=embed,
+                view=view,
+                allowed_mentions=discord.AllowedMentions(users=True),
+            )
+
+        # =====================================================
+        # NOTIF SINGKAT -> ENGAGEMENT
         # =====================================================
 
         engagement = interaction.client.get_channel(
@@ -387,97 +451,20 @@ class VerifyModal(
         )
 
         if engagement:
-
-            embed = discord.Embed(
-                title="Data Verifikasi Baru",
+            notice_embed = discord.Embed(
+                title="Member Mengisi Data Verifikasi",
                 description=(
-                    f"{NANZ_ARROW_BLUE} "
-                    f"{interaction.user.mention} telah mengirim "
-                    "data verifikasi.\n"
-                    f"{NANZ_GEAR} Data menunggu konfirmasi staff "
-                    "melalui voice verifikasi."
+                    f"{NANZ_ARROW_BLUE} {interaction.user.mention} baru saja mengisi data verifikasi.\n"
+                    f"{NANZ_GEAR} Data lengkap dan tombol **Approve/Deny** ada di <#{VERIF_CHANNEL_ID}>."
                 ),
                 color=0x5865F2,
             )
-
-            embed.add_field(
-                name="Member",
-                value=(
-                    f"{interaction.user.mention}\n"
-                    f"`{interaction.user.id}`"
-                ),
-                inline=False,
-            )
-
-            embed.add_field(
-                name="Nama",
-                value=self.nama.value,
-                inline=True,
-            )
-
-            embed.add_field(
-                name="Asal",
-                value=self.asal.value,
-                inline=True,
-            )
-
-            embed.add_field(
-                name="Umur",
-                value=self.umur,
-                inline=True,
-            )
-
-            embed.add_field(
-                name="Gender",
-                value=(
-                    "Siswa"
-                    if self.gender == "L"
-                    else "Siswi"
-                ),
-                inline=True,
-            )
-
-            embed.add_field(
-                name="Medsos",
-                value=medsos_final,
-                inline=False,
-            )
-
-            embed.add_field(
-                name="Followers",
-                value=followers,
-                inline=True,
-            )
-
-            if link:
-                embed.add_field(
-                    name="Profile",
-                    value=f"{NANZ_LINK} [Buka Profile]({link})",
-                    inline=False,
-                )
-
-            embed.set_thumbnail(
-                url=interaction.user.display_avatar.url
-            )
-
-            view = VerifyView(
-                self.bot,
-                interaction.user.id,
-                self.nama.value,
-                self.asal.value,
-                self.umur,
-                self.gender,
-                medsos_final,
-                followers,
-                link,
-            )
+            notice_embed.add_field(name="Member", value=f"{interaction.user.mention}\n`{interaction.user.id}`", inline=False)
+            notice_embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
             await engagement.send(
-                embed=embed,
-                view=view,
-                allowed_mentions=discord.AllowedMentions(
-                    users=True
-                ),
+                embed=notice_embed,
+                allowed_mentions=discord.AllowedMentions(users=True),
             )
 
         # =====================================================
@@ -705,294 +692,71 @@ class VoiceVerifyButtonView(discord.ui.View):
 # =========================================================
 
 class VerifyView(discord.ui.View):
+    """Persistent Approve/Deny view yang dapat memulihkan data dari embed."""
 
-    def __init__(
-        self,
-        bot,
-        user_id,
-        nama,
-        asal,
-        umur,
-        gender,
-        medsos,
-        followers,
-        link,
-    ):
+    def __init__(self, bot, user_id=None, nama=None, asal=None, umur=None, gender=None, medsos=None, followers=None, link=None):
         super().__init__(timeout=None)
+        self.bot=bot; self.user_id=user_id; self.nama=nama; self.asal=asal; self.umur=umur; self.gender=gender; self.medsos=medsos; self.followers=followers; self.link=link
 
-        self.bot = bot
-        self.user_id = user_id
-        self.nama = nama
-        self.asal = asal
-        self.umur = umur
-        self.gender = gender
-        self.medsos = medsos
-        self.followers = followers
-        self.link = link
+    def _load_from_message(self,message):
+        if not message or not message.embeds: return False
+        values={f.name.strip().lower(): f.value.strip() for f in message.embeds[0].fields}
+        member_value=values.get('member','')
+        match=re.search(r'`(\d+)`',member_value) or re.search(r'<@!?([0-9]+)>',member_value)
+        if not match: return False
+        self.user_id=match.group(1); self.nama=values.get('nama',''); self.asal=values.get('asal',''); self.umur=values.get('umur',''); self.medsos=values.get('medsos',''); self.followers=values.get('followers','')
+        profile=values.get('profile',''); pm=re.search(r'\((https?://[^)]+)\)',profile); self.link=pm.group(1) if pm else ('' if profile=='Tidak tersedia' else profile)
+        gv=values.get('gender','').lower(); self.gender='P' if 'siswi' in gv else ('L' if 'siswa' in gv else values.get('gender',''))
+        return True
 
-    @discord.ui.button(
-        label="Approve",
-        style=discord.ButtonStyle.success,
-        custom_id="verify_approve_button",
-    )
-    async def approve(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
+    async def _get_member(self,interaction):
+        if not self.user_id: self._load_from_message(interaction.message)
+        return interaction.guild.get_member(int(self.user_id)) if self.user_id else None
 
-        member = interaction.guild.get_member(
-            int(self.user_id)
-        )
-
-        member_role = interaction.guild.get_role(
-            MEMBER_ROLE_ID
-        )
-
-        siswa_role = interaction.guild.get_role(
-            SISWA_ROLE_ID
-        )
-
-        siswi_role = interaction.guild.get_role(
-            SISWI_ROLE_ID
-        )
-
-        age_15_18_role = (
-            interaction.guild.get_role(
-                AGE_15_18_ROLE_ID
-            )
-            if AGE_15_18_ROLE_ID
-            else None
-        )
-
-        age_19_22_role = (
-            interaction.guild.get_role(
-                AGE_19_22_ROLE_ID
-            )
-            if AGE_19_22_ROLE_ID
-            else None
-        )
-
-        age_23_plus_role = (
-            interaction.guild.get_role(
-                AGE_23_PLUS_ROLE_ID
-            )
-            if AGE_23_PLUS_ROLE_ID
-            else None
-        )
-
+    @discord.ui.button(label='Approve',style=discord.ButtonStyle.success,custom_id='verify_approve_button')
+    async def approve(self,interaction:discord.Interaction,button:discord.ui.Button):
+        if not self._load_from_message(interaction.message):
+            return await interaction.response.send_message('Data verifikasi pada pesan ini tidak dapat dibaca.',ephemeral=True)
+        member=await self._get_member(interaction)
+        member_role=interaction.guild.get_role(MEMBER_ROLE_ID); siswa_role=interaction.guild.get_role(SISWA_ROLE_ID); siswi_role=interaction.guild.get_role(SISWI_ROLE_ID)
+        age_15_18_role=interaction.guild.get_role(AGE_15_18_ROLE_ID) if AGE_15_18_ROLE_ID else None
+        age_19_22_role=interaction.guild.get_role(AGE_19_22_ROLE_ID) if AGE_19_22_ROLE_ID else None
+        age_23_plus_role=interaction.guild.get_role(AGE_23_PLUS_ROLE_ID) if AGE_23_PLUS_ROLE_ID else None
         if member:
-
-            roles_to_add = []
-
-            if member_role:
-                roles_to_add.append(
-                    member_role
-                )
-
-            if self.gender == "L" and siswa_role:
-                roles_to_add.append(
-                    siswa_role
-                )
-
-            elif self.gender == "P" and siswi_role:
-                roles_to_add.append(
-                    siswi_role
-                )
-
-            age_roles = {
-                "15-18": age_15_18_role,
-                "19-22": age_19_22_role,
-                "23+": age_23_plus_role,
-            }
-
-            age_role = age_roles.get(
-                self.umur
-            )
-
-            if age_role:
-                roles_to_add.append(
-                    age_role
-                )
-
-            if roles_to_add:
-                await member.add_roles(
-                    *roles_to_add
-                )
-
-            nonverif_role = interaction.guild.get_role(
-                NONVERIF_ROLE_ID
-            )
-
-            if (
-                nonverif_role
-                and nonverif_role in member.roles
-            ):
-                await member.remove_roles(
-                    nonverif_role
-                )
-
-            try:
-                await member.send(
-                    "Verifikasi kamu disetujui."
-                )
-            except Exception:
-                pass
-
-        # =====================================================
-        # SIMPAN DATA MEMBER
-        # =====================================================
-
-        data_channel = interaction.client.get_channel(
-            DATA_MEMBER_CHANNEL_ID
-        )
-
+            roles=[]
+            if member_role: roles.append(member_role)
+            if self.gender=='L' and siswa_role: roles.append(siswa_role)
+            elif self.gender=='P' and siswi_role: roles.append(siswi_role)
+            age_role={'15-18':age_15_18_role,'19-22':age_19_22_role,'23+':age_23_plus_role}.get(self.umur)
+            if age_role: roles.append(age_role)
+            if roles: await member.add_roles(*roles)
+            nonverif=interaction.guild.get_role(NONVERIF_ROLE_ID)
+            if nonverif and nonverif in member.roles: await member.remove_roles(nonverif)
+            try: await member.send('Verifikasi kamu disetujui.')
+            except Exception: pass
+        data_channel=interaction.client.get_channel(DATA_MEMBER_CHANNEL_ID)
         if data_channel:
-
-            data_embed = discord.Embed(
-                title="Data Member Baru",
-                color=0x57F287,
-            )
-
-            data_embed.add_field(
-                name="User",
-                value=(
-                    f"{member} "
-                    f"({self.user_id})"
-                ),
-                inline=False,
-            )
-
-            data_embed.add_field(
-                name="Nama",
-                value=self.nama,
-                inline=True,
-            )
-
-            data_embed.add_field(
-                name="Asal",
-                value=self.asal,
-                inline=True,
-            )
-
-            data_embed.add_field(
-                name="Umur",
-                value=self.umur or "Tidak diisi",
-                inline=True,
-            )
-
-            data_embed.add_field(
-                name="Gender",
-                value=self.gender,
-                inline=True,
-            )
-
-            data_embed.add_field(
-                name="Medsos",
-                value=self.medsos,
-                inline=False,
-            )
-
-            data_embed.add_field(
-                name="Followers",
-                value=self.followers,
-                inline=True,
-            )
-
-            data_embed.add_field(
-                name="Profile",
-                value=self.link or "Tidak tersedia",
-                inline=False,
-            )
-
-            data_embed.add_field(
-                name="Approved By",
-                value=interaction.user.mention,
-                inline=False,
-            )
-
-            if member:
-                data_embed.set_thumbnail(
-                    url=member.display_avatar.url
-                )
-
-            await data_channel.send(
-                content=f"**Username:** {member.name if member else self.user_id}",
-                embed=data_embed,
-            )
-
-        # =====================================================
-        # UPDATE PANEL ENGAGEMENT
-        # =====================================================
-
+            de=discord.Embed(title='Data Member Baru',color=0x57F287)
+            de.add_field(name='User',value=f'{member} ({self.user_id})',inline=False)
+            de.add_field(name='Nama',value=self.nama,inline=True); de.add_field(name='Asal',value=self.asal,inline=True); de.add_field(name='Umur',value=self.umur or 'Tidak diisi',inline=True); de.add_field(name='Gender',value=self.gender,inline=True)
+            de.add_field(name='Medsos',value=self.medsos,inline=False); de.add_field(name='Followers',value=self.followers,inline=True); de.add_field(name='Profile',value=self.link or 'Tidak tersedia',inline=False); de.add_field(name='Approved By',value=interaction.user.mention,inline=False)
+            if member: de.set_thumbnail(url=member.display_avatar.url)
+            await data_channel.send(content=f'**Username:** {member.name if member else self.user_id}',embed=de)
         if interaction.message.embeds:
-            embed = interaction.message.embeds[0]
-            embed.color = 0x57F287
+            embed=interaction.message.embeds[0]; embed.color=0x57F287; embed.add_field(name='Status',value=f'Approved by {interaction.user.mention}',inline=False); await interaction.message.edit(embed=embed,view=None)
+        await interaction.response.send_message('Verifikasi berhasil diapprove.',ephemeral=True)
 
-            embed.add_field(
-                name="Status",
-                value=(
-                    f"Approved by "
-                    f"{interaction.user.mention}"
-                ),
-                inline=False,
-            )
-
-            await interaction.message.edit(
-                embed=embed,
-                view=None,
-            )
-
-        await interaction.response.send_message(
-            "Verifikasi berhasil diapprove.",
-            ephemeral=True,
-        )
-
-    @discord.ui.button(
-        label="Deny",
-        style=discord.ButtonStyle.danger,
-        custom_id="verify_deny_button",
-    )
-    async def deny(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-
-        member = interaction.guild.get_member(
-            int(self.user_id)
-        )
-
+    @discord.ui.button(label='Deny',style=discord.ButtonStyle.danger,custom_id='verify_deny_button')
+    async def deny(self,interaction:discord.Interaction,button:discord.ui.Button):
+        if not self._load_from_message(interaction.message):
+            return await interaction.response.send_message('Data verifikasi pada pesan ini tidak dapat dibaca.',ephemeral=True)
+        member=await self._get_member(interaction)
         if member:
-            try:
-                await member.send(
-                    "Verifikasi kamu ditolak."
-                )
-            except Exception:
-                pass
-
+            try: await member.send('Verifikasi kamu ditolak.')
+            except Exception: pass
         if interaction.message.embeds:
-            embed = interaction.message.embeds[0]
-            embed.color = 0xED4245
-
-            embed.add_field(
-                name="Status",
-                value=(
-                    f"Denied by "
-                    f"{interaction.user.mention}"
-                ),
-                inline=False,
-            )
-
-            await interaction.message.edit(
-                embed=embed,
-                view=None,
-            )
-
-        await interaction.response.send_message(
-            "Verifikasi berhasil dideny.",
-            ephemeral=True,
-        )
+            embed=interaction.message.embeds[0]; embed.color=0xED4245; embed.add_field(name='Status',value=f'Denied by {interaction.user.mention}',inline=False); await interaction.message.edit(embed=embed,view=None)
+        await interaction.response.send_message('Verifikasi berhasil dideny.',ephemeral=True)
 
 
 # =========================================================
@@ -1003,6 +767,35 @@ class VerifySystem(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ):
+        """Notify engagement when a member actually enters a verification voice."""
+        if member.bot:
+            return
+
+        before_id = before.channel.id if before.channel else None
+        after_id = after.channel.id if after.channel else None
+
+        if after_id not in VOICE_VERIF_CHANNEL_IDS:
+            return
+        if before_id in VOICE_VERIF_CHANNEL_IDS:
+            return
+
+        target = after.channel
+        if target is None:
+            return
+
+        await send_voice_notice_for_member(
+            self.bot,
+            member,
+            target,
+        )
 
     async def show_verification_panel(
         self,
@@ -1019,7 +812,7 @@ class VerifySystem(commands.Cog):
             description=(
                 f"{NANZ_ARROW_BLUE} Isi pilihan di bawah sesuai "
                 "data kamu.\n\n"
-                f"{NANZ_GEAR} Data akan dikirim ke divisi engagement "
+                f"{NANZ_GEAR} Data akan dikirim ke channel verifikasi masuk "
                 "untuk dikonfirmasi.\n"
                 f"{NANZ_ARROW_PURPLE} Setelah data dikirim, kamu akan "
                 "mendapat tombol untuk masuk ke Voice Verif."
@@ -1086,6 +879,8 @@ class VerifySystem(commands.Cog):
 
 
 async def setup(bot):
+    # Persistent view agar tombol Approve/Deny tetap aktif setelah restart.
+    bot.add_view(VerifyView(bot))
     await bot.add_cog(
         VerifySystem(bot)
     )
