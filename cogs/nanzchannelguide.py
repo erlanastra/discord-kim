@@ -43,7 +43,7 @@ class NanzChannelGuide(commands.Cog):
         "tata-tertib":
             "Tempat membaca dan memahami aturan yang berlaku di server nanZ.",
 
-        "sambutan":
+        "masuk":
             "Tempat menyambut dan mengenalkan informasi penting bagi murid baru.",
 
         "atribut":
@@ -61,7 +61,7 @@ class NanzChannelGuide(commands.Cog):
         "req-role-booster":
             "Tempat mengajukan permintaan role Booster sesuai ketentuan.",
 
-        "perpisahan":
+        "keluar":
             "Tempat memberikan ucapan dan pesan kepada murid atau staff yang meninggalkan nanZ.",
 
 
