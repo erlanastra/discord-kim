@@ -7,7 +7,10 @@ import re
 # CONFIG
 # =========================================================
 
-VERIF_CHANNEL_ID = 1508683781698224241
+VERIF_CHANNEL_ID = 1486913580161962054
+
+# Channel khusus data verifikasi untuk Approve / Deny
+DATA_VERIF_CHANNEL_ID = 1508683781698224241
 
 # Channel engagement / divisi yang menangani verifikasi
 ENGAGEMENT_CHANNEL_ID = 1525136678442893352
@@ -383,7 +386,7 @@ class VerifyModal(
         # =====================================================
 
         verif_channel = interaction.client.get_channel(
-            VERIF_CHANNEL_ID
+            DATA_VERIF_CHANNEL_ID
         )
 
         if verif_channel:
@@ -423,7 +426,7 @@ class VerifyModal(
                 title="Member Mengisi Data Verifikasi",
                 description=(
                     f"{NANZ_ARROW_BLUE} {interaction.user.mention} telah mengirim data verifikasi.\n"
-                    f"{NANZ_GEAR} Data lengkap dan tombol **Approve/Deny** ada di <#{VERIF_CHANNEL_ID}>."
+                    f"{NANZ_GEAR} Data lengkap dan tombol **Approve/Deny** ada di <#{DATA_VERIF_CHANNEL_ID}>."
                 ),
                 color=0x5865F2,
             )
@@ -1035,13 +1038,12 @@ class VerifySystem(commands.Cog):
         )
 
     @commands.command(name="dataverif")
-    @commands.has_permissions(administrator=True)
     async def verifikasi(
         self,
         ctx,
     ):
 
-        if ctx.channel.id != VERIF_CHANNEL_ID:
+        if ctx.channel.id != 1486913580161962054:
             return
 
         embed = discord.Embed(
