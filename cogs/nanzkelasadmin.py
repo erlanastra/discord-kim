@@ -118,8 +118,7 @@ class BillingView(discord.ui.View):
 
         button = discord.ui.Button(
             label="Tandai Lunas",
-            emoji="<:verified:1553690488257908837>",
-            style=discord.ButtonStyle.success,
+                        style=discord.ButtonStyle.success,
             custom_id=f"nanz:billing:paid:{self.class_id}",
         )
         button.callback = self.mark_paid
@@ -128,19 +127,19 @@ class BillingView(discord.ui.View):
     async def mark_paid(self, interaction):
         if not has_staff_role(interaction.user):
             await interaction.response.send_message(
-                "<a:gear:1553688352564183051> Hanya Staff atau Administrator yang dapat memproses pembayaran.",
+                "Hanya Staff atau Administrator yang dapat memproses pembayaran.",
                 ephemeral=True,
             )
             return
 
         cls = await get_class(self.class_id)
         if not cls:
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Kelas tidak ditemukan.", ephemeral=True)
             return
 
         if cls["status"] == "Inactive":
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Kelas sudah Inactive. Gunakan panel Staff untuk memperpanjang.",
+                "Kelas sudah Inactive. Gunakan panel Staff untuk memperpanjang.",
                 ephemeral=True,
             )
             return
@@ -183,20 +182,20 @@ class BillingView(discord.ui.View):
 
         try:
             embed = discord.Embed(
-                title="<a:dollar:1553688127103705290> Tagihan Kelas — LUNAS",
+                title="<:verified:1553690488257908837> Tagihan Kelas — LUNAS",
                 description=(
-                    f"Pembayaran **{cls['name']}** telah ditandai lunas. <:verified:1553690488257908837>\n"
+                    f"Pembayaran **{cls['name']}** telah ditandai lunas. \n"
                     f"{DIVIDER}"
                 ),
                 color=discord.Color.from_rgb(*OK_GREEN),
                 timestamp=datetime.now(timezone.utc),
             )
-            embed.add_field(name="<a:arrow_blue:1512787254312042496> Kelas", value=cls["name"], inline=True)
-            embed.add_field(name="<a:dollar:1553688127103705290> Status", value="<:verified:1553690488257908837> Lunas", inline=True)
-            embed.add_field(name="<:verified:1553690488257908837> Diverifikasi oleh", value=interaction.user.mention, inline=True)
-            embed.add_field(name="<a:question:1553688505929044000> Aktif Sampai", value=f"{stamp(new_due, 'F')}\n{stamp(new_due, 'R')}", inline=True)
-            embed.add_field(name="<a:arrow_purple:1512787191234035803> Batas Grace", value=stamp(new_grace, "D"), inline=True)
-            embed.add_field(name="<a:dollar:1553688127103705290> Biaya", value=f"`{CLASS_PRICE:,}` OwO Cash", inline=True)
+            embed.add_field(name="Kelas", value=cls["name"], inline=True)
+            embed.add_field(name="Status", value="Lunas", inline=True)
+            embed.add_field(name="Diverifikasi oleh", value=interaction.user.mention, inline=True)
+            embed.add_field(name="Aktif Sampai", value=f"{stamp(new_due, 'F')}\n{stamp(new_due, 'R')}", inline=True)
+            embed.add_field(name="Batas Grace", value=stamp(new_grace, "D"), inline=True)
+            embed.add_field(name="Biaya", value=f"`{CLASS_PRICE:,}` OwO Cash", inline=True)
             embed.set_image(url=f"attachment://{BANNER_NAME}")
             style_embed(embed)
 
@@ -220,12 +219,12 @@ class BillingView(discord.ui.View):
         await send_log(
             interaction.client,
             interaction.guild,
-            f"<a:dollar:1553688127103705290> Tagihan **{cls['name']}** ditandai lunas oleh {interaction.user.mention}. "
+            f"Tagihan **{cls['name']}** ditandai lunas oleh {interaction.user.mention}. "
             f"Aktif sampai <t:{int(new_due.timestamp())}:F>.",
         )
 
         await interaction.followup.send(
-            f"<:verified:1553690488257908837> Pembayaran **{cls['name']}** ditandai lunas.\n"
+            f"Pembayaran **{cls['name']}** ditandai lunas.\n"
             f"Aktif sampai <t:{int(new_due.timestamp())}:F>.",
             ephemeral=True,
         )
@@ -337,7 +336,7 @@ class NanzKelasAdmin(commands.Cog):
         grace = db_dt(cls["grace_until"])
 
         if stage == "H-3":
-            title = "<a:dollar:1553688127103705290> Tagihan Kelas"
+            title = "Tagihan Kelas"
             color = discord.Color.from_rgb(255, 170, 60)
             badge, banner_title, accent = "H-3", "Tagihan Kelas", None
             description = (
@@ -348,10 +347,10 @@ class NanzKelasAdmin(commands.Cog):
             steps = (
                 "**1.** Lakukan pembayaran sebesar biaya di atas\n"
                 "**2.** Tunggu Staff memverifikasi pembayaran\n"
-                "**3.** Status berubah menjadi <:verified:1553690488257908837> **Lunas**"
+                "**3.** Status berubah menjadi **Lunas**"
             )
         else:
-            title = "<a:question:1553688505929044000> Masa Grace Kelas"
+            title = "Masa Grace Kelas"
             color = discord.Color.from_rgb(235, 85, 95)
             badge, banner_title, accent = "GRACE", "Masa Grace Kelas", WARN_ORANGE
             description = (
@@ -363,7 +362,7 @@ class NanzKelasAdmin(commands.Cog):
             steps = (
                 "**1.** Segera lakukan pembayaran\n"
                 "**2.** Hubungi Staff Pendamping untuk verifikasi\n"
-                "**3.** Kelas kembali <:verified:1553690488257908837> **Active** setelah lunas"
+                "**3.** Kelas kembali **Active** setelah lunas"
             )
 
         embed = discord.Embed(
@@ -372,12 +371,12 @@ class NanzKelasAdmin(commands.Cog):
             color=color,
             timestamp=now,
         )
-        embed.add_field(name="<a:arrow_blue:1512787254312042496> Kelas", value=cls["name"], inline=True)
-        embed.add_field(name="<a:dollar:1553688127103705290> Status", value="<a:question:1553688505929044000> Belum Lunas", inline=True)
-        embed.add_field(name="<a:dollar:1553688127103705290> Biaya", value=f"`{CLASS_PRICE:,}` OwO Cash", inline=True)
-        embed.add_field(name="<a:pin:1553688245769085099> Jatuh Tempo", value=f"{stamp(due, 'F')}\n{stamp(due, 'R')}", inline=True)
-        embed.add_field(name="<a:arrow_purple:1512787191234035803> Batas Grace", value=f"{stamp(grace, 'D')}\n{stamp(grace, 'R')}", inline=True)
-        embed.add_field(name="<a:arrow_blue:1512787254312042496> Langkah Pembayaran", value=steps, inline=False)
+        embed.add_field(name="Kelas", value=cls["name"], inline=True)
+        embed.add_field(name="Status", value="Belum Lunas", inline=True)
+        embed.add_field(name="Biaya", value=f"`{CLASS_PRICE:,}` OwO Cash", inline=True)
+        embed.add_field(name="Jatuh Tempo", value=f"{stamp(due, 'F')}\n{stamp(due, 'R')}", inline=True)
+        embed.add_field(name="Batas Grace", value=f"{stamp(grace, 'D')}\n{stamp(grace, 'R')}", inline=True)
+        embed.add_field(name="Langkah Pembayaran", value=steps, inline=False)
         embed.set_image(url=f"attachment://{BANNER_NAME}")
         style_embed(embed)
 
@@ -432,7 +431,7 @@ class NanzKelasAdmin(commands.Cog):
             await send_log(
                 self.bot,
                 guild,
-                f"<a:question:1553688505929044000> Kelas **{cls['name']}** memasuki Grace Period.",
+                f"Kelas **{cls['name']}** memasuki Grace Period.",
             )
 
     async def set_inactive(self, cls):
@@ -452,7 +451,7 @@ class NanzKelasAdmin(commands.Cog):
             await send_log(
                 self.bot,
                 guild,
-                f"<a:question:1553688505929044000> Kelas **{cls['name']}** menjadi Inactive karena tagihan tidak dibayar sampai Grace Period berakhir.",
+                f"Kelas **{cls['name']}** menjadi Inactive karena tagihan tidak dibayar sampai Grace Period berakhir.",
             )
 
 

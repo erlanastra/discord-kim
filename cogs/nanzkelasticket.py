@@ -981,14 +981,14 @@ class ClassCreationModal(discord.ui.Modal):
 
         if not valid_hex(color_hex):
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Format warna tidak valid. Gunakan `#5865F2`.",
+                "Format warna tidak valid. Gunakan `#5865F2`.",
                 ephemeral=True,
             )
             return
 
         if not interaction.guild:
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Form ini hanya dapat digunakan di server.",
+                "Form ini hanya dapat digunakan di server.",
                 ephemeral=True,
             )
             return
@@ -999,7 +999,7 @@ class ClassCreationModal(discord.ui.Modal):
         existing = await get_user_class(self.owner_id)
         if existing:
             await interaction.response.send_message(
-                f"<a:question:1553688505929044000> Kamu sudah tergabung di **{existing['name']}**.\n"
+                f"Kamu sudah tergabung di **{existing['name']}**.\n"
                 "Satu member hanya boleh memiliki satu kelas.",
                 ephemeral=True,
             )
@@ -1018,7 +1018,7 @@ class ClassCreationModal(discord.ui.Modal):
 
         if pending:
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Kamu masih memiliki pengajuan kelas yang sedang diproses.",
+                "Kamu masih memiliki pengajuan kelas yang sedang diproses.",
                 ephemeral=True,
             )
             return
@@ -1034,7 +1034,7 @@ class ClassCreationModal(discord.ui.Modal):
 
         if not approval_channel:
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Channel `approval-kelas` tidak ditemukan atau bot tidak memiliki akses ke channel tersebut.",
+                "Channel `approval-kelas` tidak ditemukan atau bot tidak memiliki akses ke channel tersebut.",
                 ephemeral=True,
             )
             return
@@ -1091,7 +1091,7 @@ class ClassCreationModal(discord.ui.Modal):
 
         try:
             banner = await make_banner_file(
-                title="Pengajuan Kelas Baru",
+                title="<a:arrow_blue:1512787254312042496> Pengajuan Kelas Baru",
                 subtitle=name,
                 badge="MENUNGGU",
                 chips=[
@@ -1114,13 +1114,13 @@ class ClassCreationModal(discord.ui.Modal):
                 (request_id,),
             )
             await interaction.followup.send(
-                "<a:question:1553688505929044000> Gagal mengirim pengajuan ke `approval-kelas`.",
+                "Gagal mengirim pengajuan ke `approval-kelas`.",
                 ephemeral=True,
             )
             return
 
         await interaction.followup.send(
-            "<:verified:1553690488257908837> Pengajuan kelas berhasil dikirim ke `approval-kelas`.\n"
+            "Pengajuan kelas berhasil dikirim ke `approval-kelas`.\n"
             "Staff akan memilih Staff Pendamping terlebih dahulu sebelum kelas dapat disetujui.",
             ephemeral=True,
         )
@@ -1130,8 +1130,8 @@ def build_creation_request_embed(request_id, request):
     staff_id = int(request.get("staff_id") or 0)
 
     steps = (
-        f"{'<:verified:1553690488257908837>' if staff_id else '<a:arrow_purple:1512787191234035803>'} **1.** Pilih Staff Pendamping\n"
-        "<a:arrow_purple:1512787191234035803> **2.** Approve atau Reject pengajuan"
+        f"{'' if staff_id else ''} **1.** Pilih Staff Pendamping\n"
+        "**2.** Approve atau Reject pengajuan"
     )
 
     embed = discord.Embed(
@@ -1146,21 +1146,21 @@ def build_creation_request_embed(request_id, request):
         timestamp=utc_now(),
     )
 
-    embed.add_field(name="<a:arrow_blue:1512787254312042496> Pemilik", value=f"<@{request['owner_id']}>", inline=True)
+    embed.add_field(name="Pemilik", value=f"<@{request['owner_id']}>", inline=True)
     embed.add_field(
-        name="<a:arrow_blue:1512787254312042496> Staff Pendamping",
-        value=f"<@{staff_id}>" if staff_id else "<a:question:1553688505929044000> Belum dipilih",
+        name="Staff Pendamping",
+        value=f"<@{staff_id}>" if staff_id else "Belum dipilih",
         inline=True,
     )
-    embed.add_field(name="<a:pin:1553688245769085099> Request ID", value=f"`#{request_id}`", inline=True)
-    embed.add_field(name="<a:pin:1553688245769085099> Warna Kelas", value=f"`{request['color_hex']}`", inline=True)
+    embed.add_field(name="Request ID", value=f"`#{request_id}`", inline=True)
+    embed.add_field(name="Warna Kelas", value=f"`{request['color_hex']}`", inline=True)
     embed.add_field(
-        name="<a:pin:1553688245769085099> Logo",
-        value="<:verified:1553690488257908837> Terlampir" if request.get("logo_url") else "<a:arrow_purple:1512787191234035803> Default nZ",
+        name="Logo",
+        value="Terlampir" if request.get("logo_url") else "Default nZ",
         inline=True,
     )
-    embed.add_field(name="<a:arrow_blue:1512787254312042496> Status", value="<a:question:1553688505929044000> Menunggu", inline=True)
-    embed.add_field(name="<a:arrow_blue:1512787254312042496> Langkah Proses", value=steps, inline=False)
+    embed.add_field(name="Status", value="Menunggu", inline=True)
+    embed.add_field(name="Langkah Proses", value=steps, inline=False)
 
     if request.get("logo_url"):
         embed.set_thumbnail(url=request["logo_url"])
@@ -1180,8 +1180,7 @@ class ClassFormTriggerView(discord.ui.View):
 
         button = discord.ui.Button(
             label="Buka Form Kelas",
-            emoji="<a:arrow_blue:1512787254312042496>",
-            style=discord.ButtonStyle.primary,
+                        style=discord.ButtonStyle.primary,
             custom_id="nanz:open_class_form",
         )
         button.callback = self.open_form
@@ -1190,7 +1189,7 @@ class ClassFormTriggerView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction):
         if not has_staff_role(interaction.user):
             await interaction.response.send_message(
-                "<a:gear:1553688352564183051> Panel pembuatan kelas hanya dapat digunakan Staff atau Administrator.",
+                "Panel pembuatan kelas hanya dapat digunakan Staff atau Administrator.",
                 ephemeral=True,
             )
             return False
@@ -1222,8 +1221,7 @@ class StaffDashboardView(discord.ui.View):
 
         refresh = discord.ui.Button(
             label="Refresh",
-            emoji="<a:arrow_blue:1512787254312042496>",
-            style=discord.ButtonStyle.secondary,
+                        style=discord.ButtonStyle.secondary,
             custom_id="nanz:staff_dashboard:refresh",
         )
         refresh.callback = self.refresh_dashboard
@@ -1232,7 +1230,7 @@ class StaffDashboardView(discord.ui.View):
     async def interaction_check(self, interaction):
         if not has_staff_role(interaction.user):
             await interaction.response.send_message(
-                "<a:gear:1553688352564183051> Dashboard ini khusus Staff dan Administrator.",
+                "Dashboard ini khusus Staff dan Administrator.",
                 ephemeral=True,
             )
             return False
@@ -1255,14 +1253,14 @@ class StaffDashboardView(discord.ui.View):
 
         if not cls:
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Voice channel tersebut bukan Voice Channel kelas yang terdaftar.",
+                "Voice channel tersebut bukan Voice Channel kelas yang terdaftar.",
                 ephemeral=True,
             )
             return
 
         if not can_manage_class(interaction.user, cls):
             await interaction.response.send_message(
-                "<a:gear:1553688352564183051> Kamu hanya dapat mengelola kelas yang Staff Pendamping-nya adalah kamu. Administrator dapat mengakses semua kelas.",
+                "Kamu hanya dapat mengelola kelas yang Staff Pendamping-nya adalah kamu. Administrator dapat mengakses semua kelas.",
                 ephemeral=True,
             )
             return
@@ -1282,7 +1280,7 @@ class StaffDashboardView(discord.ui.View):
 
 def build_staff_dashboard_embed():
     embed = discord.Embed(
-        title="<:verified:1553690488257908837> Pusat Kendali Kelas nanZ",
+        title="<a:gear:1553688352564183051> Pusat Kendali Kelas nanZ",
         description=(
             "Selamat datang di **Dashboard Staff**!\n"
             "Kelola seluruh Kelas nanZ dari satu tempat.\n"
@@ -1292,7 +1290,7 @@ def build_staff_dashboard_embed():
     )
 
     embed.add_field(
-        name="<a:arrow_purple:1512787191234035803> Cara Menggunakan",
+        name="<a:arrow_blue:1512787254312042496> Cara Menggunakan",
         value=(
             "**1.** Pilih Voice Channel kelas di menu bawah\n"
             "**2.** Panel management muncul khusus untukmu\n"
@@ -1310,10 +1308,10 @@ def build_staff_dashboard_embed():
         inline=False,
     )
     embed.add_field(
-        name="<:verified:1553690488257908837> Fitur Tersedia",
+        name="<a:arrow_purple:1512787191234035803> Fitur Tersedia",
         value=(
-            "`<a:arrow_blue:1512787254312042496> Kelola Member`  `<a:arrow_blue:1512787254312042496> Edit Kelas`  `<a:arrow_blue:1512787254312042496> Ganti Staff`\n"
-            "`<a:arrow_blue:1512787254312042496> Perpanjang`  `<a:question:1553688505929044000> Bubarkan`  `<a:arrow_blue:1512787254312042496> Refresh`"
+            "`Kelola Member`  `Edit Kelas`  `Ganti Staff`\n"
+            "`Perpanjang`  `Bubarkan`  `Refresh`"
         ),
         inline=False,
     )
@@ -1344,8 +1342,7 @@ class ClassApprovalView(discord.ui.View):
 
         approve = discord.ui.Button(
             label="Approve Kelas",
-            emoji="<:verified:1553690488257908837>",
-            style=discord.ButtonStyle.success,
+                        style=discord.ButtonStyle.success,
             custom_id=f"nanz:class_approve:{self.request_id}",
         )
         approve.callback = self.approve
@@ -1353,8 +1350,7 @@ class ClassApprovalView(discord.ui.View):
 
         reject = discord.ui.Button(
             label="Reject Kelas",
-            emoji="<a:question:1553688505929044000>",
-            style=discord.ButtonStyle.danger,
+                        style=discord.ButtonStyle.danger,
             custom_id=f"nanz:class_reject:{self.request_id}",
         )
         reject.callback = self.reject
@@ -1363,7 +1359,7 @@ class ClassApprovalView(discord.ui.View):
     async def interaction_check(self, interaction):
         if not has_staff_role(interaction.user):
             await interaction.response.send_message(
-                "<a:gear:1553688352564183051> Hanya Staff atau Administrator yang dapat memproses pengajuan kelas.",
+                "Hanya Staff atau Administrator yang dapat memproses pengajuan kelas.",
                 ephemeral=True,
             )
             return False
@@ -1383,11 +1379,11 @@ class ClassApprovalView(discord.ui.View):
     async def select_staff(self, interaction):
         request = await self.get_request()
         if not request:
-            await interaction.response.send_message("<a:question:1553688505929044000> Pengajuan tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Pengajuan tidak ditemukan.", ephemeral=True)
             return
 
         if request["status"] != "Pending":
-            await interaction.response.send_message("<a:question:1553688505929044000> Pengajuan ini sudah diproses.", ephemeral=True)
+            await interaction.response.send_message("Pengajuan ini sudah diproses.", ephemeral=True)
             return
 
         selected = self.staff_select.values[0]
@@ -1395,7 +1391,7 @@ class ClassApprovalView(discord.ui.View):
 
         if not staff_member or not is_valid_staff(staff_member):
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> User yang dipilih tidak memiliki Role Staff yang sah.",
+                "User yang dipilih tidak memiliki Role Staff yang sah.",
                 ephemeral=True,
             )
             return
@@ -1421,12 +1417,12 @@ class ClassApprovalView(discord.ui.View):
         request = await self.get_request()
 
         if not request:
-            await interaction.response.send_message("<a:question:1553688505929044000> Data pengajuan tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Data pengajuan tidak ditemukan.", ephemeral=True)
             return
 
         if request["status"] != "Pending":
             await interaction.response.send_message(
-                f"<a:question:1553688505929044000> Pengajuan ini sudah berstatus `{request['status']}`.",
+                f"Pengajuan ini sudah berstatus `{request['status']}`.",
                 ephemeral=True,
             )
             return
@@ -1434,7 +1430,7 @@ class ClassApprovalView(discord.ui.View):
         staff_id = int(request["staff_id"] or 0)
         if staff_id <= 0:
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Pilih Staff Pendamping terlebih dahulu sebelum Approve.",
+                "Pilih Staff Pendamping terlebih dahulu sebelum Approve.",
                 ephemeral=True,
             )
             return
@@ -1445,14 +1441,14 @@ class ClassApprovalView(discord.ui.View):
 
         if not owner:
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Pemilik kelas sudah tidak berada di server.",
+                "Pemilik kelas sudah tidak berada di server.",
                 ephemeral=True,
             )
             return
 
         if not staff or not is_valid_staff(staff):
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Staff Pendamping tidak valid atau sudah tidak memiliki Role Staff.",
+                "Staff Pendamping tidak valid atau sudah tidak memiliki Role Staff.",
                 ephemeral=True,
             )
             return
@@ -1460,7 +1456,7 @@ class ClassApprovalView(discord.ui.View):
         existing = await get_user_class(owner.id)
         if existing:
             await interaction.response.send_message(
-                f"<a:question:1553688505929044000> Pemilik sudah memiliki kelas **{existing['name']}**.",
+                f"Pemilik sudah memiliki kelas **{existing['name']}**.",
                 ephemeral=True,
             )
             return
@@ -1468,7 +1464,7 @@ class ClassApprovalView(discord.ui.View):
         category = guild.get_channel(RUANG_KELAS_CATEGORY_ID)
         if not isinstance(category, discord.CategoryChannel):
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> Category ruang kelas tidak ditemukan.",
+                "Category ruang kelas tidak ditemukan.",
                 ephemeral=True,
             )
             return
@@ -1581,7 +1577,7 @@ class ClassApprovalView(discord.ui.View):
 
             try:
                 await voice.send(
-                    f"<a:arrow_blue:1512787254312042496> **{request['name']}** resmi berdiri!\n"
+                    f"**{request['name']}** resmi berdiri!\n"
                     f"Staff Pendamping: <@{staff_id}>\n"
                     f"Pemilik: <@{request['owner_id']}>\n\n"
                     "**Berbeda Kelas, Tetap Satu Sekolah.**"
@@ -1590,23 +1586,23 @@ class ClassApprovalView(discord.ui.View):
                 pass
 
             embed = discord.Embed(
-                title="<a:arrow_blue:1512787254312042496> Kelas Resmi Berdiri!",
+                title="<:verified:1553690488257908837> Kelas Resmi Berdiri!",
                 description=(
                     f"**{request['name']}**\n"
                     f"*“{request['motto']}”*\n"
                     f"{DIVIDER}\n"
-                    "Selamat! Kelas baru sudah aktif dan siap menerima siswa. <:verified:1553690488257908837>"
+                    "Selamat! Kelas baru sudah aktif dan siap menerima siswa. "
                 ),
                 color=discord.Color.from_str(request["color_hex"]),
                 timestamp=utc_now(),
             )
-            embed.add_field(name="<a:arrow_blue:1512787254312042496> Pemilik", value=f"<@{request['owner_id']}>", inline=True)
-            embed.add_field(name="<a:arrow_blue:1512787254312042496> Staff Pendamping", value=f"<@{staff_id}>", inline=True)
-            embed.add_field(name="<a:pin:1553688245769085099> Class ID", value=f"`#{class_id}`", inline=True)
-            embed.add_field(name="<a:pin:1553688245769085099> Voice Channel", value=voice.mention, inline=True)
-            embed.add_field(name="<a:pin:1553688245769085099> Role Kelas", value=role.mention, inline=True)
-            embed.add_field(name="<:verified:1553690488257908837> Disetujui oleh", value=interaction.user.mention, inline=True)
-            embed.add_field(name="<a:question:1553688505929044000> Aktif Sampai", value=stamp(due_date, "F"), inline=False)
+            embed.add_field(name="Pemilik", value=f"<@{request['owner_id']}>", inline=True)
+            embed.add_field(name="Staff Pendamping", value=f"<@{staff_id}>", inline=True)
+            embed.add_field(name="Class ID", value=f"`#{class_id}`", inline=True)
+            embed.add_field(name="Voice Channel", value=voice.mention, inline=True)
+            embed.add_field(name="Role Kelas", value=role.mention, inline=True)
+            embed.add_field(name="Disetujui oleh", value=interaction.user.mention, inline=True)
+            embed.add_field(name="Aktif Sampai", value=stamp(due_date, "F"), inline=False)
             embed.set_image(url=f"attachment://{BANNER_NAME}")
             style_embed(embed)
 
@@ -1628,12 +1624,12 @@ class ClassApprovalView(discord.ui.View):
             await send_log(
                 interaction.client,
                 guild,
-                f"<a:arrow_blue:1512787254312042496> Kelas **{request['name']}** dibuat oleh <@{interaction.user.id}>. "
+                f"Kelas **{request['name']}** dibuat oleh <@{interaction.user.id}>. "
                 f"Staff: <@{staff_id}>. Class ID: `{class_id}`.",
             )
 
             await interaction.followup.send(
-                f"<:verified:1553690488257908837> Kelas **{request['name']}** berhasil dibuat.",
+                f"Kelas **{request['name']}** berhasil dibuat.",
                 ephemeral=True,
             )
 
@@ -1659,7 +1655,7 @@ class ClassApprovalView(discord.ui.View):
                     pass
 
             await interaction.followup.send(
-                "<a:question:1553688505929044000> Gagal membuat kelas.\n"
+                "Gagal membuat kelas.\n"
                 f"Error: `{type(exc).__name__}`",
                 ephemeral=True,
             )
@@ -1667,11 +1663,11 @@ class ClassApprovalView(discord.ui.View):
     async def reject(self, interaction):
         request = await self.get_request()
         if not request:
-            await interaction.response.send_message("<a:question:1553688505929044000> Pengajuan tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Pengajuan tidak ditemukan.", ephemeral=True)
             return
 
         if request["status"] != "Pending":
-            await interaction.response.send_message("<a:question:1553688505929044000> Pengajuan ini sudah diproses.", ephemeral=True)
+            await interaction.response.send_message("Pengajuan ini sudah diproses.", ephemeral=True)
             return
 
         await execute(
@@ -1695,9 +1691,9 @@ class ClassApprovalView(discord.ui.View):
             color=discord.Color.from_rgb(*BAD_RED),
             timestamp=utc_now(),
         )
-        embed.add_field(name="<a:arrow_blue:1512787254312042496> Pemohon", value=f"<@{request['owner_id']}>", inline=True)
-        embed.add_field(name="<:verified:1553690488257908837> Diproses oleh", value=interaction.user.mention, inline=True)
-        embed.add_field(name="<a:pin:1553688245769085099> Request ID", value=f"`#{self.request_id}`", inline=True)
+        embed.add_field(name="Pemohon", value=f"<@{request['owner_id']}>", inline=True)
+        embed.add_field(name="Diproses oleh", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Request ID", value=f"`#{self.request_id}`", inline=True)
         embed.set_image(url=f"attachment://{BANNER_NAME}")
         style_embed(embed)
 
@@ -1718,7 +1714,7 @@ class ClassApprovalView(discord.ui.View):
         await send_log(
             interaction.client,
             interaction.guild,
-            f"<a:question:1553688505929044000> Pengajuan kelas **{request['name']}** ditolak oleh {interaction.user.mention}.",
+            f"Pengajuan kelas **{request['name']}** ditolak oleh {interaction.user.mention}.",
         )
 
 
@@ -1749,42 +1745,42 @@ async def build_class_management_embed(bot, class_id):
         timestamp=utc_now(),
     )
 
-    embed.add_field(name="<a:arrow_purple:1512787191234035803> Owner", value=f"<@{cls['owner_id']}>", inline=True)
+    embed.add_field(name="Owner", value=f"<@{cls['owner_id']}>", inline=True)
     embed.add_field(
-        name="<a:arrow_blue:1512787254312042496> Staff Pendamping",
+        name="Staff Pendamping",
         value=f"<@{staff_id}>" if staff_id else "-",
         inline=True,
     )
-    embed.add_field(name="<a:arrow_blue:1512787254312042496> Status", value=STATUS_META.get(status, status), inline=True)
+    embed.add_field(name="Status", value=STATUS_META.get(status, status), inline=True)
 
     embed.add_field(
-        name="<a:arrow_blue:1512787254312042496> Anggota",
+        name="Anggota",
         value=f"`{slot_bar(count)}`\n**{count}/{MAX_MEMBER}** siswa • {max(MAX_MEMBER - count, 0)} slot tersisa",
         inline=True,
     )
     embed.add_field(
-        name="<a:dollar:1553688127103705290> Tagihan",
+        name="Tagihan",
         value=BILLING_META.get(str(cls.get("billing_status")), "-"),
         inline=True,
     )
-    embed.add_field(name="<a:pin:1553688245769085099> Class ID", value=f"`#{cls['class_id']}`", inline=True)
+    embed.add_field(name="Class ID", value=f"`#{cls['class_id']}`", inline=True)
 
-    embed.add_field(name="<a:pin:1553688245769085099> Berdiri Sejak", value=stamp(cls["created_at"], "D"), inline=True)
+    embed.add_field(name="Berdiri Sejak", value=stamp(cls["created_at"], "D"), inline=True)
     embed.add_field(
-        name="<a:question:1553688505929044000> Aktif Sampai",
+        name="Aktif Sampai",
         value=f"{stamp(cls['due_date'], 'D')}\n{stamp(cls['due_date'], 'R')}",
         inline=True,
     )
     embed.add_field(
-        name="<a:arrow_purple:1512787191234035803> Batas Grace",
+        name="Batas Grace",
         value=f"{stamp(cls['grace_until'], 'D')}\n{stamp(cls['grace_until'], 'R')}",
         inline=True,
     )
 
     if cls.get("vc_id"):
-        embed.add_field(name="<a:pin:1553688245769085099> Voice Channel", value=f"<#{cls['vc_id']}>", inline=True)
+        embed.add_field(name="Voice Channel", value=f"<#{cls['vc_id']}>", inline=True)
     if cls.get("role_id"):
-        embed.add_field(name="<a:pin:1553688245769085099> Role Kelas", value=f"<@&{cls['role_id']}>", inline=True)
+        embed.add_field(name="Role Kelas", value=f"<@&{cls['role_id']}>", inline=True)
 
     if cls.get("logo_url"):
         embed.set_thumbnail(url=cls["logo_url"])
@@ -1851,11 +1847,11 @@ class ClassEditModal(discord.ui.Modal):
     async def on_submit(self, interaction):
         cls = await get_class(self.class_id)
         if not cls or cls["status"] == "Dissolved":
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas tidak tersedia.", ephemeral=True)
+            await interaction.response.send_message("Kelas tidak tersedia.", ephemeral=True)
             return
 
         if not can_manage_class(interaction.user, cls):
-            await interaction.response.send_message("<a:gear:1553688352564183051> Kamu tidak memiliki akses ke kelas ini.", ephemeral=True)
+            await interaction.response.send_message("Kamu tidak memiliki akses ke kelas ini.", ephemeral=True)
             return
 
         name = clean_text(self.name_input.value, 50)
@@ -1865,7 +1861,7 @@ class ClassEditModal(discord.ui.Modal):
         logo_url = clean_text(self.logo_input.value, 500) or None
 
         if not valid_hex(color_hex):
-            await interaction.response.send_message("<a:question:1553688505929044000> Warna harus format `#RRGGBB`.", ephemeral=True)
+            await interaction.response.send_message("Warna harus format `#RRGGBB`.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -1894,10 +1890,10 @@ class ClassEditModal(discord.ui.Modal):
         await send_log(
             interaction.client,
             interaction.guild,
-            f"<a:arrow_blue:1512787254312042496> Kelas **{name}** diperbarui oleh {interaction.user.mention}.",
+            f"Kelas **{name}** diperbarui oleh {interaction.user.mention}.",
         )
 
-        await interaction.followup.send("<:verified:1553690488257908837> Informasi kelas berhasil diperbarui.", ephemeral=True)
+        await interaction.followup.send("Informasi kelas berhasil diperbarui.", ephemeral=True)
 
 
 class StaffChangeView(discord.ui.View):
@@ -1916,7 +1912,7 @@ class StaffChangeView(discord.ui.View):
     async def interaction_check(self, interaction):
         cls = await get_class(self.class_id)
         if not cls or not can_manage_class(interaction.user, cls):
-            await interaction.response.send_message("<a:gear:1553688352564183051> Kamu tidak memiliki akses.", ephemeral=True)
+            await interaction.response.send_message("Kamu tidak memiliki akses.", ephemeral=True)
             return False
         return True
 
@@ -1925,14 +1921,14 @@ class StaffChangeView(discord.ui.View):
         staff = interaction.guild.get_member(int(selected.id))
         if not staff or not is_valid_staff(staff):
             await interaction.response.send_message(
-                "<a:question:1553688505929044000> User yang dipilih bukan Staff yang valid.",
+                "User yang dipilih bukan Staff yang valid.",
                 ephemeral=True,
             )
             return
 
         cls = await get_class(self.class_id)
         if not cls or not can_manage_class(interaction.user, cls):
-            await interaction.response.send_message("<a:gear:1553688352564183051> Akses ditolak.", ephemeral=True)
+            await interaction.response.send_message("Akses ditolak.", ephemeral=True)
             return
 
         old_staff = int(cls["staff_id"] or 0)
@@ -1943,14 +1939,14 @@ class StaffChangeView(discord.ui.View):
 
         await update_public_panel(interaction.client, self.class_id)
         await interaction.response.send_message(
-            f"<:verified:1553690488257908837> Staff kelas diganti menjadi {staff.mention}.",
+            f"Staff kelas diganti menjadi {staff.mention}.",
             ephemeral=True,
         )
 
         await send_log(
             interaction.client,
             interaction.guild,
-            f"<a:arrow_blue:1512787254312042496> Staff kelas **{cls['name']}** diganti dari "
+            f"Staff kelas **{cls['name']}** diganti dari "
             f"<@{old_staff}> menjadi {staff.mention} oleh {interaction.user.mention}.",
         )
 
@@ -1972,8 +1968,7 @@ class ClassMemberManageView(discord.ui.View):
 
         kick = discord.ui.Button(
             label="Keluarkan",
-            emoji="<a:question:1553688505929044000>",
-            style=discord.ButtonStyle.danger,
+                        style=discord.ButtonStyle.danger,
             custom_id=f"nanz:member_manage:kick:{self.class_id}",
         )
         kick.callback = self.kick_selected
@@ -1982,7 +1977,7 @@ class ClassMemberManageView(discord.ui.View):
     async def interaction_check(self, interaction):
         cls = await get_class(self.class_id)
         if not cls or not can_manage_class(interaction.user, cls):
-            await interaction.response.send_message("<a:gear:1553688352564183051> Kamu tidak memiliki akses.", ephemeral=True)
+            await interaction.response.send_message("Kamu tidak memiliki akses.", ephemeral=True)
             return False
         return True
 
@@ -1992,10 +1987,10 @@ class ClassMemberManageView(discord.ui.View):
         await interaction.response.send_message(
             embed=style_embed(
                 discord.Embed(
-                    title="<a:arrow_blue:1512787254312042496> Anggota Terpilih",
+                    title="Anggota Terpilih",
                     description=(
                         f"<@{self.selected_user_id}>\n{DIVIDER}\n"
-                        "Tekan **<a:question:1553688505929044000> Keluarkan** untuk menghapusnya dari kelas."
+                        "Tekan **Keluarkan** untuk menghapusnya dari kelas."
                     ),
                     color=EMBED_BLUE,
                 )
@@ -2005,16 +2000,16 @@ class ClassMemberManageView(discord.ui.View):
 
     async def kick_selected(self, interaction):
         if not self.selected_user_id:
-            await interaction.response.send_message("<a:question:1553688505929044000> Pilih anggota terlebih dahulu.", ephemeral=True)
+            await interaction.response.send_message("Pilih anggota terlebih dahulu.", ephemeral=True)
             return
 
         cls = await get_class(self.class_id)
         if not cls or not can_manage_class(interaction.user, cls):
-            await interaction.response.send_message("<a:gear:1553688352564183051> Akses ditolak.", ephemeral=True)
+            await interaction.response.send_message("Akses ditolak.", ephemeral=True)
             return
 
         if self.selected_user_id == int(cls["owner_id"]):
-            await interaction.response.send_message("<a:question:1553688505929044000> Owner kelas tidak dapat dikeluarkan.", ephemeral=True)
+            await interaction.response.send_message("Owner kelas tidak dapat dikeluarkan.", ephemeral=True)
             return
 
         member_row = await fetch_one(
@@ -2022,7 +2017,7 @@ class ClassMemberManageView(discord.ui.View):
             (self.class_id, self.selected_user_id),
         )
         if not member_row:
-            await interaction.response.send_message("<a:question:1553688505929044000> User bukan anggota kelas ini.", ephemeral=True)
+            await interaction.response.send_message("User bukan anggota kelas ini.", ephemeral=True)
             return
 
         await execute(
@@ -2040,14 +2035,14 @@ class ClassMemberManageView(discord.ui.View):
 
         await update_public_panel(interaction.client, self.class_id)
         await interaction.response.send_message(
-            f"<:verified:1553690488257908837> <@{self.selected_user_id}> dikeluarkan dari **{cls['name']}**.",
+            f"<@{self.selected_user_id}> dikeluarkan dari **{cls['name']}**.",
             ephemeral=True,
         )
 
         await send_log(
             interaction.client,
             interaction.guild,
-            f"<a:question:1553688505929044000> <@{self.selected_user_id}> dikeluarkan dari **{cls['name']}** oleh {interaction.user.mention}.",
+            f"<@{self.selected_user_id}> dikeluarkan dari **{cls['name']}** oleh {interaction.user.mention}.",
         )
 
 
@@ -2058,8 +2053,7 @@ class ClassDeleteConfirmView(discord.ui.View):
 
         confirm = discord.ui.Button(
             label="Ya, Bubarkan",
-            emoji="<a:question:1553688505929044000>",
-            style=discord.ButtonStyle.danger,
+                        style=discord.ButtonStyle.danger,
             custom_id=f"nanz:delete_confirm:{self.class_id}",
         )
         confirm.callback = self.confirm_delete
@@ -2067,8 +2061,7 @@ class ClassDeleteConfirmView(discord.ui.View):
 
         cancel = discord.ui.Button(
             label="Batal",
-            emoji="<a:arrow_purple:1512787191234035803>",
-            style=discord.ButtonStyle.secondary,
+                        style=discord.ButtonStyle.secondary,
             custom_id=f"nanz:delete_cancel:{self.class_id}",
         )
         cancel.callback = self.cancel
@@ -2077,15 +2070,15 @@ class ClassDeleteConfirmView(discord.ui.View):
     async def confirm_delete(self, interaction):
         cls = await get_class(self.class_id)
         if not cls or not can_manage_class(interaction.user, cls):
-            await interaction.response.send_message("<a:gear:1553688352564183051> Akses ditolak.", ephemeral=True)
+            await interaction.response.send_message("Akses ditolak.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
         await dissolve_class(interaction.client, interaction.guild, self.class_id, interaction.user.id)
-        await interaction.followup.send(f"<a:question:1553688505929044000> Kelas **{cls['name']}** berhasil dibubarkan.", ephemeral=True)
+        await interaction.followup.send(f"Kelas **{cls['name']}** berhasil dibubarkan.", ephemeral=True)
 
     async def cancel(self, interaction):
-        await interaction.response.edit_message(content="<a:question:1553688505929044000> Pembubaran dibatalkan.", view=None)
+        await interaction.response.edit_message(content="Pembubaran dibatalkan.", view=None)
 
 
 async def dissolve_class(bot, guild, class_id, actor_id):
@@ -2135,7 +2128,7 @@ async def dissolve_class(bot, guild, class_id, actor_id):
     await send_log(
         bot,
         guild,
-        f"<a:question:1553688505929044000> Kelas **{cls['name']}** (ID `{class_id}`) dibubarkan oleh <@{actor_id}>.",
+        f"Kelas **{cls['name']}** (ID `{class_id}`) dibubarkan oleh <@{actor_id}>.",
     )
     return True
 
@@ -2177,7 +2170,7 @@ async def extend_class(bot, guild, class_id, actor_id):
     await send_log(
         bot,
         guild,
-        f"<a:arrow_blue:1512787254312042496> Kelas **{cls['name']}** diperpanjang oleh <@{actor_id}> sampai <t:{int(due.timestamp())}:F>.",
+        f"Kelas **{cls['name']}** diperpanjang oleh <@{actor_id}> sampai <t:{int(due.timestamp())}:F>.",
     )
     return due
 
@@ -2188,18 +2181,17 @@ class ClassManagementView(discord.ui.View):
         self.class_id = int(class_id)
 
         actions = [
-            ("Kelola Member", "<a:arrow_blue:1512787254312042496>", discord.ButtonStyle.primary, self.manage_members, "members"),
-            ("Edit Kelas", "<a:arrow_blue:1512787254312042496>", discord.ButtonStyle.secondary, self.edit_class, "edit"),
-            ("Ganti Staff", "<a:arrow_blue:1512787254312042496>", discord.ButtonStyle.secondary, self.change_staff, "staff"),
-            ("Perpanjang", "<a:arrow_blue:1512787254312042496>", discord.ButtonStyle.success, self.extend, "extend"),
-            ("Hapus Kelas", "<a:question:1553688505929044000>", discord.ButtonStyle.danger, self.delete_class, "delete"),
-            ("Refresh", "<a:arrow_blue:1512787254312042496>", discord.ButtonStyle.secondary, self.refresh, "refresh"),
+            ("Kelola Member", discord.ButtonStyle.primary, self.manage_members, "members"),
+            ("Edit Kelas", discord.ButtonStyle.secondary, self.edit_class, "edit"),
+            ("Ganti Staff", discord.ButtonStyle.secondary, self.change_staff, "staff"),
+            ("Perpanjang", discord.ButtonStyle.success, self.extend, "extend"),
+            ("Hapus Kelas", discord.ButtonStyle.danger, self.delete_class, "delete"),
+            ("Refresh", discord.ButtonStyle.secondary, self.refresh, "refresh"),
         ]
 
-        for label, emoji, style, callback, suffix in actions:
+        for label, style, callback, suffix in actions:
             button = discord.ui.Button(
                 label=label,
-                emoji=emoji,
                 style=style,
                 custom_id=f"nanz:class_manage:{suffix}:{self.class_id}",
             )
@@ -2210,7 +2202,7 @@ class ClassManagementView(discord.ui.View):
         cls = await get_class(self.class_id)
         if not cls or not can_manage_class(interaction.user, cls):
             await interaction.response.send_message(
-                "<a:gear:1553688352564183051> Panel ini hanya dapat digunakan Staff Pendamping kelas atau Administrator.",
+                "Panel ini hanya dapat digunakan Staff Pendamping kelas atau Administrator.",
                 ephemeral=True,
             )
             return False
@@ -2218,11 +2210,11 @@ class ClassManagementView(discord.ui.View):
 
     async def manage_members(self, interaction):
         embed = discord.Embed(
-            title="<a:arrow_blue:1512787254312042496> Kelola Anggota",
+            title="Kelola Anggota",
             description=(
                 f"{DIVIDER}\n"
                 "**1.** Pilih anggota dari menu di bawah\n"
-                "**2.** Tekan **<a:question:1553688505929044000> Keluarkan** untuk menghapusnya dari kelas\n\n"
+                "**2.** Tekan **Keluarkan** untuk menghapusnya dari kelas\n\n"
                 "*Owner kelas tidak dapat dikeluarkan.*"
             ),
             color=EMBED_PURPLE,
@@ -2239,7 +2231,7 @@ class ClassManagementView(discord.ui.View):
 
     async def change_staff(self, interaction):
         await interaction.response.send_message(
-            "<a:arrow_blue:1512787254312042496> Pilih Staff baru:",
+            "Pilih Staff baru:",
             view=StaffChangeView(self.class_id),
             ephemeral=True,
         )
@@ -2252,29 +2244,29 @@ class ClassManagementView(discord.ui.View):
             interaction.user.id,
         )
         if not due:
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Kelas tidak ditemukan.", ephemeral=True)
             return
         await interaction.response.send_message(
-            f"<:verified:1553690488257908837> Kelas diperpanjang sampai <t:{int(due.timestamp())}:F>.",
+            f"Kelas diperpanjang sampai <t:{int(due.timestamp())}:F>.",
             ephemeral=True,
         )
 
     async def delete_class(self, interaction):
         cls = await get_class(self.class_id)
         if not cls:
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Kelas tidak ditemukan.", ephemeral=True)
             return
 
         embed = discord.Embed(
-            title=f"<a:question:1553688505929044000> Bubarkan {cls['name']}?",
+            title=f"Bubarkan {cls['name']}?",
             description=(
                 f"{DIVIDER}\n"
                 "Tindakan ini **tidak dapat dibatalkan** dan akan:\n\n"
-                "<a:question:1553688505929044000> Menghapus panel publik kelas\n"
-                "<a:pin:1553688245769085099> Menghapus Voice Channel kelas\n"
-                "<a:pin:1553688245769085099> Menghapus role kelas\n"
-                "<a:arrow_blue:1512787254312042496> Menghapus seluruh data anggota\n"
-                "<:ticket:1553686732883628102> Membatalkan request gabung yang pending"
+                "Menghapus panel publik kelas\n"
+                "Menghapus Voice Channel kelas\n"
+                "Menghapus role kelas\n"
+                "Menghapus seluruh data anggota\n"
+                "Membatalkan request gabung yang pending"
             ),
             color=discord.Color.from_rgb(*BAD_RED),
         )
@@ -2301,14 +2293,13 @@ class ClassPublicPanel(discord.ui.View):
         self.class_id = int(class_id)
 
         buttons = [
-            ("Daftar Kelas", "<a:arrow_blue:1512787254312042496>", discord.ButtonStyle.primary, self.join_class, "join"),
-            ("Lihat Anggota", "<a:arrow_blue:1512787254312042496>", discord.ButtonStyle.secondary, self.view_members, "members"),
+            ("Daftar Kelas", discord.ButtonStyle.primary, self.join_class, "join"),
+            ("Lihat Anggota", discord.ButtonStyle.secondary, self.view_members, "members"),
         ]
 
-        for label, emoji, style, callback, suffix in buttons:
+        for label, style, callback, suffix in buttons:
             button = discord.ui.Button(
                 label=label,
-                emoji=emoji,
                 style=style,
                 custom_id=f"nanz:class_public:{suffix}:{self.class_id}",
             )
@@ -2318,24 +2309,24 @@ class ClassPublicPanel(discord.ui.View):
     async def join_class(self, interaction):
         cls = await get_class(self.class_id)
         if not cls:
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Kelas tidak ditemukan.", ephemeral=True)
             return
 
         if cls["status"] != "Active":
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas ini sedang tidak menerima anggota baru.", ephemeral=True)
+            await interaction.response.send_message("Kelas ini sedang tidak menerima anggota baru.", ephemeral=True)
             return
 
         existing = await get_user_class(interaction.user.id)
         if existing:
             await interaction.response.send_message(
-                f"<a:question:1553688505929044000> Kamu sudah tergabung di **{existing['name']}**.\nSatu member hanya boleh memiliki satu kelas.",
+                f"Kamu sudah tergabung di **{existing['name']}**.\nSatu member hanya boleh memiliki satu kelas.",
                 ephemeral=True,
             )
             return
 
         count = await get_member_count(self.class_id)
         if count >= MAX_MEMBER:
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas ini sudah penuh.", ephemeral=True)
+            await interaction.response.send_message("Kelas ini sudah penuh.", ephemeral=True)
             return
 
         pending = await fetch_one(
@@ -2347,7 +2338,7 @@ class ClassPublicPanel(discord.ui.View):
             (self.class_id, interaction.user.id),
         )
         if pending:
-            await interaction.response.send_message("<a:question:1553688505929044000> Request kamu masih diproses.", ephemeral=True)
+            await interaction.response.send_message("Request kamu masih diproses.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -2369,7 +2360,7 @@ class ClassPublicPanel(discord.ui.View):
                 (request_id,),
             )
             await interaction.followup.send(
-                "<a:question:1553688505929044000> Channel `request-gabung` tidak tersedia. Request dibatalkan agar tidak menggantung.",
+                "Channel `request-gabung` tidak tersedia. Request dibatalkan agar tidak menggantung.",
                 ephemeral=True,
             )
             return
@@ -2377,7 +2368,7 @@ class ClassPublicPanel(discord.ui.View):
         applicant = interaction.user
 
         embed = discord.Embed(
-            title="<:ticket:1553686732883628102> Request Gabung Kelas",
+            title="Request Gabung Kelas",
             description=(
                 f"{applicant.mention} ingin bergabung ke **{cls['name']}**\n"
                 f"{DIVIDER}\n"
@@ -2386,19 +2377,19 @@ class ClassPublicPanel(discord.ui.View):
             color=EMBED_BLUE,
             timestamp=utc_now(),
         )
-        embed.add_field(name="<a:arrow_blue:1512787254312042496> Pemohon", value=applicant.mention, inline=True)
-        embed.add_field(name="<a:arrow_blue:1512787254312042496> Kelas", value=cls["name"], inline=True)
-        embed.add_field(name="<a:pin:1553688245769085099> Request ID", value=f"`#{request_id}`", inline=True)
-        embed.add_field(name="<a:arrow_purple:1512787191234035803> Owner", value=f"<@{cls['owner_id']}>", inline=True)
-        embed.add_field(name="<a:arrow_blue:1512787254312042496> Staff", value=f"<@{cls['staff_id']}>", inline=True)
+        embed.add_field(name="Pemohon", value=applicant.mention, inline=True)
+        embed.add_field(name="Kelas", value=cls["name"], inline=True)
+        embed.add_field(name="Request ID", value=f"`#{request_id}`", inline=True)
+        embed.add_field(name="Owner", value=f"<@{cls['owner_id']}>", inline=True)
+        embed.add_field(name="Staff", value=f"<@{cls['staff_id']}>", inline=True)
         embed.add_field(
-            name="<a:arrow_blue:1512787254312042496> Kapasitas",
+            name="Kapasitas",
             value=f"`{slot_bar(count)}`\n**{count}/{MAX_MEMBER}** siswa",
             inline=True,
         )
-        embed.add_field(name="<a:pin:1553688245769085099> Akun Dibuat", value=stamp(applicant.created_at, "R"), inline=True)
+        embed.add_field(name="Akun Dibuat", value=stamp(applicant.created_at, "R"), inline=True)
         embed.add_field(
-            name="<:ticket:1553686732883628102> Masuk Server",
+            name="Masuk Server",
             value=stamp(getattr(applicant, "joined_at", None), "R"),
             inline=True,
         )
@@ -2432,13 +2423,13 @@ class ClassPublicPanel(discord.ui.View):
                 (request_id,),
             )
             await interaction.followup.send(
-                "<a:question:1553688505929044000> Gagal mengirim request. Silakan coba lagi.",
+                "Gagal mengirim request. Silakan coba lagi.",
                 ephemeral=True,
             )
             return
 
         done = discord.Embed(
-            title="<:verified:1553690488257908837> Request Terkirim!",
+            title="Request Terkirim!",
             description=(
                 f"Permintaan bergabung ke **{cls['name']}** sudah dikirim.\n"
                 f"{DIVIDER}\n"
@@ -2451,7 +2442,7 @@ class ClassPublicPanel(discord.ui.View):
     async def view_members(self, interaction):
         cls = await get_class(self.class_id)
         if not cls:
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Kelas tidak ditemukan.", ephemeral=True)
             return
 
         members = await fetch_all(
@@ -2472,13 +2463,13 @@ class ClassPublicPanel(discord.ui.View):
         lines = []
         for index, row in enumerate(members, start=1):
             uid = int(row["user_id"])
-            icon = "<a:arrow_purple:1512787191234035803>" if uid == owner_id else "<a:arrow_blue:1512787254312042496>"
+            icon = "" if uid == owner_id else ""
             lines.append(f"`{index:02}` {icon} <@{uid}> • {stamp(row['joined_at'], 'R')}")
 
         total = len(members)
 
         embed = discord.Embed(
-            title=f"<a:arrow_blue:1512787254312042496> Daftar Siswa — {cls['name']}",
+            title=f"Daftar Siswa — {cls['name']}",
             description=(
                 f"*“{cls['motto'] or '-'}”*\n"
                 f"{DIVIDER}\n"
@@ -2488,17 +2479,17 @@ class ClassPublicPanel(discord.ui.View):
             timestamp=utc_now(),
         )
         embed.add_field(
-            name="<a:arrow_blue:1512787254312042496> Kapasitas",
+            name="Kapasitas",
             value=f"`{slot_bar(total)}`\n**{total}/{MAX_MEMBER}** siswa • {max(MAX_MEMBER - total, 0)} slot tersisa",
             inline=True,
         )
-        embed.add_field(name="<a:arrow_blue:1512787254312042496> Staff Pendamping", value=f"<@{staff_id}>" if staff_id else "-", inline=True)
-        embed.add_field(name="<a:pin:1553688245769085099> Status", value=STATUS_META.get(str(cls["status"]), str(cls["status"])), inline=True)
+        embed.add_field(name="Staff Pendamping", value=f"<@{staff_id}>" if staff_id else "-", inline=True)
+        embed.add_field(name="Status", value=STATUS_META.get(str(cls["status"]), str(cls["status"])), inline=True)
 
         if cls.get("logo_url"):
             embed.set_thumbnail(url=cls["logo_url"])
 
-        style_embed(embed, footer=f"<a:arrow_purple:1512787191234035803> Owner • <a:arrow_blue:1512787254312042496> Siswa • Total {total}/{MAX_MEMBER}")
+        style_embed(embed, footer=f"Owner • Siswa • Total {total}/{MAX_MEMBER}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -2513,8 +2504,7 @@ class JoinRequestView(discord.ui.View):
 
         approve = discord.ui.Button(
             label="Terima",
-            emoji="<:verified:1553690488257908837>",
-            style=discord.ButtonStyle.success,
+                        style=discord.ButtonStyle.success,
             custom_id=f"nanz:class_join_approve:{self.request_id}",
         )
         approve.callback = self.approve
@@ -2522,8 +2512,7 @@ class JoinRequestView(discord.ui.View):
 
         reject = discord.ui.Button(
             label="Tolak",
-            emoji="<a:question:1553688505929044000>",
-            style=discord.ButtonStyle.danger,
+                        style=discord.ButtonStyle.danger,
             custom_id=f"nanz:class_join_reject:{self.request_id}",
         )
         reject.callback = self.reject
@@ -2553,45 +2542,45 @@ class JoinRequestView(discord.ui.View):
     async def approve(self, interaction):
         request = await self.get_request()
         if not request:
-            await interaction.response.send_message("<a:question:1553688505929044000> Request tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Request tidak ditemukan.", ephemeral=True)
             return
 
         if not await self.check_access(interaction, request):
             await interaction.response.send_message(
-                "<a:gear:1553688352564183051> Hanya Owner kelas, Staff Pendamping, atau Administrator yang dapat memproses request ini.",
+                "Hanya Owner kelas, Staff Pendamping, atau Administrator yang dapat memproses request ini.",
                 ephemeral=True,
             )
             return
 
         if request["status"] != "Pending":
-            await interaction.response.send_message("<a:question:1553688505929044000> Request sudah diproses.", ephemeral=True)
+            await interaction.response.send_message("Request sudah diproses.", ephemeral=True)
             return
 
         if request["class_status"] != "Active":
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas sedang tidak aktif menerima anggota.", ephemeral=True)
+            await interaction.response.send_message("Kelas sedang tidak aktif menerima anggota.", ephemeral=True)
             return
 
         existing = await get_user_class(request["user_id"])
         if existing:
             await interaction.response.send_message(
-                f"<a:question:1553688505929044000> User sudah berada di **{existing['name']}**.",
+                f"User sudah berada di **{existing['name']}**.",
                 ephemeral=True,
             )
             return
 
         count = await get_member_count(request["class_id"])
         if count >= MAX_MEMBER:
-            await interaction.response.send_message("<a:question:1553688505929044000> Kelas sudah penuh.", ephemeral=True)
+            await interaction.response.send_message("Kelas sudah penuh.", ephemeral=True)
             return
 
         member = interaction.guild.get_member(int(request["user_id"]))
         if not member:
-            await interaction.response.send_message("<a:question:1553688505929044000> User sudah tidak berada di server.", ephemeral=True)
+            await interaction.response.send_message("User sudah tidak berada di server.", ephemeral=True)
             return
 
         role = interaction.guild.get_role(int(request["role_id"]))
         if not role:
-            await interaction.response.send_message("<a:question:1553688505929044000> Role kelas tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Role kelas tidak ditemukan.", ephemeral=True)
             return
 
         await interaction.response.defer()
@@ -2624,19 +2613,19 @@ class JoinRequestView(discord.ui.View):
             new_count = count + 1
 
             embed = discord.Embed(
-                title="<:verified:1553690488257908837> Request Diterima",
+                title="Request Diterima",
                 description=(
-                    f"{member.mention} resmi menjadi siswa **{request['name']}**! <:verified:1553690488257908837>\n"
+                    f"{member.mention} resmi menjadi siswa **{request['name']}**! \n"
                     f"{DIVIDER}"
                 ),
                 color=discord.Color.from_rgb(*OK_GREEN),
                 timestamp=utc_now(),
             )
-            embed.add_field(name="<a:arrow_blue:1512787254312042496> Siswa Baru", value=member.mention, inline=True)
-            embed.add_field(name="<a:arrow_blue:1512787254312042496> Kelas", value=request["name"], inline=True)
-            embed.add_field(name="<:verified:1553690488257908837> Diproses oleh", value=interaction.user.mention, inline=True)
+            embed.add_field(name="Siswa Baru", value=member.mention, inline=True)
+            embed.add_field(name="Kelas", value=request["name"], inline=True)
+            embed.add_field(name="Diproses oleh", value=interaction.user.mention, inline=True)
             embed.add_field(
-                name="<a:arrow_blue:1512787254312042496> Kapasitas Sekarang",
+                name="Kapasitas Sekarang",
                 value=f"`{slot_bar(new_count)}` **{new_count}/{MAX_MEMBER}**",
                 inline=False,
             )
@@ -2662,10 +2651,10 @@ class JoinRequestView(discord.ui.View):
             await send_log(
                 interaction.client,
                 interaction.guild,
-                f"<:verified:1553690488257908837> {member.mention} diterima ke **{request['name']}** oleh {interaction.user.mention}.",
+                f"{member.mention} diterima ke **{request['name']}** oleh {interaction.user.mention}.",
             )
 
-            await interaction.followup.send("<:verified:1553690488257908837> Anggota berhasil ditambahkan.", ephemeral=True)
+            await interaction.followup.send("Anggota berhasil ditambahkan.", ephemeral=True)
 
         except Exception:
             log.exception("Gagal approve join request.")
@@ -2674,23 +2663,23 @@ class JoinRequestView(discord.ui.View):
                     "DELETE FROM nanz_class_members WHERE class_id=%s AND user_id=%s",
                     (request["class_id"], member.id),
                 )
-            await interaction.followup.send("<a:question:1553688505929044000> Gagal menambahkan anggota.", ephemeral=True)
+            await interaction.followup.send("Gagal menambahkan anggota.", ephemeral=True)
 
     async def reject(self, interaction):
         request = await self.get_request()
         if not request:
-            await interaction.response.send_message("<a:question:1553688505929044000> Request tidak ditemukan.", ephemeral=True)
+            await interaction.response.send_message("Request tidak ditemukan.", ephemeral=True)
             return
 
         if not await self.check_access(interaction, request):
             await interaction.response.send_message(
-                "<a:gear:1553688352564183051> Hanya Owner kelas, Staff Pendamping, atau Administrator yang dapat memproses request ini.",
+                "Hanya Owner kelas, Staff Pendamping, atau Administrator yang dapat memproses request ini.",
                 ephemeral=True,
             )
             return
 
         if request["status"] != "Pending":
-            await interaction.response.send_message("<a:question:1553688505929044000> Request sudah diproses.", ephemeral=True)
+            await interaction.response.send_message("Request sudah diproses.", ephemeral=True)
             return
 
         await execute(
@@ -2705,7 +2694,7 @@ class JoinRequestView(discord.ui.View):
         applicant = interaction.guild.get_member(int(request["user_id"]))
 
         embed = discord.Embed(
-            title="<a:question:1553688505929044000> Request Ditolak",
+            title="Request Ditolak",
             description=(
                 f"Request bergabung ke **{request['name']}** ditolak.\n"
                 f"{DIVIDER}"
@@ -2713,9 +2702,9 @@ class JoinRequestView(discord.ui.View):
             color=discord.Color.from_rgb(*BAD_RED),
             timestamp=utc_now(),
         )
-        embed.add_field(name="<a:arrow_blue:1512787254312042496> Pemohon", value=f"<@{request['user_id']}>", inline=True)
-        embed.add_field(name="<:verified:1553690488257908837> Diproses oleh", value=interaction.user.mention, inline=True)
-        embed.add_field(name="<a:pin:1553688245769085099> Request ID", value=f"`#{request['request_id']}`", inline=True)
+        embed.add_field(name="Pemohon", value=f"<@{request['user_id']}>", inline=True)
+        embed.add_field(name="Diproses oleh", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Request ID", value=f"`#{request['request_id']}`", inline=True)
         embed.set_image(url=f"attachment://{BANNER_NAME}")
         style_embed(embed)
 
@@ -2736,7 +2725,7 @@ class JoinRequestView(discord.ui.View):
         await send_log(
             interaction.client,
             interaction.guild,
-            f"<a:question:1553688505929044000> Request {request['request_id']} untuk **{request['name']}** ditolak oleh {interaction.user.mention}.",
+            f"Request {request['request_id']} untuk **{request['name']}** ditolak oleh {interaction.user.mention}.",
         )
 
 
@@ -2871,7 +2860,7 @@ class NanzKelasCog(commands.Cog):
             """
         )
 
-        status_msg = await ctx.send(f"<a:arrow_blue:1512787254312042496> Memperbarui {len(classes)} panel kelas...")
+        status_msg = await ctx.send(f"Memperbarui {len(classes)} panel kelas...")
 
         done = 0
         for row in classes:
@@ -2882,14 +2871,14 @@ class NanzKelasCog(commands.Cog):
                 log.exception("Gagal refresh panel class_id=%s", row["class_id"])
             await asyncio.sleep(1.5)  # hindari rate limit Discord
 
-        await status_msg.edit(content=f"<:verified:1553690488257908837> {done}/{len(classes)} panel kelas diperbarui.")
+        await status_msg.edit(content=f"{done}/{len(classes)} panel kelas diperbarui.")
 
     @commands.command(name="buat_kelas")
     @commands.guild_only()
     @commands.check(lambda ctx: has_staff_role(ctx.author))
     async def buat_kelas(self, ctx):
         embed = discord.Embed(
-            title="<a:arrow_blue:1512787254312042496> Panel Pembuatan Kelas nanZ",
+            title="Panel Pembuatan Kelas nanZ",
             description=(
                 "Wujudkan kelas impianmu di **nanZ Server**!\n"
                 f"{DIVIDER}"
@@ -2897,7 +2886,7 @@ class NanzKelasCog(commands.Cog):
             color=EMBED_PURPLE,
         )
         embed.add_field(
-            name="<a:arrow_blue:1512787254312042496> Alur Pembuatan",
+            name="Alur Pembuatan",
             value=(
                 "**1.** Tekan tombol **Buka Form Kelas**\n"
                 "**2.** Isi nama, motto, deskripsi, warna & logo\n"
@@ -2907,17 +2896,17 @@ class NanzKelasCog(commands.Cog):
             inline=False,
         )
         embed.add_field(
-            name="<:verified:1553690488257908837> Yang Kamu Dapatkan",
+            name="Yang Kamu Dapatkan",
             value=(
-                "<a:pin:1553688245769085099> Voice Channel khusus\n"
-                "<a:pin:1553688245769085099> Role kelas dengan warna sendiri\n"
-                "<:verified:1553690488257908837> Card kelas di daftar kelas\n"
-                f"<a:arrow_blue:1512787254312042496> Kapasitas hingga **{MAX_MEMBER} siswa**"
+                "Voice Channel khusus\n"
+                "Role kelas dengan warna sendiri\n"
+                "Card kelas di daftar kelas\n"
+                f"Kapasitas hingga **{MAX_MEMBER} siswa**"
             ),
             inline=True,
         )
         embed.add_field(
-            name="<a:gear:1553688352564183051> Akses Panel",
+            name="Akses Panel",
             value="Khusus **Staff** dan **Administrator**.",
             inline=True,
         )
