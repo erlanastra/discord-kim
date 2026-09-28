@@ -10,11 +10,11 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 # ══════════════════════════════════════════════
 #  KONFIGURASI
 # ══════════════════════════════════════════════
-BOOST_CHANNEL_ID = 1554100419637149838  # ← GANTI dengan ID channel boost nanZ
+BOOST_CHANNEL_ID = 0  # ← GANTI dengan ID channel boost nanZ
 ROLE_REQ_CHANNEL_ID = 1515029186530771077  # channel request role
 
 # Emoji nanZ (kalau emoji nitro animasi, ganti "<:" jadi "<a:")
-E_NITRO  = "<:nitro:1553688995635011635>"
+E_NITRO  = "<a:nitro:1553688995635011635>"
 E_BLUE   = "<a:blue:1512787254312042496>"
 E_PURPLE = "<a:purple:1512787191234035803>"
 
@@ -293,17 +293,14 @@ class Booster(commands.Cog):
         embed = discord.Embed(
             title="Murid Teladan Baru Ngeboost nanZ!",
             description=(
-                f"{E_NITRO} Terima kasih {member.mention}, murid yang sudah ngeboost **nanZ Server**!\n\n"
-                f"{E_PURPLE} Boost kamu bikin sekolah kita makin keren dan punya perks baru buat semua murid.\n"
-                f"{E_PURPLE} Dukunganmu sangat berarti buat seluruh murid nanZ!\n\n"
+                f"{E_NITRO} Terima kasih {member.mention} sudah ngeboost **nanZ Server**!\n"
                 f"{E_BLUE} `Request role:` <#{ROLE_REQ_CHANNEL_ID}>"
             ),
             color=discord.Color.from_rgb(130, 80, 255),
         )
-        embed.set_thumbnail(url=member.display_avatar.url)
-        embed.add_field(name="Level Boost nanZ", value=f"{E_NITRO} Level {tier}", inline=True)
+        embed.add_field(name="Level Boost Sekolah", value=f"{E_NITRO} Level {tier}", inline=True)
         embed.add_field(name="Total Boost", value=f"{E_NITRO} {total}", inline=True)
-        embed.set_footer(text="nanZ Server Boost System")
+        embed.set_footer(text="nanZ School Boost System")
 
         kwargs = {}
         if file:
