@@ -2303,8 +2303,6 @@ class ClassPublicPanel(discord.ui.View):
         buttons = [
             ("Daftar Kelas", "📝", discord.ButtonStyle.primary, self.join_class, "join"),
             ("Lihat Anggota", "👥", discord.ButtonStyle.secondary, self.view_members, "members"),
-            ("Keluar Kelas", "🚪", discord.ButtonStyle.secondary, self.leave_class, "leave"),
-            ("Kelola Kelas", "⚙️", discord.ButtonStyle.secondary, self.manage_class, "manage"),
         ]
 
         for label, emoji, style, callback, suffix in buttons:
@@ -2502,70 +2500,6 @@ class ClassPublicPanel(discord.ui.View):
 
         style_embed(embed, footer=f"👑 Owner • 🎓 Siswa • Total {total}/{MAX_MEMBER}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    async def leave_class(self, interaction):
-        cls = await fetch_one(
-            """
-            SELECT c.* FROM nanz_class_members m
-            JOIN nanz_classes c ON c.class_id=m.class_id
-            WHERE m.user_id=%s AND c.class_id=%s
-            LIMIT 1
-            """,
-            (interaction.user.id, self.class_id),
-        )
-
-        if not cls:
-            await interaction.response.send_message("❌ Kamu bukan anggota kelas ini.", ephemeral=True)
-            return
-
-        if interaction.user.id == int(cls["owner_id"]):
-            await interaction.response.send_message(
-                "❌ Owner kelas tidak dapat keluar sendiri. Hubungi Staff/Administrator.",
-                ephemeral=True,
-            )
-            return
-
-        await execute(
-            "DELETE FROM nanz_class_members WHERE class_id=%s AND user_id=%s",
-            (self.class_id, interaction.user.id),
-        )
-
-        role = interaction.guild.get_role(int(cls["role_id"]))
-        if role:
-            try:
-                await interaction.user.remove_roles(role, reason="Keluar kelas nanZ")
-            except discord.HTTPException:
-                pass
-
-        await update_public_panel(interaction.client, self.class_id)
-        await send_log(
-            interaction.client,
-            interaction.guild,
-            f"🚪 {interaction.user.mention} keluar dari **{cls['name']}**.",
-        )
-        await interaction.response.send_message(
-            f"✅ Kamu telah keluar dari **{cls['name']}**.",
-            ephemeral=True,
-        )
-
-    async def manage_class(self, interaction):
-        cls = await get_class(self.class_id)
-        if not cls:
-            await interaction.response.send_message("❌ Kelas tidak ditemukan.", ephemeral=True)
-            return
-
-        if not can_manage_class(interaction.user, cls):
-            await interaction.response.send_message(
-                "🔒 Panel management hanya untuk Staff Pendamping kelas atau Administrator.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.send_message(
-            embed=await build_class_management_embed(interaction.client, self.class_id),
-            view=ClassManagementView(self.class_id),
-            ephemeral=True,
-        )
 
 
 # =========================================================
@@ -2924,6 +2858,31 @@ class NanzKelasCog(commands.Cog):
                 await channel.send(embed=embed, file=banner, view=StaffDashboardView())
         except Exception:
             log.exception("Gagal membuat/memperbarui dashboard Staff.")
+
+    @commands.command(name="refresh_panel_kelas")
+    @commands.guild_only()
+    @commands.check(lambda ctx: has_staff_role(ctx.author))
+    async def refresh_panel_kelas(self, ctx):
+        """Perbarui semua panel di daftar-kelas (mis. setelah tombol diubah)."""
+        classes = await fetch_all(
+            """
+            SELECT class_id FROM nanz_classes
+            WHERE status IN ('Active','Grace','Inactive')
+            """
+        )
+
+        status_msg = await ctx.send(f"🔄 Memperbarui {len(classes)} panel kelas...")
+
+        done = 0
+        for row in classes:
+            try:
+                await update_public_panel(self.bot, int(row["class_id"]))
+                done += 1
+            except Exception:
+                log.exception("Gagal refresh panel class_id=%s", row["class_id"])
+            await asyncio.sleep(1.5)  # hindari rate limit Discord
+
+        await status_msg.edit(content=f"✅ {done}/{len(classes)} panel kelas diperbarui.")
 
     @commands.command(name="buat_kelas")
     @commands.guild_only()
