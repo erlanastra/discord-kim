@@ -68,6 +68,7 @@ async def load_cogs():
         "cogs.ai",
         "cogs.greeting",
         "cogs.megagombal",
+        "cogs.booster",
         "cogs.say",
         "cogs.afk",
         "cogs.autoemoji",
