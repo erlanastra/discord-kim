@@ -66,6 +66,7 @@ async def load_cogs():
     cogs = [
         "cogs.post",
         "cogs.ai",
+        "cogs.entrance",
         "cogs.greeting",
         "cogs.megagombal",
         "cogs.booster",
