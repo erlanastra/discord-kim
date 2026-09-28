@@ -285,6 +285,13 @@ def _wrap_lines(draw, text, font, max_w, max_lines=2):
     return lines[:max_lines]
 
 
+async def _run_blocking(func, *args):
+    """Jalankan fungsi berat (render PIL) di thread executor.
+    Pengganti asyncio.to_thread agar kompatibel dengan Python < 3.9."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, func, *args)
+
+
 # ---------- gambar: logo / avatar ----------
 
 async def load_logo(url):
@@ -647,7 +654,7 @@ async def generate_class_card(
         "due_date": due_date,
     }
 
-    return await asyncio.to_thread(
+    return await _run_blocking(
         _render_class_card_sync, data, logo, hex_rgb(color_hex)
     )
 
@@ -726,7 +733,7 @@ async def make_banner_file(
     filename=BANNER_NAME,
 ):
     """Buat banner PNG bertema nanZ sebagai discord.File siap kirim."""
-    buffer = await asyncio.to_thread(
+    buffer = await _run_blocking(
         _render_banner_sync, title, subtitle, badge, list(chips), icon, accent
     )
     return discord.File(buffer, filename=filename)
