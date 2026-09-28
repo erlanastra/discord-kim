@@ -38,12 +38,11 @@ VOICE_VERIF_CHANNEL_IDS = [
 ]
 
 # Emoji custom nanZ yang dipakai seperlunya
-NANZ_ARROW_BLUE = "<:arrowblue:1512787254312042496>"
-NANZ_ARROW_PURPLE = "<:arrowpurple:1512787191234035803>"
-NANZ_LINK = "<:link:1553688245769085099>"
-NANZ_GEAR = "<:settings:1553688352564183051>"
-NANZ_QUESTION = "<:question:1553688505929044000>"
-
+NANZ_ARROW_BLUE = "<a:arrowblue:1512787254312042496>"
+NANZ_ARROW_PURPLE = "<a:arrowpurple:1512787191234035803>"
+NANZ_LINK = "<a:link:1553688245769085099>"
+NANZ_GEAR = "<a:settings:1553688352564183051>"
+NANZ_QUESTION = "<a:question:1553688505929044000>"
 
 # =========================================================
 # HELPERS
