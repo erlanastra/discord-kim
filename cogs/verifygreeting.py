@@ -289,20 +289,222 @@ def generate_verify_gif(avatar_bytes: bytes, name: str) -> bytes:
     return out.getvalue()
 
 
+
 # ══════════════════════════════════════════════
 #  COG
 # ══════════════════════════════════════════════
+
+# Channel voice verifikasi nanZ
+VOICE_VERIF_CHANNEL_IDS = [
+    1518251174149750906,
+    1523340570607616010,
+    1486913650374738030,
+]
+
+# Channel engagement / divisi yang menangani verifikasi
+ENGAGEMENT_CHANNEL_ID = 1525136678442893352
+
+
+def _channel_url(guild_id: int, channel_id: int) -> str:
+    return f"https://discord.com/channels/{guild_id}/{channel_id}"
+
+
+async def _select_verif_voice(guild: discord.Guild, member: discord.Member):
+    """
+    Pilih voice verifikasi:
+    1. Prioritas channel yang tidak ditempati member lain.
+    2. Jika semua berisi member lain, kembali ke voice pertama.
+    """
+    channels = []
+
+    for channel_id in VOICE_VERIF_CHANNEL_IDS:
+        channel = guild.get_channel(channel_id)
+        if isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            channels.append(channel)
+
+    if not channels:
+        return None
+
+    for channel in channels:
+        other_members = [m for m in channel.members if m.id != member.id]
+        if not other_members:
+            return channel
+
+    return channels[0]
+
+
+class JoinVoiceVerifView(discord.ui.View):
+    """Button yang dipakai member setelah data verifikasi dikirim."""
+
+    def __init__(self, bot):
+        super().__init__(timeout=None)
+        self.bot = bot
+
+    @discord.ui.button(
+        label="Join Voice Verif",
+        style=discord.ButtonStyle.primary,
+        custom_id="nanz_join_voice_verif_after_data",
+    )
+    async def join_voice(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ):
+        await handle_voice_verif_interaction(interaction)
+
+
+async def handle_voice_verif_interaction(interaction: discord.Interaction):
+    """Memindahkan member ke voice verifikasi jika ia sudah berada di voice."""
+    guild = interaction.guild
+    member = interaction.user
+
+    if guild is None or not isinstance(member, discord.Member):
+        return await interaction.response.send_message(
+            "Verifikasi voice hanya bisa digunakan di dalam server.",
+            ephemeral=True,
+        )
+
+    target = await _select_verif_voice(guild, member)
+
+    if target is None:
+        return await interaction.response.send_message(
+            "Voice verifikasi sedang tidak tersedia. Silakan hubungi staff.",
+            ephemeral=True,
+        )
+
+    # Discord tidak mengizinkan bot memaksa user yang sedang tidak berada
+    # di voice untuk langsung masuk voice. Jika user sudah berada di voice,
+    # bot bisa memindahkannya.
+    if member.voice and member.voice.channel:
+        try:
+            await member.move_to(target, reason="nanZ Verification Voice")
+        except discord.Forbidden:
+            return await interaction.response.send_message(
+                "Bot tidak memiliki izin untuk memindahkan member ke voice verifikasi.",
+                ephemeral=True,
+            )
+        except discord.HTTPException:
+            return await interaction.response.send_message(
+                "Gagal memindahkan kamu ke voice verifikasi. Coba lagi.",
+                ephemeral=True,
+            )
+
+        engagement = guild.get_channel(ENGAGEMENT_CHANNEL_ID)
+
+        embed = discord.Embed(
+            title="Member Masuk Voice Verifikasi",
+            description=(
+                f"{member.mention} sudah berada di **{target.name}**.\n"
+                "Staff dapat masuk ke voice tersebut untuk konfirmasi data."
+            ),
+            color=0x5865F2,
+        )
+        embed.add_field(
+            name="Member",
+            value=f"{member.mention}\n`{member.id}`",
+            inline=True,
+        )
+        embed.add_field(
+            name="Voice",
+            value=f"<#{target.id}>",
+            inline=True,
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+
+        staff_view = discord.ui.View(timeout=None)
+        staff_view.add_item(
+            discord.ui.Button(
+                label="Masuk Voice",
+                style=discord.ButtonStyle.link,
+                url=_channel_url(guild.id, target.id),
+            )
+        )
+
+        if engagement:
+            await engagement.send(
+                embed=embed,
+                view=staff_view,
+                allowed_mentions=discord.AllowedMentions(users=True),
+            )
+
+        return await interaction.response.send_message(
+            f"Kamu diarahkan ke **{target.name}**. Tunggu staff melakukan konfirmasi.",
+            ephemeral=True,
+        )
+
+    # User belum berada di voice: berikan link voice target.
+    view = discord.ui.View(timeout=None)
+    view.add_item(
+        discord.ui.Button(
+            label=f"Join {target.name}",
+            style=discord.ButtonStyle.link,
+            url=_channel_url(guild.id, target.id),
+        )
+    )
+
+    await interaction.response.send_message(
+        (
+            f"Kamu belum berada di voice.\n"
+            f"Klik **Join {target.name}** untuk masuk ke voice verifikasi. "
+            "Setelah kamu masuk, gunakan tombol **Join Voice Verif** lagi "
+            "jika bot belum memindahkanmu otomatis."
+        ),
+        view=view,
+        ephemeral=True,
+    )
+
+
+class WelcomeActionView(discord.ui.View):
+    """Dua aksi utama di bawah GIF welcome."""
+
+    def __init__(self, bot):
+        super().__init__(timeout=None)
+        self.bot = bot
+
+    @discord.ui.button(
+        label="Data Verif",
+        style=discord.ButtonStyle.primary,
+        custom_id="nanz_welcome_data_verif",
+    )
+    async def data_verif(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ):
+        cog = self.bot.get_cog("VerifySystem")
+
+        if cog is None:
+            return await interaction.response.send_message(
+                "Panel verifikasi sedang tidak tersedia. Hubungi staff.",
+                ephemeral=True,
+            )
+
+        await cog.show_verification_panel(interaction)
+
+    @discord.ui.button(
+        label="Join Voice Verif",
+        style=discord.ButtonStyle.secondary,
+        custom_id="nanz_welcome_join_voice_verif",
+    )
+    async def voice_verif(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ):
+        await handle_voice_verif_interaction(interaction)
+
+
 class VerifyGreeting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        # ✅ CHANNEL VERIF
+        # CHANNEL VERIF
         self.VERIF_CHANNEL_ID = 1486913580161962054
 
-        # ✅ ROLE MEMBER
+        # ROLE MEMBER
         self.MEMBER_ROLE_ID = 1453095603008442510
 
-        # ✅ ROLE STAFF
+        # ROLE STAFF
         self.MOD_DC_ROLE_ID = 1453103644244316343
         self.MOD_YT_ROLE_ID = 1408509547601203252
         self.PEMBINA_OSIS_ROLE_ID = 1467360501745844446
@@ -314,6 +516,7 @@ class VerifyGreeting(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.bot:
             return
+
         if message.channel.id != self.VERIF_CHANNEL_ID:
             return
 
@@ -321,10 +524,13 @@ class VerifyGreeting(commands.Cog):
 
         if any(role.id == self.MEMBER_ROLE_ID for role in member.roles):
             return
+
         if member.id in self.already_greeted:
             return
+
         self.already_greeted.add(member.id)
 
+        # WORDING GREETING TETAP SAMA
         content = (
             "<a:welcome:1553703629880299610> **Murid Baru tiba!**\n"
             f"Selamat datang di **nanZ Server**, {member.mention}!\n"
@@ -332,21 +538,38 @@ class VerifyGreeting(commands.Cog):
         )
 
         try:
-            avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
+            avatar_bytes = await member.display_avatar.replace(
+                size=256,
+                format="png",
+            ).read()
+
             loop = asyncio.get_running_loop()
+
             gif_bytes = await loop.run_in_executor(
-                None, generate_verify_gif, avatar_bytes, member.display_name
+                None,
+                generate_verify_gif,
+                avatar_bytes,
+                member.display_name,
             )
+
         except Exception as e:
             print(f"[VerifyGreeting] gagal bikin GIF: {e}")
             self.already_greeted.discard(member.id)
             return
 
         await asyncio.sleep(2)
+
         await message.channel.send(
             content=content,
-            file=discord.File(io.BytesIO(gif_bytes), filename="verify_welcome.gif"),
-            allowed_mentions=discord.AllowedMentions(users=True, roles=True),
+            file=discord.File(
+                io.BytesIO(gif_bytes),
+                filename="verify_welcome.gif",
+            ),
+            view=WelcomeActionView(self.bot),
+            allowed_mentions=discord.AllowedMentions(
+                users=True,
+                roles=True,
+            ),
         )
 
 
