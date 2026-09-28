@@ -16,6 +16,7 @@ class BotDirectory(commands.Cog):
         self.BOT_CHANNEL_ID = 1550475918454030386
 
         # Role yang digunakan untuk menandai Music Bot.
+        # Hanya BOT yang mempunyai role ini yang akan ditampilkan.
         self.MUSIC_ROLE_ID = 1473506596851159080
 
         # ======================================================
@@ -24,16 +25,6 @@ class BotDirectory(commands.Cog):
 
         self.ONLINE_EMOJI_ID = 1550516004096974888
         self.OFFLINE_EMOJI_ID = 1550516157113434255
-
-        # Emoji judul.
-        self.TITLE_EMOJI_ID = 1512787254312042496
-        self.TITLE_EMOJI_NAME = "arrow_blue"
-        self.TITLE_EMOJI_ANIMATED = True
-
-        # Emoji pin/channel.
-        self.PIN_EMOJI_ID = 1553688245769085099
-        self.PIN_EMOJI_NAME = "pin"
-        self.PIN_EMOJI_ANIMATED = True
 
         # Jeda setelah event sebelum refresh.
         self.REFRESH_DELAY = 3
@@ -83,13 +74,8 @@ class BotDirectory(commands.Cog):
     # CUSTOM EMOJI
     # ==========================================================
 
-    def get_custom_emoji(self, emoji_id, fallback="•"):
-        """
-        Mengambil custom emoji dari cache Discord.
-
-        Jika emoji belum masuk cache, gunakan fallback Unicode
-        supaya tidak pernah muncul sebagai teks 'ONLINE/OFFLINE'.
-        """
+    def get_custom_emoji(self, emoji_id, fallback):
+        """Mengambil custom emoji server berdasarkan ID."""
 
         if not emoji_id:
             return fallback
@@ -101,39 +87,25 @@ class BotDirectory(commands.Cog):
 
         return fallback
 
-    def get_fixed_emoji(self, emoji_id, name, animated=False):
-        """
-        Membuat format custom emoji langsung dari ID.
-
-        Ini dipakai untuk emoji yang namanya sudah diketahui,
-        terutama emoji judul, agar tidak bergantung pada cache.
-        """
-
-        if not emoji_id or not name:
-            return ""
-
-        prefix = "a" if animated else ""
-        return f"<{prefix}:{name}:{emoji_id}>"
-
     # ==========================================================
     # VOICE STATUS
     # ==========================================================
 
     def get_online_offline_emoji(self, member):
         """
-        Terpakai    = Music Bot sedang berada di voice channel.
-        Tidak Terpakai = Music Bot tidak berada di voice channel.
+        Online  = Music Bot sedang berada di voice channel.
+        Offline = Music Bot tidak berada di voice channel.
         """
 
         if member.voice and member.voice.channel:
             return self.get_custom_emoji(
                 self.ONLINE_EMOJI_ID,
-                "🟢"
+                "ONLINE"
             )
 
         return self.get_custom_emoji(
             self.OFFLINE_EMOJI_ID,
-            "⚪"
+            "OFFLINE"
         )
 
     def get_voice_status(self, member):
@@ -145,12 +117,13 @@ class BotDirectory(commands.Cog):
             channel = member.voice.channel
 
             return (
-                f"{status_emoji} **Terpakai**\n"
-                f"　{self.get_fixed_emoji(self.PIN_EMOJI_ID, self.PIN_EMOJI_NAME, self.PIN_EMOJI_ANIMATED)} "
-                f"{channel.mention}"
+                f"{status_emoji} **Terpakai**  •  "
+                f"<a:pin:1553688245769085099> {channel.mention}"
             )
 
-        return f"{status_emoji} **Tidak Terpakai**"
+        return (
+            f"{status_emoji} **Tidak Terpakai**"
+        )
 
     # ==========================================================
     # GENERATE EMBED
@@ -161,42 +134,36 @@ class BotDirectory(commands.Cog):
         Membuat satu embed Music Bot Directory.
 
         Layout:
-        - Judul + icon server
-        - Deskripsi singkat
-        - Ringkasan statistik
+        - Judul
+        - Summary Terpakai / Tidak Terpakai / Total
         - Daftar bot
-        - Status selalu berada di bawah nama bot
+        - Status bot berada di baris bawah nama
         """
 
-        title_emoji = self.get_fixed_emoji(
-            self.TITLE_EMOJI_ID,
-            self.TITLE_EMOJI_NAME,
-            self.TITLE_EMOJI_ANIMATED
-        )
-
         embed = discord.Embed(
-            title=f"{title_emoji} Music Bot Directory",
-            description=(
-                "Pantau penggunaan **Music Bot** di server secara real-time."
-            ),
             color=discord.Color.blurple()
         )
 
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
+        # ------------------------------------------------------
+        # HEADER
+        # ------------------------------------------------------
+
+        embed.set_author(
+            name="<a:arrow_blue:1512787254312042496>  Music Bot Directory",
+            icon_url=(
+                guild.icon.url
+                if guild.icon
+                else discord.Embed.Empty
+            )
+        )
 
         # ------------------------------------------------------
         # EMPTY
         # ------------------------------------------------------
 
         if not bots:
-            embed.add_field(
-                name="📭 Belum Ada Bot",
-                value=(
-                    "Belum ada **Music Bot** yang memiliki role "
-                    "yang terdaftar di directory ini."
-                ),
-                inline=False
+            embed.description = (
+                "<a:arrow_blue:1512787254312042496> *Belum ada Music Bot yang terdeteksi.*"
             )
 
             embed.set_footer(
@@ -219,28 +186,19 @@ class BotDirectory(commands.Cog):
 
         online_emoji = self.get_custom_emoji(
             self.ONLINE_EMOJI_ID,
-            "🟢"
+            "ONLINE"
         )
 
         offline_emoji = self.get_custom_emoji(
             self.OFFLINE_EMOJI_ID,
-            "⚪"
+            "OFFLINE"
         )
 
-        pin_emoji = self.get_fixed_emoji(
-            self.PIN_EMOJI_ID,
-            self.PIN_EMOJI_NAME,
-            self.PIN_EMOJI_ANIMATED
-        )
-
-        embed.add_field(
-            name="Status Music Bot",
-            value=(
-                f"{online_emoji} **Terpakai** `{used_count}`  •  "
-                f"{offline_emoji} **Tidak Terpakai** `{unused_count}`  •  "
-                f"{pin_emoji} **Total** `{len(bots)}`"
-            ),
-            inline=False
+        # Summary diletakkan tepat di bawah judul.
+        summary = (
+            f"{online_emoji} **Terpakai:** `{used_count}`  •  "
+            f"{offline_emoji} **Tidak Terpakai:** `{unused_count}`  •  "
+            f"<a:pin:1553688245769085099> **Total:** `{len(bots)}`"
         )
 
         # ------------------------------------------------------
@@ -250,19 +208,25 @@ class BotDirectory(commands.Cog):
         blocks = []
 
         for index, member in enumerate(bots, start=1):
+
             status = self.get_voice_status(member)
 
+            # Nama bot di baris pertama.
+            # Status berada di baris kedua.
             block = (
-                f"**`{index:02d}` · {member.display_name}**\n"
-                f"{status}"
+                f"**{index:02d}. {member.display_name}**\n"
+                f"　{status}"
             )
 
             blocks.append(block)
 
-        embed.add_field(
-            name="🎵 Daftar Music Bot",
-            value="\n\n".join(blocks),
-            inline=False
+        # ------------------------------------------------------
+        # DESCRIPTION
+        # ------------------------------------------------------
+
+        embed.description = (
+            f"{summary}\n\n"
+            + "\n\n".join(blocks)
         )
 
         # ------------------------------------------------------
@@ -271,7 +235,7 @@ class BotDirectory(commands.Cog):
 
         embed.set_footer(
             text=(
-                "nanZ Server  •  Music Bot Directory  •  "
+                "nanZ Server  •  Music Bot  •  "
                 f"{len(bots)} Bot"
             )
         )
@@ -296,22 +260,15 @@ class BotDirectory(commands.Cog):
                 if not message.embeds:
                     continue
 
-                embed = message.embeds[0]
+                author = message.embeds[0].author
 
-                # Cek title baru.
-                if embed.title and "Music Bot Directory" in embed.title:
-                    found.append(message.id)
+                if not author or not author.name:
                     continue
 
-                # Cek format lama yang menggunakan author.
-                author = embed.author
+                if "Music Bot Directory" not in author.name:
+                    continue
 
-                if (
-                    author
-                    and author.name
-                    and "Music Bot Directory" in author.name
-                ):
-                    found.append(message.id)
+                found.append(message.id)
 
         except discord.HTTPException as e:
             print(
@@ -347,7 +304,10 @@ class BotDirectory(commands.Cog):
     async def _delayed_refresh(self, guild):
 
         try:
-            await asyncio.sleep(self.REFRESH_DELAY)
+            await asyncio.sleep(
+                self.REFRESH_DELAY
+            )
+
             await self.refresh_all_panels(guild)
 
         except asyncio.CancelledError:
@@ -404,7 +364,9 @@ class BotDirectory(commands.Cog):
 
             if not self.message_ids:
                 self.message_ids = (
-                    await self.find_existing_messages(channel)
+                    await self.find_existing_messages(
+                        channel
+                    )
                 )
 
             message_id = (
@@ -476,6 +438,7 @@ class BotDirectory(commands.Cog):
             if not new_message_ids:
 
                 try:
+
                     new_message = (
                         await channel.send(
                             embed=embed
@@ -511,11 +474,14 @@ class BotDirectory(commands.Cog):
             for old_id in self.message_ids:
 
                 if old_id not in new_message_ids:
-                    old_message_ids.append(old_id)
+                    old_message_ids.append(
+                        old_id
+                    )
 
             for old_id in old_message_ids:
 
                 try:
+
                     message = (
                         channel.get_partial_message(
                             old_id
@@ -709,6 +675,7 @@ class BotDirectory(commands.Cog):
 
         # Hapus command !setupbotdirectory.
         try:
+
             await ctx.message.delete()
 
         except Exception:
