@@ -295,7 +295,6 @@ class BotDirectory(commands.Cog):
         # ======================================================
 
         title = (
-            f"{title_emoji} "
             f"Music Bot Directory"
         )
 
