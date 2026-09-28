@@ -15,6 +15,9 @@ DATA_VERIF_CHANNEL_ID = 1508683781698224241
 # Channel engagement / divisi yang menangani verifikasi
 ENGAGEMENT_CHANNEL_ID = 1525136678442893352
 
+# Role engagement yang ditag pada setiap notif verifikasi
+ENGAGEMENT_ROLE_ID = 1554044738368442448
+
 # Channel penyimpanan data member setelah APPROVE
 DATA_MEMBER_CHANNEL_ID = 1486981828798709930
 
@@ -218,13 +221,15 @@ async def send_voice_notice(interaction, target):
     )
 
     await engagement.send(
+        content=f"<@&{ENGAGEMENT_ROLE_ID}>",
         embed=embed,
         view=StaffVoiceNoticeView(
             guild.id,
             target.id,
         ),
         allowed_mentions=discord.AllowedMentions(
-            users=True
+            users=True,
+            roles=True,
         ),
     )
 
@@ -433,8 +438,12 @@ class VerifyModal(
             notice.add_field(name="Member", value=f"{interaction.user.mention}\n`{interaction.user.id}`", inline=False)
             notice.set_thumbnail(url=interaction.user.display_avatar.url)
             await engagement.send(
+                content=f"<@&{ENGAGEMENT_ROLE_ID}>",
                 embed=notice,
-                allowed_mentions=discord.AllowedMentions(users=True),
+                allowed_mentions=discord.AllowedMentions(
+                    users=True,
+                    roles=True,
+                ),
             )
 
         # =====================================================
@@ -1065,10 +1074,18 @@ class VerifySystem(commands.Cog):
             inline=False,
         )
 
-        await ctx.send(
+        # Panel dataverif hanya aktif selama 1 jam.
+        panel_message = await ctx.send(
             embed=embed,
             view=VerifyButton(self.bot),
+            delete_after=3600,
         )
+
+        # Hapus pesan command !dataverif setelah panel berhasil dikirim.
+        try:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
 
 
 async def setup(bot):
