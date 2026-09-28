@@ -100,12 +100,12 @@ class BotDirectory(commands.Cog):
         if member.voice and member.voice.channel:
             return self.get_custom_emoji(
                 self.ONLINE_EMOJI_ID,
-                "🟢"
+                "ONLINE"
             )
 
         return self.get_custom_emoji(
             self.OFFLINE_EMOJI_ID,
-            "⚫"
+            "OFFLINE"
         )
 
     def get_voice_status(self, member):
@@ -118,7 +118,7 @@ class BotDirectory(commands.Cog):
 
             return (
                 f"{status_emoji} **Terpakai**  •  "
-                f"🎧 {channel.mention}"
+                f"<a:pin:1553688245769085099> {channel.mention}"
             )
 
         return (
@@ -149,7 +149,7 @@ class BotDirectory(commands.Cog):
         # ------------------------------------------------------
 
         embed.set_author(
-            name="🎵  Music Bot Directory",
+            name="<a:arrow_blue:1512787254312042496>  Music Bot Directory",
             icon_url=(
                 guild.icon.url
                 if guild.icon
@@ -163,7 +163,7 @@ class BotDirectory(commands.Cog):
 
         if not bots:
             embed.description = (
-                "╰─ *Belum ada Music Bot yang terdeteksi.*"
+                "<a:arrow_blue:1512787254312042496> *Belum ada Music Bot yang terdeteksi.*"
             )
 
             embed.set_footer(
@@ -186,19 +186,19 @@ class BotDirectory(commands.Cog):
 
         online_emoji = self.get_custom_emoji(
             self.ONLINE_EMOJI_ID,
-            "🟢"
+            "ONLINE"
         )
 
         offline_emoji = self.get_custom_emoji(
             self.OFFLINE_EMOJI_ID,
-            "⚫"
+            "OFFLINE"
         )
 
         # Summary diletakkan tepat di bawah judul.
         summary = (
             f"{online_emoji} **Terpakai:** `{used_count}`  •  "
             f"{offline_emoji} **Tidak Terpakai:** `{unused_count}`  •  "
-            f"📋 **Total:** `{len(bots)}`"
+            f"<a:pin:1553688245769085099> **Total:** `{len(bots)}`"
         )
 
         # ------------------------------------------------------
