@@ -469,7 +469,7 @@ class Welcome(commands.Cog):
             print(f"[Welcome] gagal bikin GIF: {e}")
 
         content = (
-            "<a:done:1553690488257908837> **Verifikasi berhasil!**\n"
+            "<:done:1553690488257908837> **Verifikasi berhasil!**\n"
             f"Selamat datang di **nanZ Server**, {member.mention}!\n"
             f"<a:blue:1512787254312042496> `Baca rules:` <#{self.RULES_CHANNEL_ID}>\n"
             f"<a:purple:1512787191234035803> `Pilih role:` <#{self.ROLES_CHANNEL_ID}>"
