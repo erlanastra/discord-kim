@@ -16,7 +16,6 @@ class BotDirectory(commands.Cog):
         self.BOT_CHANNEL_ID = 1550475918454030386
 
         # Role yang digunakan untuk menandai Music Bot.
-        # Hanya BOT yang mempunyai role ini yang akan ditampilkan.
         self.MUSIC_ROLE_ID = 1473506596851159080
 
         # ======================================================
@@ -26,12 +25,12 @@ class BotDirectory(commands.Cog):
         self.ONLINE_EMOJI_ID = 1550516004096974888
         self.OFFLINE_EMOJI_ID = 1550516157113434255
 
-        # Emoji untuk judul panel.
+        # Emoji judul
         self.TITLE_EMOJI_ID = 1512787254312042496
         self.TITLE_EMOJI_NAME = "arrow_blue"
         self.TITLE_EMOJI_ANIMATED = True
 
-        # Emoji pin untuk channel voice.
+        # Emoji pin
         self.PIN_EMOJI_ID = 1553688245769085099
         self.PIN_EMOJI_NAME = "pin"
         self.PIN_EMOJI_ANIMATED = True
@@ -40,10 +39,7 @@ class BotDirectory(commands.Cog):
         # REFRESH CONFIG
         # ======================================================
 
-        # Jeda setelah event sebelum refresh.
         self.REFRESH_DELAY = 3
-
-        # Safety refresh setiap 10 menit.
         self.AUTO_REFRESH_MINUTES = 10
 
         # ======================================================
@@ -51,11 +47,8 @@ class BotDirectory(commands.Cog):
         # ======================================================
 
         self.message_ids = []
-
         self.embed_cache = {}
-
         self.refresh_lock = asyncio.Lock()
-
         self.refresh_task = None
 
         # ======================================================
@@ -93,18 +86,24 @@ class BotDirectory(commands.Cog):
     # CUSTOM EMOJI
     # ==========================================================
 
-    def get_custom_emoji(self, emoji_id, fallback="•"):
+    def get_custom_emoji(
+        self,
+        emoji_id,
+        fallback="•"
+    ):
         """
         Mengambil custom emoji berdasarkan ID.
 
-        Jika emoji belum tersedia di cache bot,
+        Jika emoji tidak ditemukan,
         gunakan fallback.
         """
 
         if not emoji_id:
             return fallback
 
-        emoji = self.bot.get_emoji(emoji_id)
+        emoji = self.bot.get_emoji(
+            emoji_id
+        )
 
         if emoji:
             return str(emoji)
@@ -122,10 +121,11 @@ class BotDirectory(commands.Cog):
         animated=False
     ):
         """
-        Membuat format custom emoji Discord secara langsung.
+        Membuat format custom emoji Discord
+        secara langsung.
 
-        Berguna agar emoji tetap bisa dirender walaupun
-        bot belum mendapatkan emoji dari cache.
+        Ini membuat emoji tetap dapat dirender
+        meskipun belum masuk cache bot.
         """
 
         if not emoji_id or not name:
@@ -133,23 +133,30 @@ class BotDirectory(commands.Cog):
 
         prefix = "a" if animated else ""
 
-        return f"<{prefix}:{name}:{emoji_id}>"
+        return (
+            f"<{prefix}:{name}:{emoji_id}>"
+        )
 
     # ==========================================================
-    # VOICE STATUS
+    # VOICE STATUS EMOJI
     # ==========================================================
 
-    def get_online_offline_emoji(self, member):
+    def get_online_offline_emoji(
+        self,
+        member
+    ):
         """
         Terpakai:
-        Music Bot sedang berada di voice channel.
+        Bot sedang berada di voice channel.
 
         Tidak Terpakai:
-        Music Bot tidak berada di voice channel.
+        Bot tidak berada di voice channel.
         """
 
-        if member.voice and member.voice.channel:
-
+        if (
+            member.voice
+            and member.voice.channel
+        ):
             return self.get_custom_emoji(
                 self.ONLINE_EMOJI_ID,
                 "🟢"
@@ -170,17 +177,19 @@ class BotDirectory(commands.Cog):
         member
     ):
         """
-        Membuat satu blok tampilan untuk setiap Music Bot.
-
-        Contoh:
+        Format:
 
         **01. Hydra**
-        > 🟢 Terpakai
-        > 📌・Music Lounge
+        > 🟢 Terpakai · 📌・Music Lounge
+
+        **02. Jockie Music**
+        > ⚪ Tidak Terpakai
         """
 
-        status_emoji = self.get_online_offline_emoji(
-            member
+        status_emoji = (
+            self.get_online_offline_emoji(
+                member
+            )
         )
 
         pin_emoji = self.get_fixed_emoji(
@@ -189,26 +198,31 @@ class BotDirectory(commands.Cog):
             self.PIN_EMOJI_ANIMATED
         )
 
-        # ------------------------------------------------------
-        # TERPAKAI
-        # ------------------------------------------------------
+        # ======================================================
+        # BOT TERPAKAI
+        # ======================================================
 
-        if member.voice and member.voice.channel:
+        if (
+            member.voice
+            and member.voice.channel
+        ):
 
             channel = member.voice.channel
 
             return (
-                f"**{index:02d}. {member.display_name}**\n"
-                f"> {status_emoji} Terpakai\n"
-                f"> {pin_emoji}・{channel.mention}"
+                f"**{index:02d}. "
+                f"{member.display_name}**\n"
+                f"> {status_emoji} Terpakai · "
+                f"{pin_emoji}・{channel.mention}"
             )
 
-        # ------------------------------------------------------
-        # TIDAK TERPAKAI
-        # ------------------------------------------------------
+        # ======================================================
+        # BOT TIDAK TERPAKAI
+        # ======================================================
 
         return (
-            f"**{index:02d}. {member.display_name}**\n"
+            f"**{index:02d}. "
+            f"{member.display_name}**\n"
             f"> {status_emoji} Tidak Terpakai"
         )
 
@@ -224,12 +238,27 @@ class BotDirectory(commands.Cog):
         """
         Membuat panel Music Bot Directory.
 
-        Description Discord maksimal 4096 karakter.
-        Karena itu daftar bot otomatis dibagi menjadi
-        beberapa embed jika terlalu panjang.
+        Layout:
 
-        Setiap embed tetap menggunakan layout yang sama.
+        [TITLE]
+
+        🟢 Terpakai
+        ⚪ Tidak Terpakai
+        📌 Total
+
+        **01. Nama Bot**
+        > Status
+
+        **02. Nama Bot**
+        > Status
+
+        Description otomatis dibagi jika
+        mendekati batas Discord.
         """
+
+        # ======================================================
+        # EMOJI
+        # ======================================================
 
         title_emoji = self.get_fixed_emoji(
             self.TITLE_EMOJI_ID,
@@ -254,14 +283,15 @@ class BotDirectory(commands.Cog):
         )
 
         # ======================================================
-        # EMPTY
+        # EMPTY DIRECTORY
         # ======================================================
 
         if not bots:
 
             embed = discord.Embed(
                 title=(
-                    f"{title_emoji} Music Bot Directory"
+                    f"{title_emoji} "
+                    f"Music Bot Directory"
                 ),
                 description=(
                     "📭 Belum ada Music Bot yang "
@@ -271,6 +301,7 @@ class BotDirectory(commands.Cog):
             )
 
             if guild.icon:
+
                 embed.set_thumbnail(
                     url=guild.icon.url
                 )
@@ -286,28 +317,40 @@ class BotDirectory(commands.Cog):
             return [embed]
 
         # ======================================================
-        # SUMMARY
+        # COUNT
         # ======================================================
 
         used_count = sum(
             1
             for member in bots
-            if member.voice
-            and member.voice.channel
+            if (
+                member.voice
+                and member.voice.channel
+            )
         )
 
         unused_count = (
             len(bots) - used_count
         )
 
+        # ======================================================
+        # SUMMARY
+        # ======================================================
+
+        # Dibuat 3 baris agar lebih rapi
+        # di tampilan mobile.
+
         summary = (
-            f"{online_emoji} Terpakai `{used_count}`  •  "
-            f"{offline_emoji} Tidak Terpakai `{unused_count}`  •  "
-            f"{pin_emoji} Total `{len(bots)}`"
+            f"{online_emoji} "
+            f"Terpakai `{used_count}`\n"
+            f"{offline_emoji} "
+            f"Tidak Terpakai `{unused_count}`\n"
+            f"{pin_emoji} "
+            f"Total `{len(bots)}`"
         )
 
         # ======================================================
-        # BUILD BOT BLOCKS
+        # BOT BLOCKS
         # ======================================================
 
         blocks = []
@@ -328,10 +371,10 @@ class BotDirectory(commands.Cog):
         # SPLIT DESCRIPTION
         # ======================================================
 
-        # Discord description max:
-        # 4096 karakter.
+        # Discord description:
+        # maximum 4096 karakter.
         #
-        # Kita gunakan 3900 sebagai safety margin.
+        # Gunakan 3900 sebagai safety margin.
 
         MAX_DESCRIPTION = 3900
 
@@ -343,16 +386,18 @@ class BotDirectory(commands.Cog):
 
         for block in blocks:
 
+            # Antar bot hanya satu newline.
             candidate = (
                 current_description
                 + block
-                + "\n\n"
+                + "\n"
             )
 
-            # Jika melebihi batas,
-            # simpan bagian sebelumnya.
+            # Jika terlalu panjang,
+            # mulai embed berikutnya.
             if (
-                len(candidate) > MAX_DESCRIPTION
+                len(candidate)
+                > MAX_DESCRIPTION
                 and current_description.strip()
                 != summary
             ):
@@ -362,7 +407,7 @@ class BotDirectory(commands.Cog):
                 )
 
                 current_description = (
-                    f"{block}\n\n"
+                    f"{block}\n"
                 )
 
             else:
@@ -401,16 +446,16 @@ class BotDirectory(commands.Cog):
                 color=discord.Color.blurple()
             )
 
-            # Server icon.
+            # Server icon
             if guild.icon:
 
                 embed.set_thumbnail(
                     url=guild.icon.url
                 )
 
-            # --------------------------------------------------
+            # ==================================================
             # FOOTER
-            # --------------------------------------------------
+            # ==================================================
 
             footer_text = (
                 "nanZ Server  •  "
@@ -429,7 +474,9 @@ class BotDirectory(commands.Cog):
                 text=footer_text
             )
 
-            embeds.append(embed)
+            embeds.append(
+                embed
+            )
 
         return embeds
 
@@ -442,7 +489,8 @@ class BotDirectory(commands.Cog):
         channel
     ):
         """
-        Mencari panel Music Bot Directory lama.
+        Mencari panel Music Bot Directory
+        yang sudah ada.
         """
 
         found = []
@@ -454,24 +502,28 @@ class BotDirectory(commands.Cog):
             ):
 
                 # Hanya message dari bot.
-                if message.author != self.bot.user:
+                if (
+                    message.author
+                    != self.bot.user
+                ):
                     continue
 
-                # Harus memiliki embed.
+                # Harus punya embed.
                 if not message.embeds:
                     continue
 
                 is_directory = False
 
-                # --------------------------------------------------
-                # CHECK EMBED TITLE
-                # --------------------------------------------------
-
                 for embed in message.embeds:
+
+                    # --------------------------------------------------
+                    # CHECK TITLE
+                    # --------------------------------------------------
 
                     if (
                         embed.title
-                        and "Music Bot Directory"
+                        and
+                        "Music Bot Directory"
                         in embed.title
                     ):
 
@@ -484,8 +536,10 @@ class BotDirectory(commands.Cog):
 
                     if (
                         embed.author
-                        and embed.author.name
-                        and "Music Bot Directory"
+                        and
+                        embed.author.name
+                        and
+                        "Music Bot Directory"
                         in embed.author.name
                     ):
 
@@ -502,10 +556,11 @@ class BotDirectory(commands.Cog):
 
             print(
                 "[MUSIC DIRECTORY] "
-                f"Gagal mencari message lama: {e}"
+                "Gagal mencari message lama: "
+                f"{e}"
             )
 
-        # History dimulai terbaru -> terlama.
+        # History dari terbaru -> terlama.
         found.reverse()
 
         return found
@@ -519,10 +574,8 @@ class BotDirectory(commands.Cog):
         guild
     ):
         """
-        Menjadwalkan refresh dengan debounce.
-
-        Event voice/role yang terjadi berdekatan
-        tidak akan membuat banyak refresh.
+        Debounce refresh agar event yang
+        berdekatan tidak spam Discord.
         """
 
         if not self.BOT_CHANNEL_ID:
@@ -534,8 +587,12 @@ class BotDirectory(commands.Cog):
         ):
             return
 
-        self.refresh_task = asyncio.create_task(
-            self._delayed_refresh(guild)
+        self.refresh_task = (
+            asyncio.create_task(
+                self._delayed_refresh(
+                    guild
+                )
+            )
         )
 
     # ==========================================================
@@ -580,7 +637,8 @@ class BotDirectory(commands.Cog):
         if not self.BOT_CHANNEL_ID:
             return
 
-        # Jangan jalankan refresh bersamaan.
+        # Jangan menjalankan refresh
+        # secara bersamaan.
         if self.refresh_lock.locked():
             return
 
@@ -599,27 +657,25 @@ class BotDirectory(commands.Cog):
 
                 return
 
-            # --------------------------------------------------
-            # GET BOTS
-            # --------------------------------------------------
+            # ==================================================
+            # GET MUSIC BOTS
+            # ==================================================
 
             bots = self.get_music_bots(
                 guild
             )
 
-            # --------------------------------------------------
+            # ==================================================
             # GENERATE EMBEDS
-            # --------------------------------------------------
+            # ==================================================
 
             embeds = self.generate_bot_embeds(
                 guild,
                 bots
             )
 
-            # --------------------------------------------------
-            # SPLIT MAX 10 EMBEDS PER MESSAGE
-            # --------------------------------------------------
-
+            # Discord maksimal 10 embed
+            # dalam satu message.
             embed_groups = [
                 embeds[i:i + 10]
                 for i in range(
@@ -629,9 +685,9 @@ class BotDirectory(commands.Cog):
                 )
             ]
 
-            # --------------------------------------------------
+            # ==================================================
             # FIND OLD MESSAGES
-            # --------------------------------------------------
+            # ==================================================
 
             if not self.message_ids:
 
@@ -644,7 +700,7 @@ class BotDirectory(commands.Cog):
             new_message_ids = []
 
             # ==================================================
-            # PROCESS EACH MESSAGE GROUP
+            # PROCESS MESSAGE GROUPS
             # ==================================================
 
             for group_index, embed_group in enumerate(
@@ -673,9 +729,9 @@ class BotDirectory(commands.Cog):
                         ]
                     )
 
-                # --------------------------------------------------
+                # ==================================================
                 # UPDATE EXISTING MESSAGE
-                # --------------------------------------------------
+                # ==================================================
 
                 if old_message_id:
 
@@ -733,9 +789,9 @@ class BotDirectory(commands.Cog):
                             f"Gagal edit panel: {e}"
                         )
 
-                # --------------------------------------------------
+                # ==================================================
                 # CREATE NEW MESSAGE
-                # --------------------------------------------------
+                # ==================================================
 
                 try:
 
@@ -798,14 +854,14 @@ class BotDirectory(commands.Cog):
                     pass
 
             # ==================================================
-            # UPDATE CACHE
+            # UPDATE MESSAGE CACHE
             # ==================================================
 
             self.message_ids = (
                 new_message_ids
             )
 
-            # Bersihkan cache yang sudah tidak digunakan.
+            # Bersihkan cache yang tidak digunakan.
             valid_cache_keys = {
                 f"group_{index}"
                 for index in range(
@@ -841,7 +897,7 @@ class BotDirectory(commands.Cog):
         if not member.bot:
             return
 
-        # Tidak ada perubahan channel.
+        # Tidak ada perubahan channel voice.
         if before.channel == after.channel:
             return
 
@@ -887,7 +943,10 @@ class BotDirectory(commands.Cog):
         )
 
         # Role Music Bot tidak berubah.
-        if before_has_role == after_has_role:
+        if (
+            before_has_role
+            == after_has_role
+        ):
             return
 
         self.schedule_refresh(
@@ -995,9 +1054,8 @@ class BotDirectory(commands.Cog):
 
         !setupbotdirectory
 
-        Command ini akan membuat / memindahkan
-        panel Music Bot Directory ke channel
-        tempat command dijalankan.
+        Panel akan dibuat / dipindahkan
+        ke channel tempat command dijalankan.
         """
 
         self.BOT_CHANNEL_ID = (
