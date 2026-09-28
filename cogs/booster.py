@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 # ══════════════════════════════════════════════
 #  KONFIGURASI
 # ══════════════════════════════════════════════
-BOOST_CHANNEL_ID = 0  # ← GANTI dengan ID channel boost nanZ
+BOOST_CHANNEL_ID = 1554100419637149838  # ← GANTI dengan ID channel boost nanZ
 ROLE_REQ_CHANNEL_ID = 1515029186530771077  # channel request role
 
 # Emoji nanZ (kalau emoji nitro animasi, ganti "<:" jadi "<a:")
