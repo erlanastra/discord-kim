@@ -291,15 +291,13 @@ class Booster(commands.Cog):
             print(f"[Booster] gagal bikin PNG: {e}")
 
         embed = discord.Embed(
-            title="Murid Teladan Baru Ngeboost nanZ!",
+            title="Murid Booster Baru!",
             description=(
                 f"{E_NITRO} Terima kasih {member.mention} sudah ngeboost **nanZ Server**!\n"
-                f"{E_BLUE} `Request role:` <#{ROLE_REQ_CHANNEL_ID}>"
+                f"> {E_BLUE} `Req Role:` <#{ROLE_REQ_CHANNEL_ID}>"
             ),
             color=discord.Color.from_rgb(130, 80, 255),
         )
-        embed.add_field(name="Level Boost Sekolah", value=f"{E_NITRO} Level {tier}", inline=True)
-        embed.add_field(name="Total Boost", value=f"{E_NITRO} {total}", inline=True)
         embed.set_footer(text="nanZ School Boost System")
 
         kwargs = {}
