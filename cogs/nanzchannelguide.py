@@ -49,16 +49,19 @@ class NanzChannelGuide(commands.Cog):
         "atribut":
             "Tempat melihat informasi role, atribut, dan identitas yang tersedia di nanZ.",
 
-        "staff-sekolah":
+        "tentang-channel":
+            "Tempat melihat informasi tiap channel yang ada di nanZ.",
+
+        "staff":
             "Tempat melihat daftar staff dan informasi kepengurusan nanZ.",
 
         "giveaway":
             "Tempat mendapatkan informasi giveaway dan kegiatan berhadiah.",
 
-        "booster-notifikasi":
+        "booster":
             "Tempat menerima informasi khusus mengenai Booster nanZ.",
 
-        "req-role-booster":
+        "req-role":
             "Tempat mengajukan permintaan role Booster sesuai ketentuan.",
 
         "keluar":
