@@ -82,7 +82,7 @@ async def load_cogs():
         "cogs.nanzquiz",
         "cogs.autoreply",
         "cogs.top_stats",
-        "cogs.sugestion",
+        "cogs.suggestion",
         "cogs.role_request",
         "cogs.staff_attendance",
         "cogs.staff_directory",
