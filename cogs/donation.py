@@ -1,3 +1,6 @@
+import asyncio
+import io
+
 import discord
 from discord.ext import commands, tasks
 
@@ -5,6 +8,13 @@ import sqlite3
 import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+try:
+    # donor_card.py ditaruh di folder yang sama dengan donation.py (cogs/)
+    from .donor_card import render_top_donor_card
+except ImportError:
+    # kalau donor_card.py ditaruh di folder utama bot
+    from donor_card import render_top_donor_card
 
 
 # =========================================================
@@ -28,6 +38,17 @@ DONATION_NOTIFICATION_CHANNEL_ID = 1528760374705262742
 
 # Channel Live Top Donatur
 LIVE_TOP_DONOR_CHANNEL_ID = 1550820849018474597
+
+
+# =========================================================
+# JUDUL PANEL LEADERBOARD
+# =========================================================
+
+TITLE_TOP_RUPIAH = "<:rupiah:1550869044104798208> TOP DONATUR RUPIAH"
+TITLE_TOP_OWO = "<:owo:1550868268020006932> TOP DONATUR OWO"
+
+# Judul panel lama (gabungan). Otomatis dihapus sekali saat bot start.
+LEGACY_LEADERBOARD_TITLE = "<a:topdonatur:1550871705914974318> TOP DONATUR NANZ"
 
 
 # =========================================================
@@ -1254,7 +1275,10 @@ class DonationControl(
             DB_PATH
         )
 
-        self.leaderboard_message_id = None
+        # id pesan leaderboard: {"rupiah": id, "owo": id}
+        self.leaderboard_message_ids = {}
+
+        self.legacy_leaderboard_checked = False
 
         self.expire_donor_roles.start()
 
@@ -2102,7 +2126,205 @@ class DonationControl(
             )
 
     # =====================================================
-    # LEADERBOARD
+    # DATA UNTUK PNG (nama + avatar + nominal)
+    # =====================================================
+
+    async def _top_rows_for_card(self, guild, top_rows, formatter):
+
+        result = []
+
+        for user_id, total in top_rows[:3]:
+
+            user = guild.get_member(user_id)
+
+            if user is None:
+                user = self.bot.get_user(user_id)
+
+            if user is None:
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                except Exception:
+                    user = None
+
+            name = user.display_name if user else f"User {user_id}"
+
+            avatar_bytes = None
+
+            if user is not None:
+                try:
+                    avatar_bytes = await user.display_avatar.replace(
+                        size=256,
+                        format="png"
+                    ).read()
+                except Exception:
+                    avatar_bytes = None
+
+            result.append({
+                "name": name,
+                "amount": formatter(total),
+                "value": total,
+                "avatar": avatar_bytes,
+            })
+
+        return result
+
+    # =====================================================
+    # TEKS TOP 10
+    # =====================================================
+
+    def _top_text(self, guild, top_rows, line_format, empty_text):
+
+        if not top_rows:
+
+            return empty_text
+
+        text = ""
+
+        for index, (user_id, total) in enumerate(top_rows, start=1):
+
+            member = guild.get_member(user_id)
+
+            name = (
+                member.display_name
+                if member
+                else f"User {user_id}"
+            )
+
+            medal = {
+                1: "<a:peringkat1:1550870838947872829>",
+                2: "<a:peringkat2:1550871079914962975>",
+                3: "<a:peringkat3:1550871014634954863>"
+            }.get(
+                index,
+                f"`{index:02}`"
+            )
+
+            text += (
+                f"{medal} **{name}**\n"
+                f"└─ {line_format(total)}\n"
+            )
+
+        return text
+
+    # =====================================================
+    # KIRIM / EDIT PESAN LEADERBOARD
+    # =====================================================
+
+    async def _upsert_leaderboard_message(
+        self,
+        channel,
+        key,
+        title,
+        embed,
+        png_bytes,
+        filename
+    ):
+
+        def make_file():
+            return discord.File(
+                io.BytesIO(png_bytes),
+                filename=filename
+            )
+
+        message = None
+
+        # -------------------------------------------------
+        # PAKAI ID YANG TERSIMPAN DI MEMORI
+        # -------------------------------------------------
+
+        message_id = self.leaderboard_message_ids.get(key)
+
+        if message_id:
+
+            try:
+
+                message = await channel.fetch_message(
+                    message_id
+                )
+
+            except (
+                discord.NotFound,
+                discord.Forbidden
+            ):
+
+                message = None
+
+        # -------------------------------------------------
+        # CARI PESAN LAMA MILIK BOT
+        # -------------------------------------------------
+
+        if not message:
+
+            try:
+
+                async for msg in channel.history(
+                    limit=50
+                ):
+
+                    if (
+                        msg.author.id == self.bot.user.id
+                        and msg.embeds
+                        and msg.embeds[0].title == title
+                    ):
+
+                        message = msg
+
+                        break
+
+            except Exception as e:
+
+                print(
+                    f"[DONATION] Search leaderboard ({key}): {e}"
+                )
+
+        # -------------------------------------------------
+        # EDIT
+        # -------------------------------------------------
+
+        if message:
+
+            try:
+
+                if png_bytes:
+
+                    await message.edit(
+                        embed=embed,
+                        attachments=[make_file()]
+                    )
+
+                else:
+
+                    await message.edit(
+                        embed=embed
+                    )
+
+            except discord.NotFound:
+
+                message = None
+
+        # -------------------------------------------------
+        # CREATE
+        # -------------------------------------------------
+
+        if not message:
+
+            if png_bytes:
+
+                message = await channel.send(
+                    embed=embed,
+                    file=make_file()
+                )
+
+            else:
+
+                message = await channel.send(
+                    embed=embed
+                )
+
+        self.leaderboard_message_ids[key] = message.id
+
+    # =====================================================
+    # LEADERBOARD (2 PANEL: RUPIAH & OWO, MASING-MASING ADA PNG)
     # =====================================================
 
     async def update_leaderboard(self):
@@ -2114,6 +2336,39 @@ class DonationControl(
         if not channel:
 
             return
+
+        # -------------------------------------------------
+        # HAPUS PESAN LEADERBOARD LAMA (1x per bot start)
+        # -------------------------------------------------
+
+        if not self.legacy_leaderboard_checked:
+
+            self.legacy_leaderboard_checked = True
+
+            try:
+
+                async for msg in channel.history(
+                    limit=50
+                ):
+
+                    if (
+                        msg.author.id == self.bot.user.id
+                        and msg.embeds
+                        and msg.embeds[0].title
+                        == LEGACY_LEADERBOARD_TITLE
+                    ):
+
+                        await msg.delete()
+
+            except Exception as e:
+
+                print(
+                    f"[DONATION] Hapus leaderboard lama: {e}"
+                )
+
+        # -------------------------------------------------
+        # DATA
+        # -------------------------------------------------
 
         rupiah_top = self.db.get_top_donors(
             "rupiah",
@@ -2133,222 +2388,165 @@ class DonationControl(
             ("owo", "owo_manual")
         )
 
-        embed = discord.Embed(
-            title="<a:topdonatur:1550871705914974318> TOP DONATUR NANZ",
+        guild = channel.guild
+
+        loop = asyncio.get_running_loop()
+
+        # =================================================
+        # PANEL RUPIAH
+        # =================================================
+
+        rupiah_png = None
+
+        try:
+
+            rows = await self._top_rows_for_card(
+                guild,
+                rupiah_top,
+                format_rupiah
+            )
+
+            rupiah_png = await loop.run_in_executor(
+                None,
+                render_top_donor_card,
+                "rupiah",
+                rows,
+                total_rupiah,
+                f"Total {format_rupiah(total_rupiah)}"
+            )
+
+        except Exception as e:
+
+            print(
+                f"[DONATION] Gagal bikin PNG rupiah: {e}"
+            )
+
+        rupiah_embed = discord.Embed(
+            title=TITLE_TOP_RUPIAH,
             description=(
-                "Leaderboard donatur "
+                "Leaderboard donatur Rupiah "
                 "**nanZ Server**\n"
                 "Diperbarui otomatis setiap ada donasi."
             ),
-            color=discord.Color.gold(),
+            color=discord.Color.from_rgb(130, 80, 255),
             timestamp=utc_now()
         )
 
-        # -------------------------------------------------
-        # RUPIAH
-        # -------------------------------------------------
-
-        rupiah_text = ""
-
-        if rupiah_top:
-
-            for index, (
-                user_id,
-                total
-            ) in enumerate(
-                rupiah_top,
-                start=1
-            ):
-
-                member = channel.guild.get_member(
-                    user_id
-                )
-
-                name = (
-                    member.display_name
-                    if member
-                    else f"User {user_id}"
-                )
-
-                medal = {
-                    1: "<a:peringkat1:1550870838947872829>",
-                    2: "<a:peringkat2:1550871079914962975>",
-                    3: "<a:peringkat3:1550871014634954863>"
-                }.get(
-                    index,
-                    f"`{index:02}`"
-                )
-
-                rupiah_text += (
-                    f"{medal} **{name}**\n"
-                    f"└─ {format_rupiah(total)}\n"
-                )
-
-        else:
-
-            rupiah_text = (
-                "Belum ada donasi Rupiah."
-            )
-
-        embed.add_field(
+        rupiah_embed.add_field(
             name="<:rupiah:1550869044104798208> DONATUR RUPIAH — TOP 10",
-            value=rupiah_text,
+            value=self._top_text(
+                guild,
+                rupiah_top,
+                format_rupiah,
+                "Belum ada donasi Rupiah."
+            ),
             inline=False
         )
 
-        embed.add_field(
+        rupiah_embed.add_field(
             name="<:rupiah:1550869044104798208> TOTAL RUPIAH",
             value=f"**{format_rupiah(total_rupiah)}**",
             inline=False
         )
 
-        # -------------------------------------------------
-        # OWO
-        # -------------------------------------------------
+        if rupiah_png:
 
-        owo_text = ""
-
-        if owo_top:
-
-            for index, (
-                user_id,
-                total
-            ) in enumerate(
-                owo_top,
-                start=1
-            ):
-
-                member = channel.guild.get_member(
-                    user_id
-                )
-
-                name = (
-                    member.display_name
-                    if member
-                    else f"User {user_id}"
-                )
-
-                medal = {
-                    1: "<a:peringkat1:1550870838947872829>",
-                    2: "<a:peringkat2:1550871079914962975>",
-                    3: "<a:peringkat3:1550871014634954863>"
-                }.get(
-                    index,
-                    f"`{index:02}`"
-                )
-
-                owo_text += (
-                    f"{medal} **{name}**\n"
-                    f"└─ {format_owo(total)} cowoncy\n"
-                )
-
-        else:
-
-            owo_text = (
-                "Belum ada donasi OwO."
+            rupiah_embed.set_image(
+                url="attachment://top_rupiah.png"
             )
 
-        embed.add_field(
+        rupiah_embed.set_footer(
+            text="nanZ Server • Live Donation Leaderboard"
+        )
+
+        await self._upsert_leaderboard_message(
+            channel,
+            "rupiah",
+            TITLE_TOP_RUPIAH,
+            rupiah_embed,
+            rupiah_png,
+            "top_rupiah.png"
+        )
+
+        # =================================================
+        # PANEL OWO
+        # =================================================
+
+        def owo_png_text(value):
+
+            return format_owo(value).replace(",", ".")
+
+        owo_png = None
+
+        try:
+
+            rows = await self._top_rows_for_card(
+                guild,
+                owo_top,
+                owo_png_text
+            )
+
+            owo_png = await loop.run_in_executor(
+                None,
+                render_top_donor_card,
+                "owo",
+                rows,
+                total_owo,
+                f"Total {owo_png_text(total_owo)} OwO"
+            )
+
+        except Exception as e:
+
+            print(
+                f"[DONATION] Gagal bikin PNG owo: {e}"
+            )
+
+        owo_embed = discord.Embed(
+            title=TITLE_TOP_OWO,
+            description=(
+                "Leaderboard donatur OwO "
+                "**nanZ Server**\n"
+                "Diperbarui otomatis setiap ada donasi."
+            ),
+            color=discord.Color.from_rgb(80, 180, 255),
+            timestamp=utc_now()
+        )
+
+        owo_embed.add_field(
             name="<:owo:1550868268020006932> DONATUR OWO — TOP 10",
-            value=owo_text,
+            value=self._top_text(
+                guild,
+                owo_top,
+                lambda t: f"{format_owo(t)} cowoncy",
+                "Belum ada donasi OwO."
+            ),
             inline=False
         )
 
-        embed.add_field(
+        owo_embed.add_field(
             name="<:owo:1550868268020006932> TOTAL OWO",
             value=f"**{format_owo(total_owo)} cowoncy**",
             inline=False
         )
 
-        embed.set_footer(
+        if owo_png:
+
+            owo_embed.set_image(
+                url="attachment://top_owo.png"
+            )
+
+        owo_embed.set_footer(
             text="nanZ Server • Live Donation Leaderboard"
         )
 
-        # -------------------------------------------------
-        # CARI PESAN LEADERBOARD
-        # -------------------------------------------------
-
-        message = None
-
-        if self.leaderboard_message_id:
-
-            try:
-
-                message = await channel.fetch_message(
-                    self.leaderboard_message_id
-                )
-
-            except (
-                discord.NotFound,
-                discord.Forbidden
-            ):
-
-                message = None
-
-        # -------------------------------------------------
-        # SEARCH PESAN LAMA
-        # -------------------------------------------------
-
-        if not message:
-
-            try:
-
-                async for msg in channel.history(
-                    limit=50
-                ):
-
-                    if (
-                        msg.author.id == self.bot.user.id
-                        and msg.embeds
-                        and msg.embeds[0].title
-                        == "<a:topdonatur:1550871705914974318> TOP DONATUR NANZ"
-                    ):
-
-                        message = msg
-
-                        self.leaderboard_message_id = (
-                            msg.id
-                        )
-
-                        break
-
-            except Exception as e:
-
-                print(
-                    f"[DONATION] Search leaderboard: {e}"
-                )
-
-        # -------------------------------------------------
-        # EDIT / CREATE
-        # -------------------------------------------------
-
-        if message:
-
-            try:
-
-                await message.edit(
-                    embed=embed
-                )
-
-            except discord.NotFound:
-
-                message = await channel.send(
-                    embed=embed
-                )
-
-                self.leaderboard_message_id = (
-                    message.id
-                )
-
-        else:
-
-            message = await channel.send(
-                embed=embed
-            )
-
-            self.leaderboard_message_id = (
-                message.id
-            )
+        await self._upsert_leaderboard_message(
+            channel,
+            "owo",
+            TITLE_TOP_OWO,
+            owo_embed,
+            owo_png,
+            "top_owo.png"
+        )
 
     # =====================================================
     # TOP DONATUR COMMAND
