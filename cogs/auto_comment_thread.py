@@ -17,7 +17,7 @@ class AutoCommentThread(commands.Cog):
         1523950507545329675,
     }
 
-    THREAD_NAME = "Komentar"
+    THREAD_NAME = "💬 Komentar"
 
     def __init__(self, bot):
         self.bot = bot
