@@ -392,7 +392,7 @@ class SaranView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
 
-    @discord.ui.button(label="Kirim Saran" style=discord.ButtonStyle.primary,
+    @discord.ui.button(label="Kirim Saran", style=discord.ButtonStyle.primary,
                        custom_id="nanz:saran:open")
     async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
         remaining = self.cog.cooldown_left(interaction.user.id)
