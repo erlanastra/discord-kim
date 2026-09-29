@@ -170,7 +170,7 @@ def generate_panel_banner() -> bytes:
     RX0, RX1 = 440, 858
     RW = RX1 - RX0
 
-    pill = "MADING SEKOLAH"
+    pill = "RUANG BK"
     fp = F(FONT_BOLD, 11)
     pw = d.textlength(pill, font=fp) / s + 34
     d.rounded_rectangle(sc([RX0, 50, RX0 + pw, 74]), radius=12 * s, fill=(*PURPLE, 220))
@@ -191,7 +191,7 @@ def generate_panel_banner() -> bytes:
     base = Image.alpha_composite(base, grad)
     d = ImageDraw.Draw(base)
 
-    l1, l2 = "Punya ide, kritik, atau masukan buat server?", "Titipkan di sini, semua saran pasti kami baca."
+    l1, l2 = "Punya ide, kritik, atau masukan buat nanZ?", "Titipkan di sini, semua saran pasti kami baca."
     d.text((RX0 * s, 158 * s), l1, font=fit(d, l1, FONT_REGULAR, 15, RW), fill=(225, 225, 245), anchor="lm")
     d.text((RX0 * s, 180 * s), l2, font=fit(d, l2, FONT_REGULAR, 15, RW), fill=(175, 170, 215), anchor="lm")
 
