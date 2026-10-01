@@ -9,10 +9,10 @@ from datetime import datetime, timezone
 
 LOG_CHANNELS = {
     "moderation": 1469289471471124659,  # Ban, kick, timeout
-    "voice": 1555249826881474610,                         # Voice log
-    "message": 1555249914836025375,                       # Message log
-    "member": 1555249958591139970,                        # Member join/leave
-    "role": 1555250009388359760,                          # Role log
+    "voice": 1555249826881474610,       # Voice log
+    "message": 1555249914836025375,     # Message log
+    "member": 1555249958591139970,      # Member join/leave
+    "role": 1555250009388359760,        # Role log
 }
 
 
@@ -39,7 +39,11 @@ class ModLog(commands.Cog):
         if channel is None:
             try:
                 channel = await guild.fetch_channel(channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            except (
+                discord.NotFound,
+                discord.Forbidden,
+                discord.HTTPException
+            ):
                 return
 
         try:
@@ -60,9 +64,12 @@ class ModLog(commands.Cog):
                 if (
                     entry.target
                     and entry.target.id == target_id
-                    and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 15
+                    and (
+                        datetime.now(timezone.utc) - entry.created_at
+                    ).total_seconds() < 15
                 ):
                     return entry
+
         except (discord.Forbidden, discord.HTTPException):
             pass
 
@@ -80,8 +87,17 @@ class ModLog(commands.Cog):
             user.id
         )
 
-        moderator = entry.user.mention if entry and entry.user else "Tidak diketahui"
-        reason = entry.reason if entry and entry.reason else "Tidak ada alasan"
+        moderator = (
+            entry.user.mention
+            if entry and entry.user
+            else "Tidak diketahui"
+        )
+
+        reason = (
+            entry.reason
+            if entry and entry.reason
+            else "Tidak ada alasan"
+        )
 
         embed = discord.Embed(
             title="🔨 Member Dibanned",
@@ -94,18 +110,24 @@ class ModLog(commands.Cog):
             value=f"{user.mention} (`{user.id}`)",
             inline=False
         )
+
         embed.add_field(
             name="Moderator",
             value=moderator,
             inline=True
         )
+
         embed.add_field(
             name="Alasan",
             value=reason[:1024],
             inline=False
         )
 
-        await self.send_log(guild, "moderation", embed=embed)
+        await self.send_log(
+            guild,
+            "moderation",
+            embed=embed
+        )
 
     # =====================================================
     # KICK / MEMBER LEAVE LOG
@@ -120,8 +142,17 @@ class ModLog(commands.Cog):
         )
 
         if entry:
-            moderator = entry.user.mention if entry.user else "Tidak diketahui"
-            reason = entry.reason if entry.reason else "Tidak ada alasan"
+            moderator = (
+                entry.user.mention
+                if entry.user
+                else "Tidak diketahui"
+            )
+
+            reason = (
+                entry.reason
+                if entry.reason
+                else "Tidak ada alasan"
+            )
 
             embed = discord.Embed(
                 title="👢 Member Dikick",
@@ -134,18 +165,24 @@ class ModLog(commands.Cog):
                 value=f"{member} (`{member.id}`)",
                 inline=False
             )
+
             embed.add_field(
                 name="Moderator",
                 value=moderator,
                 inline=True
             )
+
             embed.add_field(
                 name="Alasan",
                 value=reason[:1024],
                 inline=False
             )
 
-            await self.send_log(member.guild, "moderation", embed=embed)
+            await self.send_log(
+                member.guild,
+                "moderation",
+                embed=embed
+            )
             return
 
         embed = discord.Embed(
@@ -160,7 +197,11 @@ class ModLog(commands.Cog):
             inline=False
         )
 
-        await self.send_log(member.guild, "member", embed=embed)
+        await self.send_log(
+            member.guild,
+            "member",
+            embed=embed
+        )
 
     # =====================================================
     # MEMBER JOIN LOG
@@ -179,20 +220,33 @@ class ModLog(commands.Cog):
             value=f"{member.mention} (`{member.id}`)",
             inline=False
         )
+
         embed.add_field(
             name="Akun Dibuat",
-            value=discord.utils.format_dt(member.created_at, style="R"),
+            value=discord.utils.format_dt(
+                member.created_at,
+                style="R"
+            ),
             inline=False
         )
 
-        await self.send_log(member.guild, "member", embed=embed)
+        await self.send_log(
+            member.guild,
+            "member",
+            embed=embed
+        )
 
     # =====================================================
-    # TIMEOUT LOG
+    # TIMEOUT & ROLE LOG
     # =====================================================
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
+
+        # =================================================
+        # TIMEOUT LOG
+        # =================================================
+
         if before.timed_out_until != after.timed_out_until:
             entry = await self.get_audit_entry(
                 after.guild,
@@ -200,8 +254,17 @@ class ModLog(commands.Cog):
                 after.id
             )
 
-            moderator = entry.user.mention if entry and entry.user else "Tidak diketahui"
-            reason = entry.reason if entry and entry.reason else "Tidak ada alasan"
+            moderator = (
+                entry.user.mention
+                if entry and entry.user
+                else "Tidak diketahui"
+            )
+
+            reason = (
+                entry.reason
+                if entry and entry.reason
+                else "Tidak ada alasan"
+            )
 
             if after.timed_out_until:
                 embed = discord.Embed(
@@ -215,21 +278,28 @@ class ModLog(commands.Cog):
                     value=f"{after.mention} (`{after.id}`)",
                     inline=False
                 )
+
                 embed.add_field(
                     name="Moderator",
                     value=moderator,
                     inline=True
                 )
+
                 embed.add_field(
                     name="Berakhir",
-                    value=discord.utils.format_dt(after.timed_out_until, style="F"),
+                    value=discord.utils.format_dt(
+                        after.timed_out_until,
+                        style="F"
+                    ),
                     inline=False
                 )
+
                 embed.add_field(
                     name="Alasan",
                     value=reason[:1024],
                     inline=False
                 )
+
             else:
                 embed = discord.Embed(
                     title="✅ Timeout Dicabut",
@@ -242,13 +312,18 @@ class ModLog(commands.Cog):
                     value=f"{after.mention} (`{after.id}`)",
                     inline=False
                 )
+
                 embed.add_field(
                     name="Moderator",
                     value=moderator,
                     inline=True
                 )
 
-            await self.send_log(after.guild, "moderation", embed=embed)
+            await self.send_log(
+                after.guild,
+                "moderation",
+                embed=embed
+            )
 
         # =================================================
         # ROLE LOG
@@ -269,13 +344,18 @@ class ModLog(commands.Cog):
                 value=f"{after.mention} (`{after.id}`)",
                 inline=False
             )
+
             embed.add_field(
                 name="Role",
                 value=role.mention,
                 inline=False
             )
 
-            await self.send_log(after.guild, "role", embed=embed)
+            await self.send_log(
+                after.guild,
+                "role",
+                embed=embed
+            )
 
         for role in removed_roles:
             embed = discord.Embed(
@@ -289,13 +369,18 @@ class ModLog(commands.Cog):
                 value=f"{after.mention} (`{after.id}`)",
                 inline=False
             )
+
             embed.add_field(
                 name="Role",
                 value=role.mention,
                 inline=False
             )
 
-            await self.send_log(after.guild, "role", embed=embed)
+            await self.send_log(
+                after.guild,
+                "role",
+                embed=embed
+            )
 
     # =====================================================
     # VOICE LOG
@@ -308,19 +393,26 @@ class ModLog(commands.Cog):
 
         if before.channel is None and after.channel is not None:
             title = "🔊 Bergabung ke Voice"
-            description = f"{member.mention} bergabung ke {after.channel.mention}"
+            description = (
+                f"{member.mention} bergabung ke "
+                f"{after.channel.mention}"
+            )
             color = discord.Color.green()
 
         elif before.channel is not None and after.channel is None:
             title = "🔇 Keluar dari Voice"
-            description = f"{member.mention} keluar dari {before.channel.mention}"
+            description = (
+                f"{member.mention} keluar dari "
+                f"{before.channel.mention}"
+            )
             color = discord.Color.red()
 
         else:
             title = "🔀 Pindah Voice Channel"
             description = (
                 f"{member.mention} berpindah dari "
-                f"{before.channel.mention} ke {after.channel.mention}"
+                f"{before.channel.mention} ke "
+                f"{after.channel.mention}"
             )
             color = discord.Color.blue()
 
@@ -337,7 +429,11 @@ class ModLog(commands.Cog):
             inline=False
         )
 
-        await self.send_log(member.guild, "voice", embed=embed)
+        await self.send_log(
+            member.guild,
+            "voice",
+            embed=embed
+        )
 
     # =====================================================
     # MESSAGE DELETE LOG
@@ -355,22 +451,26 @@ class ModLog(commands.Cog):
         )
 
         embed.add_field(
-            name="Pengguna",
-            value=f"{message.author.mention} (`{message.author.id}`)",
-            inline=False
-        )
-        embed.add_field(
             name="Channel",
             value=message.channel.mention,
             inline=False
         )
 
-        content = message.content or "*Tidak ada teks atau pesan tidak tersimpan di cache.*"
+        content = message.content or (
+            "*Tidak ada teks atau pesan tidak tersimpan di cache.*"
+        )
+
+        # Mention member berada di luar embed
+        log_content = (
+            f"{message.author.mention} (`{message.author.id}`)\n"
+            f"**Isi pesan yang dihapus:**\n"
+            f"{content[:1800]}"
+        )
 
         await self.send_log(
             message.guild,
             "message",
-            content=f"**Isi pesan yang dihapus:**\n{content[:1900]}",
+            content=log_content,
             embed=embed
         )
 
@@ -393,15 +493,11 @@ class ModLog(commands.Cog):
         )
 
         embed.add_field(
-            name="Pengguna",
-            value=f"{before.author.mention} (`{before.author.id}`)",
-            inline=False
-        )
-        embed.add_field(
             name="Channel",
             value=before.channel.mention,
             inline=False
         )
+
         embed.add_field(
             name="Link Pesan",
             value=f"[Buka pesan]({after.jump_url})",
@@ -411,15 +507,19 @@ class ModLog(commands.Cog):
         old_content = before.content or "*Kosong*"
         new_content = after.content or "*Kosong*"
 
-        text = (
-            f"**Pesan sebelum diedit:**\n{old_content[:900]}\n\n"
-            f"**Pesan setelah diedit:**\n{new_content[:900]}"
+        # Mention member berada di luar embed
+        log_content = (
+            f"{before.author.mention} (`{before.author.id}`)\n"
+            f"**Pesan sebelum diedit:**\n"
+            f"{old_content[:800]}\n\n"
+            f"**Pesan setelah diedit:**\n"
+            f"{new_content[:800]}"
         )
 
         await self.send_log(
             before.guild,
             "message",
-            content=text,
+            content=log_content,
             embed=embed
         )
 
