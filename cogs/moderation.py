@@ -55,7 +55,14 @@ class ModLog(commands.Cog):
 
         return f"{role.mention} | {role.name} (`{role.id}`)"
 
-    async def send_log(self, guild, category, content=None, embed=None):
+    async def send_log(
+        self,
+        guild,
+        category,
+        content=None,
+        embed=None,
+        member=None
+    ):
         channel_id = LOG_CHANNELS.get(category, 0)
 
         if not channel_id:
@@ -72,6 +79,13 @@ class ModLog(commands.Cog):
                 discord.HTTPException
             ):
                 return
+
+        # Mention member di luar embed agar mudah dicari
+        # melalui Discord Search.
+        # Notifikasi mention tetap dinonaktifkan.
+        if member is not None:
+            mention = member.mention
+            content = f"{mention}\n{content}" if content else mention
 
         try:
             await channel.send(
@@ -153,7 +167,8 @@ class ModLog(commands.Cog):
         await self.send_log(
             guild,
             "moderation",
-            embed=embed
+            embed=embed,
+            member=user
         )
 
     # =====================================================
@@ -208,7 +223,8 @@ class ModLog(commands.Cog):
             await self.send_log(
                 member.guild,
                 "moderation",
-                embed=embed
+                embed=embed,
+                member=member
             )
             return
 
@@ -227,7 +243,8 @@ class ModLog(commands.Cog):
         await self.send_log(
             member.guild,
             "member",
-            embed=embed
+            embed=embed,
+            member=member
         )
 
     # =====================================================
@@ -260,7 +277,8 @@ class ModLog(commands.Cog):
         await self.send_log(
             member.guild,
             "member",
-            embed=embed
+            embed=embed,
+            member=member
         )
 
     # =====================================================
@@ -349,7 +367,8 @@ class ModLog(commands.Cog):
             await self.send_log(
                 after.guild,
                 "moderation",
-                embed=embed
+                embed=embed,
+                member=after
             )
 
         # -------------------------------------------------
@@ -381,7 +400,8 @@ class ModLog(commands.Cog):
             await self.send_log(
                 after.guild,
                 "role",
-                embed=embed
+                embed=embed,
+                member=after
             )
 
         for role in removed_roles:
@@ -406,7 +426,8 @@ class ModLog(commands.Cog):
             await self.send_log(
                 after.guild,
                 "role",
-                embed=embed
+                embed=embed,
+                member=after
             )
 
     # =====================================================
@@ -441,7 +462,7 @@ class ModLog(commands.Cog):
             timestamp=datetime.now(timezone.utc)
         )
 
-        # Simpan nama sebagai teks biasa karena role sudah dihapus.
+        # Nama dan ID tetap tersimpan sebagai teks biasa.
         embed.add_field(
             name="Nama Role",
             value=f"{role.name} (`{role.id}`)",
@@ -559,7 +580,8 @@ class ModLog(commands.Cog):
         await self.send_log(
             member.guild,
             "voice",
-            embed=embed
+            embed=embed,
+            member=member
         )
 
     # =====================================================
@@ -598,7 +620,8 @@ class ModLog(commands.Cog):
             message.guild,
             "message",
             content=f"**Isi pesan yang dihapus:**\n{content[:1700]}",
-            embed=embed
+            embed=embed,
+            member=message.author
         )
 
     # =====================================================
@@ -649,7 +672,8 @@ class ModLog(commands.Cog):
             before.guild,
             "message",
             content=text,
-            embed=embed
+            embed=embed,
+            member=before.author
         )
 
 
