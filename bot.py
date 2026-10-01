@@ -83,6 +83,7 @@ async def load_cogs():
         "cogs.autoreply",
         "cogs.top_stats",
         "cogs.suggestion",
+        "cogs.system_monitor",
         "cogs.arcane_rank",
         "cogs.auto_comment_thread",
         "cogs.role_request",
