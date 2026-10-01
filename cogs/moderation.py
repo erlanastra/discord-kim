@@ -1,96 +1,428 @@
 import discord
 from discord.ext import commands
-from discord.utils import get
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+# =========================================================
+# KONFIGURASI CHANNEL LOG
+# =========================================================
+
+LOG_CHANNELS = {
+    "moderation": 1469289471471124659,  # Ban, kick, timeout
+    "voice": 1555249826881474610,                         # Voice log
+    "message": 1555249914836025375,                       # Message log
+    "member": 1555249958591139970,                        # Member join/leave
+    "role": 1555250009388359760,                          # Role log
+}
+
+
+# =========================================================
+# MODERATION LOG
+# =========================================================
 
 class ModLog(commands.Cog):
-    """Cog final untuk log semua tindakan moderasi di server dengan user ID"""
-
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
-        # Ganti dengan ID channel log staff kalian
-        self.mod_log_channel_id = 1469289471471124659
 
-    async def send_mod_log(self, action: str, target, moderator: discord.Member = None, reason: str = None, extra: str = None):
-        """Kirim embed log ke channel staff"""
-        channel = self.bot.get_channel(self.mod_log_channel_id)
-        if not channel:
-            print("[ModLog] Channel mod-log tidak ditemukan!")
+    # =====================================================
+    # HELPER
+    # =====================================================
+
+    async def send_log(self, guild, category, content=None, embed=None):
+        channel_id = LOG_CHANNELS.get(category, 0)
+
+        if not channel_id:
             return
 
-        embed = discord.Embed(
-            title=f"⚡ Tindakan Moderasi: {action}",
-            description=(
-                f"**Target:** {getattr(target, 'mention', str(target))} | `{getattr(target, 'id', 'Unknown')}`\n"
-                f"**Moderator:** {moderator.mention if moderator else 'Unknown'} | `{getattr(moderator, 'id', 'Unknown')}`"
-            ),
-            color=discord.Color.orange(),
-            timestamp=datetime.utcnow()
-        )
-        if reason:
-            embed.add_field(name="Alasan", value=reason, inline=False)
-        if extra:
-            embed.add_field(name="Info Tambahan", value=extra, inline=False)
-        embed.set_footer(text="NanZ Server • Mod Log")
+        channel = guild.get_channel(channel_id)
 
-        await channel.send(embed=embed)
+        if channel is None:
+            try:
+                channel = await guild.fetch_channel(channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                return
 
-    # ================== AUDIT LOG LISTENERS ==================
+        try:
+            await channel.send(
+                content=content,
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
+        except discord.HTTPException as error:
+            print(f"[MODLOG] Gagal mengirim log: {error}")
+
+    async def get_audit_entry(self, guild, action, target_id):
+        try:
+            async for entry in guild.audit_logs(
+                limit=5,
+                action=action
+            ):
+                if (
+                    entry.target
+                    and entry.target.id == target_id
+                    and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 15
+                ):
+                    return entry
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        return None
+
+    # =====================================================
+    # BAN LOG
+    # =====================================================
 
     @commands.Cog.listener()
     async def on_member_ban(self, guild, user):
-        entry = await guild.audit_logs(action=discord.AuditLogAction.ban, limit=1).find(lambda e: e.target.id == user.id)
-        moderator = entry.user if entry else None
-        reason = entry.reason if entry else None
-        await self.send_mod_log("Ban", user, moderator, reason)
+        entry = await self.get_audit_entry(
+            guild,
+            discord.AuditLogAction.ban,
+            user.id
+        )
+
+        moderator = entry.user.mention if entry and entry.user else "Tidak diketahui"
+        reason = entry.reason if entry and entry.reason else "Tidak ada alasan"
+
+        embed = discord.Embed(
+            title="🔨 Member Dibanned",
+            color=discord.Color.red(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Pengguna",
+            value=f"{user.mention} (`{user.id}`)",
+            inline=False
+        )
+        embed.add_field(
+            name="Moderator",
+            value=moderator,
+            inline=True
+        )
+        embed.add_field(
+            name="Alasan",
+            value=reason[:1024],
+            inline=False
+        )
+
+        await self.send_log(guild, "moderation", embed=embed)
+
+    # =====================================================
+    # KICK / MEMBER LEAVE LOG
+    # =====================================================
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
-        entry = await member.guild.audit_logs(action=discord.AuditLogAction.kick, limit=1).find(lambda e: e.target.id == member.id)
+        entry = await self.get_audit_entry(
+            member.guild,
+            discord.AuditLogAction.kick,
+            member.id
+        )
+
         if entry:
-            moderator = entry.user
-            reason = entry.reason
-            await self.send_mod_log("Kick", member, moderator, reason)
+            moderator = entry.user.mention if entry.user else "Tidak diketahui"
+            reason = entry.reason if entry.reason else "Tidak ada alasan"
+
+            embed = discord.Embed(
+                title="👢 Member Dikick",
+                color=discord.Color.orange(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            embed.add_field(
+                name="Pengguna",
+                value=f"{member} (`{member.id}`)",
+                inline=False
+            )
+            embed.add_field(
+                name="Moderator",
+                value=moderator,
+                inline=True
+            )
+            embed.add_field(
+                name="Alasan",
+                value=reason[:1024],
+                inline=False
+            )
+
+            await self.send_log(member.guild, "moderation", embed=embed)
+            return
+
+        embed = discord.Embed(
+            title="📤 Member Keluar",
+            color=discord.Color.dark_grey(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Pengguna",
+            value=f"{member} (`{member.id}`)",
+            inline=False
+        )
+
+        await self.send_log(member.guild, "member", embed=embed)
+
+    # =====================================================
+    # MEMBER JOIN LOG
+    # =====================================================
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member):
+        embed = discord.Embed(
+            title="📥 Member Bergabung",
+            color=discord.Color.green(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Pengguna",
+            value=f"{member.mention} (`{member.id}`)",
+            inline=False
+        )
+        embed.add_field(
+            name="Akun Dibuat",
+            value=discord.utils.format_dt(member.created_at, style="R"),
+            inline=False
+        )
+
+        await self.send_log(member.guild, "member", embed=embed)
+
+    # =====================================================
+    # TIMEOUT LOG
+    # =====================================================
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
-        # Timeout / timed_out_until
         if before.timed_out_until != after.timed_out_until:
-            moderator = None
-            entry = await after.guild.audit_logs(action=discord.AuditLogAction.member_update, limit=1).find(lambda e: e.target.id == after.id)
-            if entry:
-                moderator = entry.user
-            await self.send_mod_log("Timeout", after, moderator, extra=f"Dari: {before.timed_out_until} → {after.timed_out_until}")
+            entry = await self.get_audit_entry(
+                after.guild,
+                discord.AuditLogAction.member_update,
+                after.id
+            )
 
-        # Role changes
-        added_roles = [r for r in after.roles if r not in before.roles]
-        removed_roles = [r for r in before.roles if r not in after.roles]
+            moderator = entry.user.mention if entry and entry.user else "Tidak diketahui"
+            reason = entry.reason if entry and entry.reason else "Tidak ada alasan"
+
+            if after.timed_out_until:
+                embed = discord.Embed(
+                    title="⏳ Member Diberi Timeout",
+                    color=discord.Color.orange(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+
+                embed.add_field(
+                    name="Pengguna",
+                    value=f"{after.mention} (`{after.id}`)",
+                    inline=False
+                )
+                embed.add_field(
+                    name="Moderator",
+                    value=moderator,
+                    inline=True
+                )
+                embed.add_field(
+                    name="Berakhir",
+                    value=discord.utils.format_dt(after.timed_out_until, style="F"),
+                    inline=False
+                )
+                embed.add_field(
+                    name="Alasan",
+                    value=reason[:1024],
+                    inline=False
+                )
+            else:
+                embed = discord.Embed(
+                    title="✅ Timeout Dicabut",
+                    color=discord.Color.green(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+
+                embed.add_field(
+                    name="Pengguna",
+                    value=f"{after.mention} (`{after.id}`)",
+                    inline=False
+                )
+                embed.add_field(
+                    name="Moderator",
+                    value=moderator,
+                    inline=True
+                )
+
+            await self.send_log(after.guild, "moderation", embed=embed)
+
+        # =================================================
+        # ROLE LOG
+        # =================================================
+
+        added_roles = set(after.roles) - set(before.roles)
+        removed_roles = set(before.roles) - set(after.roles)
 
         for role in added_roles:
-            await self.send_mod_log("Role Added", after, None, extra=f"Role: {role.name}")
+            embed = discord.Embed(
+                title="➕ Role Ditambahkan",
+                color=discord.Color.green(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            embed.add_field(
+                name="Pengguna",
+                value=f"{after.mention} (`{after.id}`)",
+                inline=False
+            )
+            embed.add_field(
+                name="Role",
+                value=role.mention,
+                inline=False
+            )
+
+            await self.send_log(after.guild, "role", embed=embed)
+
         for role in removed_roles:
-            await self.send_mod_log("Role Removed", after, None, extra=f"Role: {role.name}")
+            embed = discord.Embed(
+                title="➖ Role Dihapus",
+                color=discord.Color.red(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            embed.add_field(
+                name="Pengguna",
+                value=f"{after.mention} (`{after.id}`)",
+                inline=False
+            )
+            embed.add_field(
+                name="Role",
+                value=role.mention,
+                inline=False
+            )
+
+            await self.send_log(after.guild, "role", embed=embed)
+
+    # =====================================================
+    # VOICE LOG
+    # =====================================================
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
-        if before.channel != after.channel:
-            extra = f"Dari: {before.channel.name if before.channel else 'None'} → {after.channel.name if after.channel else 'None'}"
-            await self.send_mod_log("Voice Channel Update", member, None, extra=extra)
+        if before.channel == after.channel:
+            return
+
+        if before.channel is None and after.channel is not None:
+            title = "🔊 Bergabung ke Voice"
+            description = f"{member.mention} bergabung ke {after.channel.mention}"
+            color = discord.Color.green()
+
+        elif before.channel is not None and after.channel is None:
+            title = "🔇 Keluar dari Voice"
+            description = f"{member.mention} keluar dari {before.channel.mention}"
+            color = discord.Color.red()
+
+        else:
+            title = "🔀 Pindah Voice Channel"
+            description = (
+                f"{member.mention} berpindah dari "
+                f"{before.channel.mention} ke {after.channel.mention}"
+            )
+            color = discord.Color.blue()
+
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=color,
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Pengguna",
+            value=f"{member} (`{member.id}`)",
+            inline=False
+        )
+
+        await self.send_log(member.guild, "voice", embed=embed)
+
+    # =====================================================
+    # MESSAGE DELETE LOG
+    # =====================================================
 
     @commands.Cog.listener()
     async def on_message_delete(self, message):
-        await self.send_mod_log("Delete Message", message.author, None, extra=f"Channel: {message.channel.mention}\nIsi: {message.content}")
+        if not message.guild or message.author.bot:
+            return
+
+        embed = discord.Embed(
+            title="🗑️ Pesan Dihapus",
+            color=discord.Color.red(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Pengguna",
+            value=f"{message.author.mention} (`{message.author.id}`)",
+            inline=False
+        )
+        embed.add_field(
+            name="Channel",
+            value=message.channel.mention,
+            inline=False
+        )
+
+        content = message.content or "*Tidak ada teks atau pesan tidak tersimpan di cache.*"
+
+        await self.send_log(
+            message.guild,
+            "message",
+            content=f"**Isi pesan yang dihapus:**\n{content[:1900]}",
+            embed=embed
+        )
+
+    # =====================================================
+    # MESSAGE EDIT LOG
+    # =====================================================
 
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
-        if before.content != after.content:
-            await self.send_mod_log(
-                "Edit Message", 
-                before.author, 
-                None, 
-                extra=f"Channel: {before.channel.mention}\nDari: {before.content}\nKe: {after.content}"
-            )
+        if not before.guild or before.author.bot:
+            return
 
-# ================== SETUP COG ==================
-async def setup(bot: commands.Bot):
+        if before.content == after.content:
+            return
+
+        embed = discord.Embed(
+            title="✏️ Pesan Diedit",
+            color=discord.Color.orange(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Pengguna",
+            value=f"{before.author.mention} (`{before.author.id}`)",
+            inline=False
+        )
+        embed.add_field(
+            name="Channel",
+            value=before.channel.mention,
+            inline=False
+        )
+        embed.add_field(
+            name="Link Pesan",
+            value=f"[Buka pesan]({after.jump_url})",
+            inline=False
+        )
+
+        old_content = before.content or "*Kosong*"
+        new_content = after.content or "*Kosong*"
+
+        text = (
+            f"**Pesan sebelum diedit:**\n{old_content[:900]}\n\n"
+            f"**Pesan setelah diedit:**\n{new_content[:900]}"
+        )
+
+        await self.send_log(
+            before.guild,
+            "message",
+            content=text,
+            embed=embed
+        )
+
+
+async def setup(bot):
     await bot.add_cog(ModLog(bot))
