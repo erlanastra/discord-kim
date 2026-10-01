@@ -8,11 +8,11 @@ from datetime import datetime, timezone
 # =========================================================
 
 LOG_CHANNELS = {
-    "moderation": 1469289471471124659,  # Ban, kick, timeout
-    "voice": 1555249826881474610,       # Voice log
-    "message": 1555249914836025375,     # Message log
-    "member": 1555249958591139970,      # Member join/leave
-    "role": 1555250009388359760,        # Role log
+    "moderation": 1469289471471124659,
+    "voice": 1555249826881474610,
+    "message": 1555249914836025375,
+    "member": 1555249958591139970,
+    "role": 1555250009388359760,
 }
 
 
@@ -106,17 +106,10 @@ class ModLog(commands.Cog):
         )
 
         embed.add_field(
-            name="Pengguna",
-            value=f"{user.mention} (`{user.id}`)",
-            inline=False
-        )
-
-        embed.add_field(
             name="Moderator",
             value=moderator,
             inline=True
         )
-
         embed.add_field(
             name="Alasan",
             value=reason[:1024],
@@ -126,6 +119,7 @@ class ModLog(commands.Cog):
         await self.send_log(
             guild,
             "moderation",
+            content=f"{user.mention} (`{user.id}`)",
             embed=embed
         )
 
@@ -161,17 +155,10 @@ class ModLog(commands.Cog):
             )
 
             embed.add_field(
-                name="Pengguna",
-                value=f"{member} (`{member.id}`)",
-                inline=False
-            )
-
-            embed.add_field(
                 name="Moderator",
                 value=moderator,
                 inline=True
             )
-
             embed.add_field(
                 name="Alasan",
                 value=reason[:1024],
@@ -181,6 +168,7 @@ class ModLog(commands.Cog):
             await self.send_log(
                 member.guild,
                 "moderation",
+                content=f"{member.mention} (`{member.id}`)",
                 embed=embed
             )
             return
@@ -191,15 +179,10 @@ class ModLog(commands.Cog):
             timestamp=datetime.now(timezone.utc)
         )
 
-        embed.add_field(
-            name="Pengguna",
-            value=f"{member} (`{member.id}`)",
-            inline=False
-        )
-
         await self.send_log(
             member.guild,
             "member",
+            content=f"{member.mention} (`{member.id}`)",
             embed=embed
         )
 
@@ -216,12 +199,6 @@ class ModLog(commands.Cog):
         )
 
         embed.add_field(
-            name="Pengguna",
-            value=f"{member.mention} (`{member.id}`)",
-            inline=False
-        )
-
-        embed.add_field(
             name="Akun Dibuat",
             value=discord.utils.format_dt(
                 member.created_at,
@@ -233,6 +210,7 @@ class ModLog(commands.Cog):
         await self.send_log(
             member.guild,
             "member",
+            content=f"{member.mention} (`{member.id}`)",
             embed=embed
         )
 
@@ -274,17 +252,10 @@ class ModLog(commands.Cog):
                 )
 
                 embed.add_field(
-                    name="Pengguna",
-                    value=f"{after.mention} (`{after.id}`)",
-                    inline=False
-                )
-
-                embed.add_field(
                     name="Moderator",
                     value=moderator,
                     inline=True
                 )
-
                 embed.add_field(
                     name="Berakhir",
                     value=discord.utils.format_dt(
@@ -293,7 +264,6 @@ class ModLog(commands.Cog):
                     ),
                     inline=False
                 )
-
                 embed.add_field(
                     name="Alasan",
                     value=reason[:1024],
@@ -308,12 +278,6 @@ class ModLog(commands.Cog):
                 )
 
                 embed.add_field(
-                    name="Pengguna",
-                    value=f"{after.mention} (`{after.id}`)",
-                    inline=False
-                )
-
-                embed.add_field(
                     name="Moderator",
                     value=moderator,
                     inline=True
@@ -322,6 +286,7 @@ class ModLog(commands.Cog):
             await self.send_log(
                 after.guild,
                 "moderation",
+                content=f"{after.mention} (`{after.id}`)",
                 embed=embed
             )
 
@@ -340,12 +305,6 @@ class ModLog(commands.Cog):
             )
 
             embed.add_field(
-                name="Pengguna",
-                value=f"{after.mention} (`{after.id}`)",
-                inline=False
-            )
-
-            embed.add_field(
                 name="Role",
                 value=role.mention,
                 inline=False
@@ -354,6 +313,7 @@ class ModLog(commands.Cog):
             await self.send_log(
                 after.guild,
                 "role",
+                content=f"{after.mention} (`{after.id}`)",
                 embed=embed
             )
 
@@ -365,12 +325,6 @@ class ModLog(commands.Cog):
             )
 
             embed.add_field(
-                name="Pengguna",
-                value=f"{after.mention} (`{after.id}`)",
-                inline=False
-            )
-
-            embed.add_field(
                 name="Role",
                 value=role.mention,
                 inline=False
@@ -379,6 +333,7 @@ class ModLog(commands.Cog):
             await self.send_log(
                 after.guild,
                 "role",
+                content=f"{after.mention} (`{after.id}`)",
                 embed=embed
             )
 
@@ -393,26 +348,19 @@ class ModLog(commands.Cog):
 
         if before.channel is None and after.channel is not None:
             title = "🔊 Bergabung ke Voice"
-            description = (
-                f"{member.mention} bergabung ke "
-                f"{after.channel.mention}"
-            )
+            description = f"Channel: {after.channel.mention}"
             color = discord.Color.green()
 
         elif before.channel is not None and after.channel is None:
             title = "🔇 Keluar dari Voice"
-            description = (
-                f"{member.mention} keluar dari "
-                f"{before.channel.mention}"
-            )
+            description = f"Channel: {before.channel.mention}"
             color = discord.Color.red()
 
         else:
             title = "🔀 Pindah Voice Channel"
             description = (
-                f"{member.mention} berpindah dari "
-                f"{before.channel.mention} ke "
-                f"{after.channel.mention}"
+                f"Dari: {before.channel.mention}\n"
+                f"Ke: {after.channel.mention}"
             )
             color = discord.Color.blue()
 
@@ -423,15 +371,10 @@ class ModLog(commands.Cog):
             timestamp=datetime.now(timezone.utc)
         )
 
-        embed.add_field(
-            name="Pengguna",
-            value=f"{member} (`{member.id}`)",
-            inline=False
-        )
-
         await self.send_log(
             member.guild,
             "voice",
+            content=f"{member.mention} (`{member.id}`)",
             embed=embed
         )
 
@@ -460,7 +403,6 @@ class ModLog(commands.Cog):
             "*Tidak ada teks atau pesan tidak tersimpan di cache.*"
         )
 
-        # Mention member berada di luar embed
         log_content = (
             f"{message.author.mention} (`{message.author.id}`)\n"
             f"**Isi pesan yang dihapus:**\n"
@@ -507,7 +449,6 @@ class ModLog(commands.Cog):
         old_content = before.content or "*Kosong*"
         new_content = after.content or "*Kosong*"
 
-        # Mention member berada di luar embed
         log_content = (
             f"{before.author.mention} (`{before.author.id}`)\n"
             f"**Pesan sebelum diedit:**\n"
