@@ -93,17 +93,11 @@ AI_COOLDOWN_SECONDS = config.get(
 # WEB SEARCH
 # ---------------------------------------------------------
 
-# True = AI boleh menggunakan Google Search
-# jika pertanyaan membutuhkan informasi terbaru.
-
 WEB_SEARCH_ENABLED = config.get(
     "gemini_web_search_enabled",
     True
 )
 
-
-# Berapa lama context guild yang relatif
-# statis boleh disimpan di memory.
 
 GUILD_CONTEXT_CACHE_SECONDS = config.get(
     "guild_context_cache_seconds",
@@ -114,9 +108,6 @@ GUILD_CONTEXT_CACHE_SECONDS = config.get(
 # ---------------------------------------------------------
 # CONCURRENCY
 # ---------------------------------------------------------
-
-# Jangan terlalu tinggi supaya VPS/API tidak
-# dibanjiri request.
 
 AI_MAX_CONCURRENT_REQUESTS = config.get(
     "ai_max_concurrent_requests",
@@ -214,12 +205,8 @@ MAX_IMAGE_PARTS = 3
 # WEB SEARCH DETECTION
 # =========================================================
 
-# Kata-kata yang biasanya menunjukkan bahwa user
-# membutuhkan informasi terbaru.
-
 WEB_SEARCH_KEYWORDS = [
 
-    # waktu
     "terbaru",
     "terkini",
     "sekarang",
@@ -230,7 +217,6 @@ WEB_SEARCH_KEYWORDS = [
     "bulan ini",
     "tahun ini",
 
-    # update
     "update",
     "berita",
     "kabar terbaru",
@@ -239,7 +225,6 @@ WEB_SEARCH_KEYWORDS = [
     "perkembangan terbaru",
     "perkembangan",
 
-    # status
     "sudah rilis",
     "sudah keluar",
     "sudah tersedia",
@@ -247,41 +232,34 @@ WEB_SEARCH_KEYWORDS = [
     "masih berlaku",
     "masih aktif",
 
-    # waktu spesifik
     "2025",
     "2026",
     "2027",
 
-    # harga
     "harga sekarang",
     "harga terbaru",
     "berapa harga",
     "harga saat ini",
 
-    # teknologi
     "versi terbaru",
     "rilis terbaru",
     "release terbaru",
     "latest version",
     "latest update",
 
-    # internet
     "di internet",
     "di web",
     "di website",
     "online",
 
-    # sosial/media
     "viral",
     "trending",
     "tren terbaru",
 
-    # event
     "jadwal terbaru",
     "jadwal hari ini",
     "jadwal besok",
 
-    # perbandingan aktual
     "mana yang sekarang",
     "yang terbaru yang mana",
 ]
@@ -319,14 +297,6 @@ WEB_SEARCH_PATTERNS = [
 
 
 def needs_web_search(text):
-    """
-    Menentukan apakah pertanyaan kemungkinan membutuhkan
-    informasi terbaru dari internet.
-
-    Search tidak dipaksa untuk semua pertanyaan karena
-    pertanyaan sederhana akan lebih cepat jika langsung
-    menggunakan Gemini.
-    """
 
     if not WEB_SEARCH_ENABLED:
         return False
@@ -1245,10 +1215,6 @@ class AI(commands.Cog):
         url,
         payload
     ):
-
-        # -------------------------------------------------
-        # Retry policy
-        # -------------------------------------------------
 
         max_attempts = 3
 
@@ -2394,42 +2360,217 @@ class AI(commands.Cog):
                 # HISTORY
                 # -----------------------------------------
 
-                for q, a in history[
+                for item in history[
                     -MAX_HISTORY_TURNS:
                 ]:
 
-                    contents.append({
+                    # =====================================
+                    # FORMAT BARU / DICT
+                    #
+                    # {
+                    #     "role": "user",
+                    #     "text": "..."
+                    # }
+                    # =====================================
 
-                        "role":
+                    if isinstance(
+                        item,
+                        dict
+                    ):
+
+                        role = item.get(
+                            "role"
+                        )
+
+                        text = item.get(
+                            "text",
+                            ""
+                        )
+
+
+                        if role not in (
                             "user",
+                            "model"
+                        ):
 
-                        "parts": [
-
-                            {
-                                "text":
-                                    q
-                            }
-
-                        ],
-
-                    })
+                            continue
 
 
-                    contents.append({
+                        if not isinstance(
+                            text,
+                            str
+                        ):
 
-                        "role":
-                            "model",
+                            text = str(
+                                text
+                            )
 
-                        "parts": [
 
-                            {
-                                "text":
-                                    a
-                            }
+                        contents.append({
 
-                        ],
+                            "role":
+                                role,
 
-                    })
+                            "parts": [
+
+                                {
+                                    "text":
+                                        text
+                                }
+
+                            ],
+
+                        })
+
+
+                    # =====================================
+                    # FORMAT LAMA / LIST
+                    #
+                    # [
+                    #     "pertanyaan user",
+                    #     "jawaban AI"
+                    # ]
+                    # =====================================
+
+                    elif isinstance(
+                        item,
+                        list
+                    ):
+
+                        if len(item) < 2:
+                            continue
+
+
+                        user_text = item[0]
+
+                        model_text = item[1]
+
+
+                        if user_text:
+
+                            contents.append({
+
+                                "role":
+                                    "user",
+
+                                "parts": [
+
+                                    {
+                                        "text":
+                                            str(
+                                                user_text
+                                            )
+                                    }
+
+                                ],
+
+                            })
+
+
+                        if model_text:
+
+                            contents.append({
+
+                                "role":
+                                    "model",
+
+                                "parts": [
+
+                                    {
+                                        "text":
+                                            str(
+                                                model_text
+                                            )
+                                    }
+
+                                ],
+
+                            })
+
+
+                    # =====================================
+                    # FORMAT TUPLE
+                    #
+                    # (
+                    #     "pertanyaan user",
+                    #     "jawaban AI"
+                    # )
+                    # =====================================
+
+                    elif isinstance(
+                        item,
+                        tuple
+                    ):
+
+                        if len(item) < 2:
+                            continue
+
+
+                        user_text = item[0]
+
+                        model_text = item[1]
+
+
+                        if user_text:
+
+                            contents.append({
+
+                                "role":
+                                    "user",
+
+                                "parts": [
+
+                                    {
+                                        "text":
+                                            str(
+                                                user_text
+                                            )
+                                    }
+
+                                ],
+
+                            })
+
+
+                        if model_text:
+
+                            contents.append({
+
+                                "role":
+                                    "model",
+
+                                "parts": [
+
+                                    {
+                                        "text":
+                                            str(
+                                                model_text
+                                            )
+                                    }
+
+                                ],
+
+                            })
+
+
+                    # =====================================
+                    # FORMAT TIDAK DIKENAL
+                    # =====================================
+
+                    else:
+
+                        logger.warning(
+
+                            "Format history tidak dikenal "
+                            "untuk user %s: %s",
+
+                            message.author.id,
+
+                            type(item).__name__
+
+                        )
+
+                        continue
 
 
                 # -----------------------------------------
