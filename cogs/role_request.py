@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 TARGET_CHANNEL_ID = 1547540103117803520
 
 # Role yang diperbolehkan menggunakan Custom Role System
-ALLOWED_ROLE_ID = 1518252153414746153
+ALLOWED_ROLE_ID = 1555556260269527151
 
 # Maksimal member yang bisa menerima role sekaligus
 MAX_RECIPIENTS = 25
