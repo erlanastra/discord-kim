@@ -486,8 +486,12 @@ class AutoReply(commands.Cog):
         os.replace(temp_path, TOXIC_DB_PATH)
 
     async def save_database(self):
-        async with self._save_lock:
-            await asyncio.to_thread(self._save_database_sync)
+    async with self._save_lock:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            self._save_database_sync
+        )
 
     async def cog_load(self):
         self._load_database()
