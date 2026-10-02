@@ -54,8 +54,8 @@ class ModDCRoleManager(commands.Cog):
 
         if target.bot:
             return await ctx.send(
-                "❌ Role **Mod DC** tidak dapat "
-                "diberikan kepada bot."
+                "❌ Role **Mod DC** tidak dapat diberikan "
+                "kepada bot."
             )
 
         # ====================================================
@@ -124,26 +124,26 @@ class ModDCRoleManager(commands.Cog):
         has_new_role = new_role in target.roles
 
         # ====================================================
-        # TARGET TIDAK PUNYA ROLE MOD DC
+        # TIDAK MEMILIKI ROLE APAPUN
         # ====================================================
 
         if not has_old_role and not has_new_role:
             return await ctx.send(
                 f"❌ **{target.display_name}** tidak memiliki "
-                "role **Mod DC lama maupun Mod DC baru**.\n\n"
+                "**Mod DC Lama** maupun **Mod DC Baru**.\n\n"
                 "Tidak ada role yang dapat ditransfer."
             )
 
         # ====================================================
-        # TARGET MEMILIKI KEDUA ROLE
+        # MEMILIKI KEDUA ROLE
         # ====================================================
 
         if has_old_role and has_new_role:
             return await ctx.send(
                 f"⚠️ **{target.display_name}** sudah memiliki "
-                "**Mod DC lama dan Mod DC baru**.\n\n"
-                "Silakan rapikan role target terlebih dahulu "
-                "sebelum melakukan transfer."
+                "**Mod DC Lama** dan **Mod DC Baru**.\n\n"
+                "Target harus hanya memiliki salah satu "
+                "role sebelum melakukan transfer."
             )
 
         # ====================================================
@@ -181,13 +181,13 @@ class ModDCRoleManager(commands.Cog):
 
         embed.add_field(
             name="Role Saat Ini",
-            value=f"{source_role.mention}",
+            value=source_role.mention,
             inline=True
         )
 
         embed.add_field(
             name="Role Tujuan",
-            value=f"{destination_role.mention}",
+            value=destination_role.mention,
             inline=True
         )
 
@@ -274,7 +274,7 @@ class ModDCConfirmView(discord.ui.View):
     ):
 
         # ----------------------------------------------------
-        # HANYA EXECUTOR COMMAND
+        # HANYA ADMIN YANG MENJALANKAN COMMAND
         # ----------------------------------------------------
 
         if interaction.user.id != self.author_id:
@@ -329,10 +329,6 @@ class ModDCConfirmView(discord.ui.View):
                 view=None
             )
 
-        # ====================================================
-        # CEK BOT
-        # ====================================================
-
         bot_member = guild.me
 
         if bot_member is None:
@@ -343,48 +339,43 @@ class ModDCConfirmView(discord.ui.View):
             )
 
         # ====================================================
-        # CEK TARGET MASIH ADA
+        # CEK TARGET TERKINI
         # ====================================================
 
-        try:
-            target = guild.get_member(self.target.id)
+        target = guild.get_member(self.target.id)
 
-            if target is None:
+        if target is None:
+            try:
                 target = await guild.fetch_member(
                     self.target.id
                 )
-
-        except discord.NotFound:
-
-            return await interaction.edit_original_response(
-                content=(
-                    "❌ **Migrasi dibatalkan.**\n\n"
-                    "Target member tidak ditemukan di server."
-                ),
-                embed=None,
-                view=None
-            )
-
-        except discord.HTTPException:
-
-            return await interaction.edit_original_response(
-                content=(
-                    "❌ **Migrasi dibatalkan.**\n\n"
-                    "Gagal mengambil data target dari Discord."
-                ),
-                embed=None,
-                view=None
-            )
+            except discord.NotFound:
+                return await interaction.edit_original_response(
+                    content=(
+                        "❌ **Transfer dibatalkan.**\n\n"
+                        "Target member tidak ditemukan."
+                    ),
+                    embed=None,
+                    view=None
+                )
+            except discord.HTTPException:
+                return await interaction.edit_original_response(
+                    content=(
+                        "❌ **Transfer dibatalkan.**\n\n"
+                        "Gagal mengambil data target dari Discord."
+                    ),
+                    embed=None,
+                    view=None
+                )
 
         # ====================================================
         # CEK TARGET BOT
         # ====================================================
 
         if target.bot:
-
             return await interaction.edit_original_response(
                 content=(
-                    "❌ **Migrasi dibatalkan.**\n\n"
+                    "❌ **Transfer dibatalkan.**\n\n"
                     "Role **Mod DC** tidak dapat diberikan "
                     "kepada bot."
                 ),
@@ -393,30 +384,28 @@ class ModDCConfirmView(discord.ui.View):
             )
 
         # ====================================================
-        # CEK HIERARKI ULANG
+        # CEK HIERARKI ROLE ULANG
         # ====================================================
 
         if self.destination_role >= bot_member.top_role:
-
             return await interaction.edit_original_response(
                 content=(
-                    "❌ **Migrasi dibatalkan.**\n\n"
-                    "Bot tidak dapat memberikan "
-                    f"{self.destination_role.mention} karena "
-                    "hierarki role."
+                    "❌ **Transfer dibatalkan.**\n\n"
+                    f"Bot tidak dapat memberikan "
+                    f"{self.destination_role.mention} "
+                    "karena hierarki role."
                 ),
                 embed=None,
                 view=None
             )
 
         if self.source_role >= bot_member.top_role:
-
             return await interaction.edit_original_response(
                 content=(
-                    "❌ **Migrasi dibatalkan.**\n\n"
-                    "Bot tidak dapat mencabut "
-                    f"{self.source_role.mention} karena "
-                    "hierarki role."
+                    "❌ **Transfer dibatalkan.**\n\n"
+                    f"Bot tidak dapat mencabut "
+                    f"{self.source_role.mention} "
+                    "karena hierarki role."
                 ),
                 embed=None,
                 view=None
@@ -426,20 +415,22 @@ class ModDCConfirmView(discord.ui.View):
         # CEK KONDISI ROLE TERKINI
         # ====================================================
 
-        has_source_role = self.source_role in target.roles
+        has_source_role = (
+            self.source_role in target.roles
+        )
+
         has_destination_role = (
             self.destination_role in target.roles
         )
 
-        # ----------------------------------------------------
-        # SUDAH MEMILIKI ROLE TUJUAN
-        # ----------------------------------------------------
+        # ====================================================
+        # ROLE TUJUAN SUDAH ADA
+        # ====================================================
 
         if has_destination_role:
-
             return await interaction.edit_original_response(
                 content=(
-                    "ℹ️ **Migrasi dibatalkan.**\n\n"
+                    "ℹ️ **Transfer dibatalkan.**\n\n"
                     f"{target.mention} sudah memiliki "
                     f"{self.destination_role.mention}."
                 ),
@@ -447,15 +438,14 @@ class ModDCConfirmView(discord.ui.View):
                 view=None
             )
 
-        # ----------------------------------------------------
+        # ====================================================
         # ROLE SUMBER SUDAH HILANG
-        # ----------------------------------------------------
+        # ====================================================
 
         if not has_source_role:
-
             return await interaction.edit_original_response(
                 content=(
-                    "❌ **Migrasi dibatalkan.**\n\n"
+                    "❌ **Transfer dibatalkan.**\n\n"
                     f"{target.mention} sudah tidak memiliki "
                     f"{self.source_role.mention}.\n\n"
                     "Kondisi role target mungkin telah berubah "
@@ -466,7 +456,7 @@ class ModDCConfirmView(discord.ui.View):
             )
 
         # ====================================================
-        # BERIKAN ROLE TUJUAN TERLEBIH DAHULU
+        # BERIKAN ROLE TUJUAN
         # ====================================================
 
         try:
@@ -475,7 +465,7 @@ class ModDCConfirmView(discord.ui.View):
                 self.destination_role,
                 reason=(
                     f"Mod DC Role Manager | "
-                    f"Transfer: {self.source_role.name} -> "
+                    f"Transfer {self.source_role.name} -> "
                     f"{self.destination_role.name} | "
                     f"Executor: {interaction.user}"
                 )
@@ -519,7 +509,7 @@ class ModDCConfirmView(discord.ui.View):
                 self.source_role,
                 reason=(
                     f"Mod DC Role Manager | "
-                    f"Transfer: {self.source_role.name} -> "
+                    f"Transfer {self.source_role.name} -> "
                     f"{self.destination_role.name} | "
                     f"Executor: {interaction.user}"
                 )
@@ -599,8 +589,8 @@ class ModDCConfirmView(discord.ui.View):
         )
 
         await interaction.edit_original_response(
-            embed=embed,
             content=None,
+            embed=embed,
             view=None
         )
 
