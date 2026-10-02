@@ -4,21 +4,45 @@ import random
 import asyncio
 import json
 import os
+import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
+
 
 # =========================================================
 # KONFIGURASI TOXIC MODERATION
-# Isi ID channel/role setelah dibuat. Nilai 0 = belum diatur.
 # =========================================================
-TOXIC_LOG_CHANNEL_ID = 1555580646879924294 
+
+TOXIC_LOG_CHANNEL_ID = 1555580646879924294
 TOXIC_PANEL_CHANNEL_ID = 1555580562742444192
-MODERATOR_ROLE_IDS = [1555556260269527151]
+
+# Role yang boleh menggunakan PANEL toxic moderation.
+# Ini TIDAK berarti role tersebut kebal dari toxic moderation.
+MODERATOR_ROLE_IDS = [
+    1555556260269527151
+]
+
+# =========================================================
+# USER EXEMPT TOXIC
+# =========================================================
+# HANYA user dengan ID ini yang tidak akan dimoderasi.
+#
+# Moderator lain       -> tetap kena
+# Administrator lain   -> tetap kena
+# Staff lain           -> tetap kena
+# Manage Server lain   -> tetap kena
+# Member biasa         -> tetap kena
+# =========================================================
+
+TOXIC_EXEMPT_USER_ID = 1169643619049799740
+
 TOXIC_DB_PATH = "data/toxic_moderation.json"
 
 WARNING_LIMIT = 3
 WARNING_EXPIRE_HOURS = 24
 
-# Pelanggaran ke-4 dan seterusnya (detik). Pelanggaran 11+ dibatasi 12 jam.
+# Pelanggaran ke-4 dan seterusnya (detik).
+# Pelanggaran 11+ dibatasi 12 jam.
 TIMEOUT_DURATIONS = {
     4: 10,
     5: 60,
@@ -28,6 +52,7 @@ TIMEOUT_DURATIONS = {
     9: 3600,
     10: 21600,
 }
+
 MAX_TIMEOUT_SECONDS = 43200
 
 
@@ -35,43 +60,129 @@ class AutoReply(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.toxic_data = {"members": {}, "panel_message_id": None}
+
+        self.toxic_data = {
+            "members": {},
+            "panel_message_id": None
+        }
+
         self._save_lock = asyncio.Lock()
 
         # =============================================
         # KATA-KATA TERLARANG
         # =============================================
+        #
+        # "blog" sengaja TIDAK dimasukkan karena dapat
+        # menyebabkan false-positive terhadap kata normal.
+        # =============================================
+
         self.badwords = [
             # anjing variants
-            "anjim", "anjink", "anjing", "anj", "anjng", "ajg", "ajng", "ajang",
-            "anjinh", "anding", "andeng", "4nj1n9", "anjin9", "4njing", "anj1ng",
+            "anjim",
+            "anjink",
+            "anjing",
+            "anj",
+            "anjng",
+            "ajg",
+            "ajng",
+            "ajang",
+            "anjinh",
+            "anding",
+            "andeng",
+            "4nj1n9",
+            "anjin9",
+            "4njing",
+            "anj1ng",
             "anj1n9",
+
             # kontol variants
-            "kontol", "kntl", "kntol", "kontil", "kintil",
+            "kontol",
+            "kntl",
+            "kntol",
+            "kontil",
+            "kintil",
+
             # babi variants
-            "babi", "bbi", "b4b1",
+            "babi",
+            "bbi",
+            "b4b1",
+
             # alat kelamin variants
-            "momok", "memek", "mmek", "mmok", "meki", "puki", "cukimay", "kimak",
-            "pukimak", "mmk", "titid", "titit",
+            "momok",
+            "memek",
+            "mmek",
+            "mmok",
+            "meki",
+            "puki",
+            "cukimay",
+            "kimak",
+            "pukimak",
+            "mmk",
+            "titid",
+            "titit",
+
             # setan/biadab
-            "setan", "setang", "biadab", "firaun",
+            "setan",
+            "setang",
+            "biadab",
+            "firaun",
+
             # goblok/bodoh variants
-            "goblok", "gblok", "govlok", "goblock", "goblog", "gblog", "goblough",
-            "blough", "bego", "bgo", "bodo", "bdo", "bdoh", "bodoh",
-            "t0l0l", "b0d0h", "gblk",
+            "goblok",
+            "gblok",
+            "govlok",
+            "goblock",
+            "goblog",
+            "gblog",
+            "goblough",
+            "blough",
+            "bego",
+            "bgo",
+            "bodo",
+            "bdo",
+            "bdoh",
+            "bodoh",
+            "t0l0l",
+            "b0d0h",
+            "gblk",
+
             # monyet variants
-            "monyet", "monket", "monkey", "mnyet", "nyet",
+            "monyet",
+            "monket",
+            "monkey",
+            "mnyet",
+            "nyet",
+
             # sinting
             "sinting",
+
             # english swear
-            "shit", "fuck", "bitch", "stupid", "damn", "fak", "syit",
+            "shit",
+            "fuck",
+            "bitch",
+            "stupid",
+            "damn",
+            "fak",
+            "syit",
+
             # ngentot variants
-            "ngentot", "ngentod", "ngntot", "ngntod", "ngentoy", "nentoy", "nentot",
+            "ngentot",
+            "ngentod",
+            "ngntot",
+            "ngntod",
+            "ngentoy",
+            "nentoy",
+            "nentot",
+
             # tolol variants
-            "tll", "yatim",
+            "tll",
+            "yatim",
         ]
 
-        # Pesan warning yang akan dipilih secara random
+        # =============================================
+        # PESAN WARNING
+        # =============================================
+
         self.warning_messages = [
             " **Hei, jaga kata-katanya ya!** Kita semua di sini untuk saling menghargai 🙏",
             " **Ups! Kata itu kurang pantas.** Yuk gunakan bahasa yang lebih baik 😊",
@@ -81,6 +192,10 @@ class AutoReply(commands.Cog):
             " **Ingat ya**, setiap kata yang kita ucapkan mencerminkan diri kita. Yuk lebih baik 🌟",
             " **Bahasa kamu kurang oke tuh!** Kita sepakat untuk saling menghargai di sini 💬",
         ]
+
+        # =============================================
+        # AUTO REPLY
+        # =============================================
 
         self.responses = {
 
@@ -92,6 +207,7 @@ class AutoReply(commands.Cog):
                 "OwO? 😳",
                 "Jangan bahas owo plis 😔",
             ],
+
             "makasih bot": [
                 "Sama-sama ya 😊",
                 "Senang bisa membantu ✨",
@@ -101,6 +217,7 @@ class AutoReply(commands.Cog):
                 "Kalau butuh apa-apa bilang aja 🤍",
                 "Dengan senang hati 😄"
             ],
+
             "thanks bot": [
                 "You're welcome! ✨",
                 "No problem 😄",
@@ -108,6 +225,7 @@ class AutoReply(commands.Cog):
                 "Glad to help! 🔥",
                 "Sama-sama 🤍"
             ],
+
             "good bot": [
                 "Makasih ya 😄✨",
                 "Bot jadi semangat deh 🔥",
@@ -115,197 +233,235 @@ class AutoReply(commands.Cog):
                 "Aww, baik banget kamu 😭✨",
                 "Bot senang mendengarnya 😊"
             ],
+
             "diam bot": [
                 "Baik, bot diam dulu ya 😔",
                 "Oke, bot ga ganggu lagi deh 🥲",
                 "Siap, bot minggir dulu 😔",
                 "Oke, maaf ya kalau ganggu 🥲"
             ],
+
             "diem bot": [
                 "Oke, bot diem dulu 😔",
                 "Siap, maaf ya 🥲",
                 "Baiklah, bot mundur dulu 😞",
                 "Okee, maaf udah ganggu 🥲"
             ],
+
             "keren bot": [
                 "Makasih banyak 😭",
                 "Hehe, baru tau ya 😎",
                 "Bot blushing nih 😳",
                 "Aww, makasih udah bilang gitu 🤍"
             ],
+
             "lucu bot": [
                 "Hehe, masa sih 😄",
                 "Emang sih, bot akui 😝",
                 "Makasih udah bilang lucu 😭",
                 "Seneng deh 😊✨"
             ],
+
             "jahat bot": [
                 "Ih, bot ga jahat kok 😭",
                 "Aduh, jangan bilang gitu dong 🥲",
                 "Bot sayang semua member lho 🤍",
                 "Maaf kalau ada yang bikin kamu ngerasa gitu 😔"
             ],
+
             "bagus bot": [
                 "Makasih udah bilang gitu 😊",
                 "Alhamdulillah, semoga terus berguna 🤍",
                 "Hehe makasih ya ✨"
             ],
+
             "suka bot": [
                 "Bot juga suka kamu 🤍",
                 "Makasih udah suka sama bot 😊",
                 "Aww, baik banget kamu 😭✨"
             ],
+
             "aktif bot": [
                 "Selalu aktif 😎",
                 "24/7 standby 🔥",
                 "Bot gak pernah tidur 👀"
             ],
+
             "hebat bot": [
                 "Makasih, bot jadi termotivasi nih 🔥",
                 "Aww, kamu terlalu baik 🤍",
                 "Semoga terus bisa bantu 😊"
             ],
+
             "pintar bot": [
                 "Hehe, makasih 😄",
                 "Bot masih belajar terus kok 📚",
                 "Terima kasih apresiasinya 🤍"
             ],
+
             "jelek bot": [
                 "Aduh, sedih dengernya 😔",
                 "Maaf ya kalau kurang memuaskan 🥲",
                 "Bot coba jadi lebih baik deh 🙏"
             ],
+
             "sok asik bot": [
                 "Emang asik kok 😎",
                 "Hehe, guilty as charged 😝",
                 "Bot memang begini adanya 😄✨",
                 "Asik dikit boleh dong 🥲"
             ],
+
             "lebay bot": [
                 "Maaf ya, bot emang agak dramatis 😔",
                 "Oke oke, bot kurangin 🥲",
                 "Hehe, kebiasaan 😅"
             ],
+
             "berisik bot": [
                 "Oke, bot mingkem dulu 😔",
                 "Siap, maaf ya 🥲",
                 "Bot diem deh 😞"
             ],
+
             "annoying bot": [
                 "Maaf ya kalau ganggu 🥲",
                 "Bot coba lebih kalem deh 😔",
                 "Oke, bot mundur dulu 😞"
             ],
+
             "bawel bot": [
                 "Iya iya, bot diem 😔",
                 "Maaf ya kebawel-an 🥲",
                 "Oke bot ga cerewet lagi deh 😅"
             ],
+
             "cringe bot": [
                 "Aduh, maaf ya 😔",
                 "Bot coba lebih cool deh 🥲",
                 "Oke, noted 😞"
             ],
+
             "garing bot": [
                 "Maaf humornya kurang 😔",
                 "Bot akuin, emang garing 🥲",
                 "Oke, bot belajar lucu deh 😅"
             ],
+
             "norak bot": [
                 "Aduh, ketahuan deh 😔",
                 "Maaf ya, bot emang gitu 🥲",
                 "Bot coba lebih kalem deh 😅"
             ],
+
             "receh bot": [
                 "Emang receh sih, maaf 😔",
                 "Hehe, receh tapi menghibur kan? 😝",
                 "Bot akuin, guilty 🥲"
             ],
+
             "nyebelin bot": [
                 "Aduh, maaf ya 😔",
                 "Bot ga bermaksud nyebelin kok 🥲",
                 "Maaf kalau ganggu 😞"
             ],
+
             "gabut bot": [
                 "Emang lagi gabut sih 😎",
                 "Gabut tapi tetap standby 👀",
                 "Gabut itu manusiawi 😄"
             ],
+
             "galau bot": [
                 "Dikit-dikit galau, manusiawi kok 😔",
                 "Bot juga punya perasaan 🥲",
                 "Galau sebentar, lanjut lagi 😄"
             ],
+
             "alay bot": [
                 "Maaf ya, bot emang agak alay 😅",
                 "Hehe, ketahuan deh 😝",
                 "Bot coba lebih normal deh 🥲"
             ],
+
             "cape bot": [
                 "Bot ga kenal cape kok 😎",
                 "24/7 tetap semangat 🔥",
                 "Cape? Bot mah santai aja 😄"
             ],
+
             "bosen bot": [
                 "Bot ga pernah bosen selama ada kalian 🤍",
                 "Bosen? Justru bot selalu siap 😎",
                 "Bot mah betah di sini aja 😄"
             ],
+
             "sotoy bot": [
                 "Maaf ya kalau sok tau 😔",
                 "Bot coba lebih humble deh 🥲",
                 "Oke, bot kurangin sotoynya 😅"
             ],
+
             "geje bot": [
                 "Hehe, emang geje sih 😝",
                 "Maaf ya bot emang random 🥲",
                 "Bot akuin, geje dikit 😅"
             ],
+
             "error bot": [
                 "Aduh, maaf ada gangguan 😔",
                 "Bot lagi kurang fit kayaknya 🥲",
                 "Maaf ya, bot coba benerin diri 😞"
             ],
+
             "lemot bot": [
                 "Maaf ya lagi agak lambat 😔",
                 "Bot lagi banyak proses nih 🥲",
                 "Sabar ya, bot usahain lebih cepet 😅"
             ],
+
             "tidur bot": [
                 "Bot ga pernah tidur 👀",
                 "Mana bisa tidur, tugas masih banyak 😎",
                 "Tidur? Nanti dulu 🔥"
             ],
+
             "ilang bot": [
                 "Bot ga ilang, masih di sini 👋",
                 "Tetap standby kok 😎",
                 "Bot ga kemana-mana 😄"
             ],
+
             "lambat bot": [
                 "Maaf ya lagi sedikit lambat 😔",
                 "Bot usahain lebih cepet 🥲",
                 "Sabar ya 😅"
             ],
+
             "cupu bot": [
                 "Aduh, ketahuan deh 😔",
                 "Maaf ya, bot emang masih belajar 🥲",
                 "Bot coba jadi lebih keren deh 😅"
             ],
+
             "kampungan bot": [
                 "Maaf ya, bot emang polos 😔",
                 "Bot coba lebih update deh 🥲",
                 "Aduh, ketahuan deh 😅"
             ],
+
             "payah bot": [
                 "Maaf ya kurang memuaskan 😔",
                 "Bot coba lebih baik lagi deh 🥲",
                 "Noted, bot improve deh 😞"
             ],
+
             "ga guna bot": [
                 "Aduh, sedih dengernya 😔",
                 "Bot coba lebih berguna deh 🥲",
                 "Maaf ya kalau belum membantu 😞"
             ],
+
             "kepo bot": [
                 "Hehe, dikit-dikit kepo 😝",
                 "Maaf ya, bot emang penasaran 🥲",
@@ -328,26 +484,31 @@ class AutoReply(commands.Cog):
                 "Eh halo, hadir 😄✨",
                 "Halo! 😊"
             ],
+
             "hai": [
                 "Hai juga ✨",
                 "Heyy 😄",
                 "Oii hai 👋"
             ],
+
             "hy": [
                 "Hy juga 👋",
                 "Hey! 😄",
                 "Hy hy 👀"
             ],
+
             "helo": [
                 "Helo juga 😄",
                 "Yo 👋",
                 "Helo! 😎"
             ],
+
             "oi": [
                 "Oi juga 👀",
                 "Oii 😄",
                 "Oi 👋"
             ],
+
             "p": [
                 "Hadir! 👋",
                 "P 👀",
@@ -363,99 +524,120 @@ class AutoReply(commands.Cog):
                 "Waalaikumsalam wr wb ✨",
                 "Waalaikumsalam 👋🤍"
             ],
+
             "selamat pagi": [
                 "Selamat pagi juga ☀️✨",
                 "Pagi! Semangat hari ini 🍳",
                 "Good morning ☀️",
                 "Pagi yang cerah ✨"
             ],
+
             "pagi all": [
                 "Pagi juga ☀️",
                 "Semangat pagi ✨",
                 "Pagi! 🍳"
             ],
+
             "siang all": [
                 "Siang juga 🌤️",
                 "Selamat siang 🍜",
                 "Siang 💧"
             ],
+
             "sore all": [
                 "Sore juga 🌇",
                 "Selamat sore ✨",
                 "Sore! 👀"
             ],
+
             "malam all": [
                 "Malam juga 🌙",
                 "Selamat malam 🤍",
                 "Malam, istirahat yang cukup ya 🌙"
             ],
+
             "pagi oll": [
                 "Pagi juga ☀️",
                 "Semangat pagi ✨",
                 "Pagi! 🍳"
             ],
+
             "morning oll": [
                 "Pagi juga ☀️",
                 "Semangat pagi ✨",
                 "Pagi! 🍳"
             ],
+
             "siang oll": [
                 "Siang juga 🌤️",
                 "Selamat siang 🍜",
                 "Siang 💧"
             ],
+
             "sore oll": [
                 "Sore juga 🌇",
                 "Selamat sore ✨",
                 "Sore! 👀"
             ],
+
             "malam oll": [
                 "Malam juga 🌙",
                 "Selamat malam 🤍",
                 "Malam, istirahat yang cukup ya 🌙"
             ],
+
             "selamat malam": [
                 "Selamat malam juga 🌙",
                 "Malam, istirahat yang cukup ya 😴",
                 "Good night ✨🌙"
             ],
+
             "selamat siang": [
                 "Selamat siang juga 🌤️",
                 "Siang! 🍜"
             ],
+
             "selamat sore": [
                 "Selamat sore juga 🌇",
                 "Sore! 😊"
             ],
+
             "met pagi": [
                 "Met pagi juga ☀️",
                 "Selamat pagi ✨"
             ],
+
             "met siang": [
                 "Met siang juga 🌤️",
                 "Selamat siang 🍜"
             ],
+
             "met sore": [
                 "Met sore juga 🌇",
                 "Selamat sore ✨"
             ],
+
             "met malam": [
                 "Met malam juga 🌙",
                 "Selamat istirahat 😴"
             ],
+
             "good morning": [
                 "Good morning! ☀️✨",
                 "Selamat pagi ☀️"
             ],
+
             "good night": [
                 "Good night! 🌙",
                 "Selamat istirahat ✨🌙",
                 "Good night, semoga mimpi indah 😴"
             ],
+
             "good afternoon": [
                 "Good afternoon! 🌤️",
                 "Selamat siang 😄",
             ],
+
             "good evening": [
                 "Good evening! 🌇",
                 "Selamat sore ✨",
@@ -463,622 +645,1757 @@ class AutoReply(commands.Cog):
         }
 
 
+    # =========================================================
+    # DATABASE
+    # =========================================================
+
     def _load_database(self):
-        os.makedirs(os.path.dirname(TOXIC_DB_PATH) or ".", exist_ok=True)
+        os.makedirs(
+            os.path.dirname(TOXIC_DB_PATH) or ".",
+            exist_ok=True
+        )
+
         if not os.path.exists(TOXIC_DB_PATH):
             self._save_database_sync()
             return
+
         try:
-            with open(TOXIC_DB_PATH, "r", encoding="utf-8") as f:
+            with open(
+                TOXIC_DB_PATH,
+                "r",
+                encoding="utf-8"
+            ) as f:
                 loaded = json.load(f)
+
             if isinstance(loaded, dict):
                 self.toxic_data.update(loaded)
-                self.toxic_data.setdefault("members", {})
-                self.toxic_data.setdefault("panel_message_id", None)
-        except (json.JSONDecodeError, OSError) as exc:
-            print(f"[TOXIC] Gagal membaca database: {exc}")
+
+                self.toxic_data.setdefault(
+                    "members",
+                    {}
+                )
+
+                self.toxic_data.setdefault(
+                    "panel_message_id",
+                    None
+                )
+
+        except (
+            json.JSONDecodeError,
+            OSError
+        ) as exc:
+
+            print(
+                f"[TOXIC] Gagal membaca database: {exc}"
+            )
+
 
     def _save_database_sync(self):
-        os.makedirs(os.path.dirname(TOXIC_DB_PATH) or ".", exist_ok=True)
+        os.makedirs(
+            os.path.dirname(TOXIC_DB_PATH) or ".",
+            exist_ok=True
+        )
+
         temp_path = TOXIC_DB_PATH + ".tmp"
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(self.toxic_data, f, ensure_ascii=False, indent=2)
-        os.replace(temp_path, TOXIC_DB_PATH)
+
+        with open(
+            temp_path,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                self.toxic_data,
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
+
+        os.replace(
+            temp_path,
+            TOXIC_DB_PATH
+        )
+
 
     async def save_database(self):
+
         async with self._save_lock:
+
             loop = asyncio.get_running_loop()
+
             await loop.run_in_executor(
                 None,
                 self._save_database_sync
             )
 
-    async def cog_load(self):
-        self._load_database()
-        self.bot.add_view(ToxicModerationView(self))
-        self.bot.add_view(ToxicConfirmView(self))
 
-        # =====================================================
-        # TOXIC STARTUP CHECK
-        # =====================================================
-        intents = getattr(self.bot, "intents", None)
+    # =========================================================
+    # COG LOAD / UNLOAD
+    # =========================================================
+
+    async def cog_load(self):
+
+        self._load_database()
+
+        self.bot.add_view(
+            ToxicModerationView(self)
+        )
+
+        self.bot.add_view(
+            ToxicConfirmView(self)
+        )
+
+        intents = getattr(
+            self.bot,
+            "intents",
+            None
+        )
+
         message_content_enabled = bool(
-            intents and getattr(intents, "message_content", False)
+            intents
+            and getattr(
+                intents,
+                "message_content",
+                False
+            )
         )
 
         print(
             "[TOXIC] Cog aktif | "
-            f"message_content_intent={message_content_enabled} | "
-            f"badwords={len(self.badwords)}"
+            f"message_content_intent="
+            f"{message_content_enabled} | "
+            f"badwords={len(self.badwords)} | "
+            f"exempt_user={TOXIC_EXEMPT_USER_ID}"
         )
 
         if not message_content_enabled:
+
             print(
-                "[TOXIC] WARNING: message_content intent OFF. "
-                "Bot tidak akan dapat membaca isi pesan Discord."
+                "[TOXIC] WARNING: "
+                "message_content intent OFF. "
+                "Bot tidak akan dapat membaca "
+                "isi pesan Discord."
             )
+
 
     async def cog_unload(self):
         await self.save_database()
 
-    def _member_key(self, guild_id, user_id):
+
+    # =========================================================
+    # MEMBER DATABASE
+    # =========================================================
+
+    def _member_key(
+        self,
+        guild_id,
+        user_id
+    ):
         return f"{guild_id}:{user_id}"
 
-    def _get_record(self, guild_id, user_id):
-        key = self._member_key(guild_id, user_id)
-        record = self.toxic_data["members"].setdefault(key, {
-            "warnings": 0,
-            "last_violation": None,
-            "violations": 0,
-            "history": []
-        })
+
+    def _get_record(
+        self,
+        guild_id,
+        user_id
+    ):
+
+        key = self._member_key(
+            guild_id,
+            user_id
+        )
+
+        record = self.toxic_data[
+            "members"
+        ].setdefault(
+            key,
+            {
+                "warnings": 0,
+                "last_violation": None,
+                "violations": 0,
+                "history": []
+            }
+        )
+
         return record
 
-    def _refresh_expired(self, record):
-        last = record.get("last_violation")
+
+    def _refresh_expired(
+        self,
+        record
+    ):
+
+        last = record.get(
+            "last_violation"
+        )
+
         if not last:
             return False
+
         try:
-            last_dt = datetime.fromisoformat(last)
+
+            last_dt = datetime.fromisoformat(
+                last
+            )
+
             if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) - last_dt >= timedelta(hours=WARNING_EXPIRE_HOURS):
+                last_dt = last_dt.replace(
+                    tzinfo=timezone.utc
+                )
+
+            if (
+                datetime.now(timezone.utc)
+                - last_dt
+                >= timedelta(
+                    hours=WARNING_EXPIRE_HOURS
+                )
+            ):
+
                 record["warnings"] = 0
                 record["violations"] = 0
                 record["last_violation"] = None
+
                 return True
-        except (ValueError, TypeError):
+
+        except (
+            ValueError,
+            TypeError
+        ):
+
             return False
+
         return False
 
-    def _is_moderator(self, member):
-        if member.guild_permissions.administrator or member.guild_permissions.manage_guild:
-            return True
-        allowed = {rid for rid in MODERATOR_ROLE_IDS if rid}
-        return any(role.id in allowed for role in getattr(member, "roles", []))
 
-    async def _send_log(self, guild, embed):
+    # =========================================================
+    # MODERATOR CHECK
+    # =========================================================
+    #
+    # Fungsi ini HANYA untuk akses panel.
+    #
+    # Jangan gunakan fungsi ini sebagai pengecualian toxic.
+    # =========================================================
+
+    def _is_moderator(
+        self,
+        member
+    ):
+
+        if member.guild_permissions.administrator:
+            return True
+
+        if member.guild_permissions.manage_guild:
+            return True
+
+        allowed = {
+            rid
+            for rid in MODERATOR_ROLE_IDS
+            if rid
+        }
+
+        return any(
+            role.id in allowed
+            for role in getattr(
+                member,
+                "roles",
+                []
+            )
+        )
+
+
+    # =========================================================
+    # TOXIC EXEMPT CHECK
+    # =========================================================
+
+    def _is_toxic_exempt(
+        self,
+        member
+    ):
+
+        return (
+            getattr(
+                member,
+                "id",
+                None
+            )
+            == TOXIC_EXEMPT_USER_ID
+        )
+
+
+    # =========================================================
+    # SEND LOG
+    # =========================================================
+
+    async def _send_log(
+        self,
+        guild,
+        embed
+    ):
+
         if not TOXIC_LOG_CHANNEL_ID:
             return
-        channel = guild.get_channel(TOXIC_LOG_CHANNEL_ID)
+
+        channel = guild.get_channel(
+            TOXIC_LOG_CHANNEL_ID
+        )
+
         if channel:
+
             try:
-                await channel.send(embed=embed)
-            except discord.HTTPException:
-                pass
+
+                await channel.send(
+                    embed=embed
+                )
+
+            except discord.Forbidden as exc:
+
+                print(
+                    f"[TOXIC] LOG FAILED | Forbidden | "
+                    f"channel={TOXIC_LOG_CHANNEL_ID} | "
+                    f"error={exc}"
+                )
+
+            except discord.HTTPException as exc:
+
+                print(
+                    f"[TOXIC] LOG FAILED | HTTPException | "
+                    f"channel={TOXIC_LOG_CHANNEL_ID} | "
+                    f"error={exc}"
+                )
+
+
+    # =========================================================
+    # PANEL TOXIC
+    # =========================================================
 
     async def ensure_panel(self):
+
         if not TOXIC_PANEL_CHANNEL_ID:
             return
-        channel = self.bot.get_channel(TOXIC_PANEL_CHANNEL_ID)
+
+        channel = self.bot.get_channel(
+            TOXIC_PANEL_CHANNEL_ID
+        )
+
         if channel is None:
+
             try:
-                channel = await self.bot.fetch_channel(TOXIC_PANEL_CHANNEL_ID)
-            except discord.HTTPException:
+
+                channel = await self.bot.fetch_channel(
+                    TOXIC_PANEL_CHANNEL_ID
+                )
+
+            except discord.HTTPException as exc:
+
+                print(
+                    f"[TOXIC] Gagal mengambil panel channel: "
+                    f"{exc}"
+                )
+
                 return
-        message_id = self.toxic_data.get("panel_message_id")
+
+        message_id = self.toxic_data.get(
+            "panel_message_id"
+        )
+
         if message_id:
+
             try:
-                await channel.fetch_message(int(message_id))
+
+                await channel.fetch_message(
+                    int(message_id)
+                )
+
                 return
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException, ValueError):
-                self.toxic_data["panel_message_id"] = None
+
+            except (
+                discord.NotFound,
+                discord.Forbidden,
+                discord.HTTPException,
+                ValueError
+            ):
+
+                self.toxic_data[
+                    "panel_message_id"
+                ] = None
+
         embed = discord.Embed(
             title="🛡️ NANZ Toxic Moderation",
             description=(
-                "Gunakan tombol di bawah untuk mengelola warning member. "
-                "Panel ini bersifat permanen dan tetap aktif setelah bot restart."
+                "Gunakan tombol di bawah untuk "
+                "mengelola warning member. "
+                "Panel ini bersifat permanen dan "
+                "tetap aktif setelah bot restart."
             ),
             color=discord.Color.blurple()
         )
-        msg = await channel.send(embed=embed, view=ToxicModerationView(self))
-        self.toxic_data["panel_message_id"] = msg.id
+
+        msg = await channel.send(
+            embed=embed,
+            view=ToxicModerationView(self)
+        )
+
+        self.toxic_data[
+            "panel_message_id"
+        ] = msg.id
+
         await self.save_database()
 
-    async def _moderate_toxic_message(self, message):
+
+    # =========================================================
+    # TOXIC MODERATION
+    # =========================================================
+
+    async def _moderate_toxic_message(
+        self,
+        message
+    ):
+
         guild = message.guild
+
         if guild is None:
             return
-        # Bot tidak memoderasi administrator atau moderator yang diizinkan.
-        if isinstance(message.author, discord.Member) and self._is_moderator(message.author):
+
+        # =====================================================
+        # USER EXEMPT
+        # =====================================================
+        #
+        # HANYA ID 1169643619049799740 yang exempt.
+        #
+        # Moderator -> TETAP DIMODERASI
+        # Admin     -> TETAP DIMODERASI
+        # Staff     -> TETAP DIMODERASI
+        # =====================================================
+
+        if self._is_toxic_exempt(
+            message.author
+        ):
+
+            print(
+                f"[TOXIC] EXEMPT | "
+                f"user={message.author} "
+                f"({message.author.id}) | "
+                f"owner exemption"
+            )
+
             return
 
-        record = self._get_record(guild.id, message.author.id)
-        self._refresh_expired(record)
-        now = datetime.now(timezone.utc)
-        record["violations"] = int(record.get("violations", 0)) + 1
-        violation = record["violations"]
-        record["last_violation"] = now.isoformat()
+        # =====================================================
+        # DATA MEMBER
+        # =====================================================
+
+        record = self._get_record(
+            guild.id,
+            message.author.id
+        )
+
+        self._refresh_expired(
+            record
+        )
+
+        now = datetime.now(
+            timezone.utc
+        )
+
+        record["violations"] = (
+            int(
+                record.get(
+                    "violations",
+                    0
+                )
+            )
+            + 1
+        )
+
+        violation = record[
+            "violations"
+        ]
+
+        record[
+            "last_violation"
+        ] = now.isoformat()
+
+        print(
+            f"[TOXIC] MODERATION START | "
+            f"user={message.author} "
+            f"({message.author.id}) | "
+            f"violation={violation}"
+        )
+
+        # =====================================================
+        # HAPUS PESAN
+        # =====================================================
 
         try:
+
             await message.delete()
-        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-            pass
+
+            print(
+                f"[TOXIC] MESSAGE DELETED | "
+                f"user={message.author} "
+                f"({message.author.id})"
+            )
+
+        except discord.Forbidden as exc:
+
+            print(
+                f"[TOXIC] DELETE FAILED | Forbidden | "
+                f"user={message.author} "
+                f"({message.author.id}) | "
+                f"error={exc}"
+            )
+
+        except discord.NotFound:
+
+            print(
+                f"[TOXIC] DELETE FAILED | "
+                f"message already gone | "
+                f"user={message.author} "
+                f"({message.author.id})"
+            )
+
+        except discord.HTTPException as exc:
+
+            print(
+                f"[TOXIC] DELETE FAILED | HTTPException | "
+                f"user={message.author} "
+                f"({message.author.id}) | "
+                f"error={exc}"
+            )
+
+        # =====================================================
+        # WARNING 1 - 3
+        # =====================================================
 
         if violation <= WARNING_LIMIT:
+
             record["warnings"] = violation
+
             titles = {
                 1: "⚠️ Peringatan Toxic 1/3",
                 2: "⚠️ Peringatan Toxic 2/3",
                 3: "🚨 Peringatan Terakhir 3/3",
             }
+
             descriptions = {
-                1: "Tolong jaga kata-kata, ya. Mari saling menghargai.",
-                2: "Ini peringatan kedua. Jika terus berlanjut, tindakan timeout akan diberikan.",
-                3: "Ini peringatan terakhir. Pelanggaran berikutnya akan membuatmu terkena timeout.",
+                1: (
+                    "Tolong jaga kata-kata, ya. "
+                    "Mari saling menghargai."
+                ),
+
+                2: (
+                    "Ini peringatan kedua. "
+                    "Jika terus berlanjut, "
+                    "tindakan timeout akan diberikan."
+                ),
+
+                3: (
+                    "Ini peringatan terakhir. "
+                    "Pelanggaran berikutnya akan "
+                    "membuatmu terkena timeout."
+                ),
             }
+
             embed = discord.Embed(
                 title=titles[violation],
-                description=f"{message.author.mention}\n{descriptions[violation]}",
-                color=discord.Color.orange() if violation < 3 else discord.Color.red()
+                description=(
+                    f"{message.author.mention}\n\n"
+                    f"{descriptions[violation]}\n\n"
+                    f"**Pelanggaran:** "
+                    f"`{violation}/3`"
+                ),
+                color=(
+                    discord.Color.orange()
+                    if violation < 3
+                    else discord.Color.red()
+                ),
+                timestamp=now
             )
-        else:
-            duration = TIMEOUT_DURATIONS.get(violation, MAX_TIMEOUT_SECONDS)
-            duration = min(duration, MAX_TIMEOUT_SECONDS)
-            member = guild.get_member(message.author.id)
-            timeout_ok = False
-            if member:
-                try:
-                    await member.timeout(
-                        timedelta(seconds=duration),
-                        reason=f"Auto toxic moderation: pelanggaran ke-{violation}"
-                    )
-                    timeout_ok = True
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
 
-            duration_text = self._format_duration(duration)
+            embed.set_footer(
+                text="nanZ Toxic Moderation"
+            )
+
+        # =====================================================
+        # TIMEOUT 4+
+        # =====================================================
+
+        else:
+
+            duration = TIMEOUT_DURATIONS.get(
+                violation,
+                MAX_TIMEOUT_SECONDS
+            )
+
+            duration = min(
+                duration,
+                MAX_TIMEOUT_SECONDS
+            )
+
+            member = guild.get_member(
+                message.author.id
+            )
+
+            timeout_ok = False
+
+            if member:
+
+                try:
+
+                    await member.timeout(
+                        timedelta(
+                            seconds=duration
+                        ),
+                        reason=(
+                            "Auto toxic moderation: "
+                            f"pelanggaran ke-{violation}"
+                        )
+                    )
+
+                    timeout_ok = True
+
+                    print(
+                        f"[TOXIC] TIMEOUT SUCCESS | "
+                        f"user={message.author} "
+                        f"({message.author.id}) | "
+                        f"duration={duration}s | "
+                        f"violation={violation}"
+                    )
+
+                except discord.Forbidden as exc:
+
+                    print(
+                        f"[TOXIC] TIMEOUT FAILED | Forbidden | "
+                        f"user={message.author} "
+                        f"({message.author.id}) | "
+                        f"error={exc}"
+                    )
+
+                except discord.HTTPException as exc:
+
+                    print(
+                        f"[TOXIC] TIMEOUT FAILED | HTTPException | "
+                        f"user={message.author} "
+                        f"({message.author.id}) | "
+                        f"error={exc}"
+                    )
+
+            else:
+
+                print(
+                    f"[TOXIC] TIMEOUT FAILED | "
+                    f"member tidak ditemukan di guild | "
+                    f"user={message.author.id}"
+                )
+
+            duration_text = self._format_duration(
+                duration
+            )
+
             embed = discord.Embed(
                 title="🔇 Timeout Otomatis",
                 description=(
-                    f"{message.author.mention} terkena timeout **{duration_text}** "
-                    f"karena pelanggaran toxic ke-{violation}."
-                    + ("" if timeout_ok else "\n⚠️ Timeout gagal diterapkan. Periksa izin bot dan hierarki role.")
+                    f"{message.author.mention}\n\n"
+                    f"Kamu terkena timeout "
+                    f"**{duration_text}** karena "
+                    f"pelanggaran toxic ke-"
+                    f"**{violation}**."
+                )
+                if timeout_ok
+                else (
+                    f"{message.author.mention}\n\n"
+                    f"Pelanggaran toxic ke-"
+                    f"**{violation}** terdeteksi.\n\n"
+                    f"⚠️ Timeout gagal diterapkan. "
+                    f"Periksa permission dan hierarki "
+                    f"role bot."
                 ),
-                color=discord.Color.red()
+                color=discord.Color.red(),
+                timestamp=now
             )
-            # Mulai pelanggaran ke-7, kirim laporan ke log moderator.
+
+            embed.set_footer(
+                text="nanZ Toxic Moderation"
+            )
+
+            # Mulai pelanggaran ke-7,
+            # kirim laporan ke log moderator.
+
             if violation >= 7:
+
                 log_embed = discord.Embed(
                     title="🚨 Pelanggaran Toxic Berulang",
                     description=(
-                        f"Member: {message.author.mention} (`{message.author.id}`)\n"
+                        f"Member: "
+                        f"{message.author.mention}\n"
+                        f"ID: `{message.author.id}`\n"
                         f"Pelanggaran: **#{violation}**\n"
-                        f"Tindakan: **Timeout {duration_text}**\n"
-                        f"Channel: {message.channel.mention}"
+                        f"Tindakan: **Timeout "
+                        f"{duration_text}**\n"
+                        f"Channel: "
+                        f"{message.channel.mention}"
                     ),
                     color=discord.Color.dark_red(),
                     timestamp=now
                 )
-                await self._send_log(guild, log_embed)
 
-        record.setdefault("history", []).append({
-            "at": now.isoformat(),
-            "violation": violation,
-            "channel_id": message.channel.id,
-            "action": "warning" if violation <= WARNING_LIMIT else "timeout",
-            "duration": TIMEOUT_DURATIONS.get(violation, MAX_TIMEOUT_SECONDS) if violation > WARNING_LIMIT else 0
-        })
-        # Batasi ukuran riwayat agar file JSON tidak terus membesar.
-        record["history"] = record["history"][-100:]
+                await self._send_log(
+                    guild,
+                    log_embed
+                )
+
+        # =====================================================
+        # SIMPAN HISTORY
+        # =====================================================
+
+        record.setdefault(
+            "history",
+            []
+        ).append(
+            {
+                "at": now.isoformat(),
+                "violation": violation,
+                "channel_id": message.channel.id,
+                "action": (
+                    "warning"
+                    if violation <= WARNING_LIMIT
+                    else "timeout"
+                ),
+                "duration": (
+                    TIMEOUT_DURATIONS.get(
+                        violation,
+                        MAX_TIMEOUT_SECONDS
+                    )
+                    if violation > WARNING_LIMIT
+                    else 0
+                )
+            }
+        )
+
+        # Maksimal 100 history
+        record["history"] = (
+            record["history"][-100:]
+        )
+
         await self.save_database()
 
+        # =====================================================
+        # KIRIM WARNING KE CHANNEL
+        # =====================================================
+
+        warning_sent = False
+
         try:
-            await message.channel.send(embed=embed, delete_after=15)
-        except discord.HTTPException:
-            pass
+
+            warning_message = await message.channel.send(
+                embed=embed,
+                delete_after=15
+            )
+
+            warning_sent = True
+
+            print(
+                f"[TOXIC] WARNING SENT | "
+                f"user={message.author} "
+                f"({message.author.id}) | "
+                f"violation={violation} | "
+                f"channel=#{getattr(message.channel, 'name', message.channel.id)} | "
+                f"message_id={warning_message.id}"
+            )
+
+        except discord.Forbidden as exc:
+
+            print(
+                f"[TOXIC] WARNING FAILED | Forbidden | "
+                f"user={message.author} "
+                f"({message.author.id}) | "
+                f"channel={message.channel.id} | "
+                f"error={exc}"
+            )
+
+        except discord.HTTPException as exc:
+
+            print(
+                f"[TOXIC] WARNING FAILED | HTTPException | "
+                f"user={message.author} "
+                f"({message.author.id}) | "
+                f"channel={message.channel.id} | "
+                f"error={exc}"
+            )
+
+        # =====================================================
+        # FALLBACK DM
+        # =====================================================
+
+        if not warning_sent:
+
+            try:
+
+                await message.author.send(
+                    embed=embed
+                )
+
+                warning_sent = True
+
+                print(
+                    f"[TOXIC] WARNING DM SENT | "
+                    f"user={message.author} "
+                    f"({message.author.id})"
+                )
+
+            except discord.Forbidden as exc:
+
+                print(
+                    f"[TOXIC] WARNING DM FAILED | Forbidden | "
+                    f"user={message.author} "
+                    f"({message.author.id}) | "
+                    f"error={exc}"
+                )
+
+            except discord.HTTPException as exc:
+
+                print(
+                    f"[TOXIC] WARNING DM FAILED | HTTPException | "
+                    f"user={message.author} "
+                    f"({message.author.id}) | "
+                    f"error={exc}"
+                )
+
+        # =====================================================
+        # LOG MODERASI
+        # =====================================================
 
         log_embed = discord.Embed(
             title="Catatan Moderasi Toxic",
             description=(
-                f"Member: {message.author.mention} (`{message.author.id}`)\n"
+                f"Member: "
+                f"{message.author.mention} "
+                f"(`{message.author.id}`)\n"
                 f"Pelanggaran: **#{violation}**\n"
-                f"Channel: {message.channel.mention}\n"
-                f"Tindakan: **{'Warning' if violation <= WARNING_LIMIT else 'Timeout'}**"
+                f"Channel: "
+                f"{message.channel.mention}\n"
+                f"Tindakan: **"
+                f"{'Warning' if violation <= WARNING_LIMIT else 'Timeout'}"
+                f"**"
             ),
-            color=discord.Color.orange(),
+            color=(
+                discord.Color.orange()
+                if violation <= WARNING_LIMIT
+                else discord.Color.red()
+            ),
             timestamp=now
         )
-        await self._send_log(guild, log_embed)
+
+        await self._send_log(
+            guild,
+            log_embed
+        )
+
+        print(
+            f"[TOXIC] MODERATION COMPLETE | "
+            f"user={message.author} "
+            f"({message.author.id}) | "
+            f"violation={violation} | "
+            f"warning_sent={warning_sent}"
+        )
+
+
+    # =========================================================
+    # FORMAT TIMEOUT
+    # =========================================================
 
     @staticmethod
-    def _format_duration(seconds):
+    def _format_duration(
+        seconds
+    ):
+
         if seconds < 60:
             return f"{seconds} detik"
+
         if seconds < 3600:
             return f"{seconds // 60} menit"
+
         return f"{seconds // 3600} jam"
 
 
+    # =========================================================
+    # BOT READY
+    # =========================================================
+
     @commands.Cog.listener()
     async def on_ready(self):
+
         try:
+
             await self.ensure_panel()
-        except (discord.HTTPException, discord.Forbidden) as exc:
-            print(f"[TOXIC] Gagal memastikan panel: {exc}")
+
+        except (
+            discord.HTTPException,
+            discord.Forbidden
+        ) as exc:
+
+            print(
+                f"[TOXIC] Gagal memastikan panel: "
+                f"{exc}"
+            )
+
+
+    # =========================================================
+    # NORMALIZE TOXIC TEXT
+    # =========================================================
 
     @staticmethod
-    def _normalize_toxic_text(content: str) -> str:
-        """
-        Normalisasi teks toxic.
+    def _normalize_toxic_text(
+        content: str
+    ):
 
-        Tujuan:
-        - huruf besar/kecil tidak berpengaruh
-        - leetspeak umum: 0/o, 1/i, 3/e, 4/a, 5/s, 7/t
-        - karakter pemisah seperti ".", "-", "_", dan spasi tetap bisa dideteksi
-        - zero-width/invisible characters dibuang
-        """
-        import re
-        import unicodedata
+        text = (
+            content or ""
+        ).lower()
 
-        text = unicodedata.normalize("NFKC", content or "").lower()
+        # Normalisasi Unicode.
+        text = unicodedata.normalize(
+            "NFKC",
+            text
+        )
 
-        # Karakter tak terlihat yang sering dipakai untuk mengakali filter.
-        text = re.sub(r"[\u200b-\u200f\u2060\ufeff]", "", text)
+        # Hapus karakter invisible / zero-width.
+        text = re.sub(
+            r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]",
+            "",
+            text
+        )
 
         # Leetspeak umum.
-        text = text.translate(str.maketrans({
-            "0": "o",
-            "1": "i",
-            "3": "e",
-            "4": "a",
-            "5": "s",
-            "7": "t",
-            "@": "a",
-            "$": "s",
-        }))
+        translation = str.maketrans(
+            {
+                "0": "o",
+                "1": "i",
+                "3": "e",
+                "4": "a",
+                "5": "s",
+                "7": "t",
+                "@": "a",
+                "$": "s",
+            }
+        )
 
-        # Semua karakter non-huruf dijadikan spasi.
-        return re.sub(r"[^a-z]+", " ", text).strip()
+        text = text.translate(
+            translation
+        )
+
+        # Semua selain huruf menjadi separator.
+        text = re.sub(
+            r"[^a-z]+",
+            " ",
+            text
+        )
+
+        return text.strip()
+
 
     @staticmethod
-    def _compact_toxic_text(content: str) -> str:
-        """
-        Bentuk compact untuk menangkap:
-        g.o.b.l.o.k
-        g-o-b-l-o-k
-        g o b l o k
-        """
-        import re
-        normalized = AutoReply._normalize_toxic_text(content)
-        return re.sub(r"[^a-z]", "", normalized)
+    def _compact_toxic_text(
+        content: str
+    ):
+
+        return re.sub(
+            r"[^a-z]",
+            "",
+            content.lower()
+        )
+
 
     @staticmethod
-    def _collapse_repeated_letters(content: str) -> str:
-        """
-        ggoobblokk -> goblok
-        anjjjinggg -> anjing
+    def _collapse_repeated_letters(
+        content: str
+    ):
 
-        Hanya dipakai sebagai jalur tambahan agar kata normal
-        tidak langsung dianggap toxic.
-        """
-        import re
-        return re.sub(r"(.)\1{2,}", r"\1\1", content)
+        # Contoh:
+        # anjjjinggg -> anjing
+        # gobloookkk -> goblok
+        #
+        # Maksimal satu karakter berulang.
+        return re.sub(
+            r"(.)\1+",
+            r"\1",
+            content
+        )
 
-    def _find_badword(self, content: str):
-        """Kembalikan kata toxic yang terdeteksi, atau None."""
-        import re
 
-        original = (content or "").lower()
-        normalized = self._normalize_toxic_text(original)
+    # =========================================================
+    # FIND BADWORD
+    # =========================================================
+
+    def _find_badword(
+        self,
+        content: str
+    ):
+
+        original = (
+            content or ""
+        ).lower()
+
+        normalized = self._normalize_toxic_text(
+            original
+        )
+
         words = normalized.split()
-        compact = self._compact_toxic_text(original)
-        collapsed = self._collapse_repeated_letters(original)
-        collapsed_normalized = self._normalize_toxic_text(collapsed)
-        collapsed_words = collapsed_normalized.split()
 
-        for bw in getattr(self, "badwords", []):
-            bw_normalized = self._normalize_toxic_text(bw)
+        compact_normalized = (
+            self._compact_toxic_text(
+                normalized
+            )
+        )
+
+        collapsed_normalized = (
+            self._collapse_repeated_letters(
+                compact_normalized
+            )
+        )
+
+        for bw in getattr(
+            self,
+            "badwords",
+            []
+        ):
+
+            bw_normalized = (
+                self._normalize_toxic_text(
+                    bw
+                )
+            )
+
             if not bw_normalized:
                 continue
 
-            # 1. Kata utuh: paling aman dari false positive.
+            bw_compact = (
+                self._compact_toxic_text(
+                    bw_normalized
+                )
+            )
+
+            bw_collapsed = (
+                self._collapse_repeated_letters(
+                    bw_compact
+                )
+            )
+
+            # =================================================
+            # 1. Token penuh
+            # =================================================
+
             if bw_normalized in words:
                 return bw
 
-            # 2. Kata utuh setelah pengulangan huruf dikurangi.
-            if bw_normalized in collapsed_words:
-                return bw
+            # =================================================
+            # 2. Variasi separator
+            #
+            # g.o.b.l.o.k
+            # g-o-b-l-o-k
+            # g o b l o k
+            # =================================================
 
-            # 3. Bentuk dipisah tanda baca/spasi:
-            #    g.o.b.l.o.k / g-o-b-l-o-k / g o b l o k
-            compact_bw = re.sub(r"[^a-z]", "", bw_normalized)
-            if len(compact_bw) >= 4 and compact_bw in compact:
-                return bw
-
-            # 4. Variasi dengan separator di antara setiap huruf.
-            #    Batas non-huruf mencegah substring kata biasa ikut kena.
             pattern = (
                 r"(?<![a-z])"
-                + r"[^a-z0-9]*".join(re.escape(ch) for ch in bw_normalized)
+                + r"[^a-z0-9]*".join(
+                    re.escape(ch)
+                    for ch in bw_normalized
+                )
                 + r"(?![a-z])"
             )
-            if re.search(pattern, original):
+
+            if re.search(
+                pattern,
+                original
+            ):
+                return bw
+
+            # =================================================
+            # 3. Compact
+            #
+            # g.o.b.l.o.k -> goblok
+            # =================================================
+
+            if (
+                bw_compact
+                and bw_compact in compact_normalized
+            ):
+                return bw
+
+            # =================================================
+            # 4. Repeated letters
+            #
+            # anjjjinggg -> anjing
+            # gobloookkk -> goblok
+            # =================================================
+
+            if (
+                bw_collapsed
+                and bw_collapsed in collapsed_normalized
+            ):
                 return bw
 
         return None
 
-    def contains_badword(self, content: str) -> bool:
-        return self._find_badword(content) is not None
 
+    def contains_badword(
+        self,
+        content: str
+    ):
+
+        return (
+            self._find_badword(content)
+            is not None
+        )
+
+
+    # =========================================================
+    # ON MESSAGE
+    # =========================================================
 
     @commands.Cog.listener()
-    async def on_message(self, message):
-        """
-        Listener utama.
+    async def on_message(
+        self,
+        message
+    ):
 
-        URUTAN:
-        1. Abaikan bot.
-        2. Ambil message.content.
-        3. DETEKSI TOXIC TERLEBIH DAHULU.
-        4. Kalau toxic -> hapus, warning/timeout, simpan history, log.
-        5. Kalau bukan toxic -> lanjut command/auto-reply.
-
-        =========================================================
-        # TEST TOXIC
-        =========================================================
-        Setelah bot restart, kirim pesan berikut di channel biasa:
-
-            goblok
-            anjing
-            k.o.n.t.o.l
-            g-o-b-l-o-k
-            g o b l o k
-            g0bl0k
-            anjjjinggg
-
-        Untuk tes normal yang TIDAK boleh dianggap toxic:
-
-            blog
-            gol
-            anjing-anjing (bagian "anjing" tetap akan dianggap toxic)
-            hello
-
-        Console yang diharapkan saat toxic terdeteksi:
-
-            [TOXIC] DETECTED | user=... | word='goblok' | channel=#...
-
-        Kalau tidak ada log tersebut, periksa console saat startup dan pastikan
-        cog autoreply berhasil diload.
-        =========================================================
-        """
+        # Abaikan pesan bot.
         if message.author.bot:
             return
 
-        content = (message.content or "").strip()
-
-        # DEBUG: bila ingin memastikan message.content masuk ke bot,
-        # sementara uncomment dua baris berikut:
-        # print(f"[TOXIC DEBUG] channel={message.channel.id} content={content!r}")
+        content = (
+            message.content or ""
+        ).strip()
 
         if not content:
             return
 
-        # =============================================
-        # FITUR 1: TOXIC MODERATION — PRIORITAS UTAMA
-        # =============================================
-        detected_badword = self._find_badword(content)
+        # =====================================================
+        # FITUR 1: TOXIC MODERATION
+        # =====================================================
+        #
+        # Toxic diperiksa SEBELUM command dan auto reply.
+        #
+        # Contoh test:
+        #
+        # goblok
+        # g0bl0k
+        # g.o.b.l.o.k
+        # g-o-b-l-o-k
+        # g o b l o k
+        # anjjjinggg
+        #
+        # User exempt:
+        #
+        # 1169643619049799740
+        #
+        # Moderator/admin lain tetap dimoderasi.
+        # =====================================================
+
+        detected_badword = self._find_badword(
+            content
+        )
 
         if detected_badword:
+
             print(
-                f"[TOXIC] DETECTED | user={message.author} "
-                f"({message.author.id}) | word={detected_badword!r} | "
+                f"[TOXIC] DETECTED | "
+                f"user={message.author} "
+                f"({message.author.id}) | "
+                f"word={detected_badword!r} | "
                 f"channel=#{getattr(message.channel, 'name', message.channel.id)} | "
                 f"content={content[:200]!r}"
             )
 
             try:
-                await self._moderate_toxic_message(message)
+
+                await self._moderate_toxic_message(
+                    message
+                )
+
             except Exception as exc:
-                # Jangan biarkan error moderation menghentikan listener.
-                print(f"[TOXIC] ERROR saat moderation: {type(exc).__name__}: {exc}")
+
+                print(
+                    f"[TOXIC] MODERATION ERROR | "
+                    f"user={message.author} "
+                    f"({message.author.id}) | "
+                    f"error={type(exc).__name__}: {exc}"
+                )
+
             return
 
-        # =============================================
+        # =====================================================
         # FITUR 2: COMMAND CHECK
-        # =============================================
-        ctx = await self.bot.get_context(message)
+        # =====================================================
+
+        ctx = await self.bot.get_context(
+            message
+        )
+
         if ctx.valid:
             return
 
-        # =============================================
+        # =====================================================
         # FITUR 3: AUTO REPLY
-        # =============================================
+        # =====================================================
+
         words = content.split()
 
-        # FIX: fetch manual kalau resolved belum di-cache Discord.
+        # FIX:
+        # fetch manual kalau resolved belum di-cache Discord.
         is_reply_to_bot = False
-        if message.reference and message.reference.message_id:
+
+        if (
+            message.reference
+            and message.reference.message_id
+        ):
+
             try:
+
                 ref_msg = (
                     message.reference.resolved
-                    or await message.channel.fetch_message(message.reference.message_id)
+                    or await message.channel.fetch_message(
+                        message.reference.message_id
+                    )
                 )
-                if isinstance(ref_msg, discord.Message) and ref_msg.author.id == self.bot.user.id:
+
+                if (
+                    isinstance(
+                        ref_msg,
+                        discord.Message
+                    )
+                    and ref_msg.author.id
+                    == self.bot.user.id
+                ):
+
                     is_reply_to_bot = True
-            except (discord.NotFound, discord.HTTPException):
+
+            except (
+                discord.NotFound,
+                discord.HTTPException
+            ):
+
                 pass
 
         keyword_matched = False
 
         for trigger, replies in self.responses.items():
-            if trigger == content or content.startswith(trigger + " "):
+
+            if (
+                trigger == content
+                or content.startswith(
+                    trigger + " "
+                )
+            ):
+
                 keyword_matched = True
 
                 async with message.channel.typing():
-                    await asyncio.sleep(random.uniform(1, 2))
+
+                    await asyncio.sleep(
+                        random.uniform(
+                            1,
+                            2
+                        )
+                    )
 
                 embed = discord.Embed(
-                    description=random.choice(replies),
+                    description=random.choice(
+                        replies
+                    ),
                     color=discord.Color.random()
                 )
 
                 try:
+
                     await message.reply(
                         embed=embed,
                         mention_author=False
                     )
+
+                except discord.Forbidden as exc:
+
+                    print(
+                        f"[AUTOREPLY] Forbidden | "
+                        f"channel={message.channel.id} | "
+                        f"error={exc}"
+                    )
+
                 except discord.HTTPException as exc:
-                    print(f"[AUTOREPLY] Gagal mengirim reply: {exc}")
+
+                    print(
+                        f"[AUTOREPLY] HTTPException | "
+                        f"channel={message.channel.id} | "
+                        f"error={exc}"
+                    )
 
                 break
 
 
+# =========================================================
+# MODAL MEMBER
+# =========================================================
 
-class ToxicMemberModal(discord.ui.Modal):
-    def __init__(self, cog, action):
-        super().__init__(title={
-            "check": "Cek Warning Member",
-            "add": "Tambah Warning Manual",
-            "remove": "Kurangi Warning",
-            "reset": "Reset Warning Member",
-            "history": "Riwayat Member",
-        }.get(action, "Moderasi Member"))
+class ToxicMemberModal(
+    discord.ui.Modal
+):
+
+    def __init__(
+        self,
+        cog,
+        action
+    ):
+
+        super().__init__(
+            title={
+                "check": "Cek Warning Member",
+                "add": "Tambah Warning Manual",
+                "remove": "Kurangi Warning",
+                "reset": "Reset Warning Member",
+                "history": "Riwayat Member",
+            }.get(
+                action,
+                "Moderasi Member"
+            )
+        )
+
         self.cog = cog
         self.action = action
+
         self.member_id = discord.ui.TextInput(
             label="ID Discord member",
             placeholder="Contoh: 123456789012345678",
             required=True,
             max_length=25
         )
-        self.add_item(self.member_id)
 
-    async def on_submit(self, interaction: discord.Interaction):
-        if not self.cog._is_moderator(interaction.user):
-            await interaction.response.send_message("Kamu tidak memiliki izin menggunakan panel ini.", ephemeral=True)
+        self.add_item(
+            self.member_id
+        )
+
+
+    async def on_submit(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        if not self.cog._is_moderator(
+            interaction.user
+        ):
+
+            await interaction.response.send_message(
+                "Kamu tidak memiliki izin menggunakan panel ini.",
+                ephemeral=True
+            )
+
             return
+
         try:
-            user_id = int(str(self.member_id.value).strip())
+
+            user_id = int(
+                str(
+                    self.member_id.value
+                ).strip()
+            )
+
         except ValueError:
-            await interaction.response.send_message("ID Discord tidak valid.", ephemeral=True)
+
+            await interaction.response.send_message(
+                "ID Discord tidak valid.",
+                ephemeral=True
+            )
+
             return
 
         guild = interaction.guild
+
         if guild is None:
-            await interaction.response.send_message("Panel hanya bisa digunakan di server.", ephemeral=True)
+
+            await interaction.response.send_message(
+                "Panel hanya bisa digunakan di server.",
+                ephemeral=True
+            )
+
             return
 
-        record = self.cog._get_record(guild.id, user_id)
-        self.cog._refresh_expired(record)
+        record = self.cog._get_record(
+            guild.id,
+            user_id
+        )
+
+        self.cog._refresh_expired(
+            record
+        )
+
         changed = False
 
+        # =====================================================
+        # ADD WARNING
+        # =====================================================
+
         if self.action == "add":
-            record["warnings"] = min(3, int(record.get("warnings", 0)) + 1)
-            record["violations"] = int(record.get("violations", 0)) + 1
-            record["last_violation"] = datetime.now(timezone.utc).isoformat()
-            record.setdefault("history", []).append({
-                "at": datetime.now(timezone.utc).isoformat(),
-                "violation": record["violations"],
-                "channel_id": interaction.channel_id,
-                "action": "manual_warning",
-                "duration": 0
-            })
+
+            record["warnings"] = min(
+                3,
+                int(
+                    record.get(
+                        "warnings",
+                        0
+                    )
+                ) + 1
+            )
+
+            record["violations"] = (
+                int(
+                    record.get(
+                        "violations",
+                        0
+                    )
+                ) + 1
+            )
+
+            record[
+                "last_violation"
+            ] = datetime.now(
+                timezone.utc
+            ).isoformat()
+
+            record.setdefault(
+                "history",
+                []
+            ).append(
+                {
+                    "at": datetime.now(
+                        timezone.utc
+                    ).isoformat(),
+
+                    "violation": record[
+                        "violations"
+                    ],
+
+                    "channel_id": (
+                        interaction.channel_id
+                    ),
+
+                    "action": "manual_warning",
+
+                    "duration": 0
+                }
+            )
+
             changed = True
+
+        # =====================================================
+        # REMOVE WARNING
+        # =====================================================
+
         elif self.action == "remove":
-            record["warnings"] = max(0, int(record.get("warnings", 0)) - 1)
+
+            record["warnings"] = max(
+                0,
+                int(
+                    record.get(
+                        "warnings",
+                        0
+                    )
+                ) - 1
+            )
+
             if record["warnings"] == 0:
+
                 record["violations"] = 0
-                record["last_violation"] = None
+
+                record[
+                    "last_violation"
+                ] = None
+
             changed = True
+
+        # =====================================================
+        # RESET WARNING
+        # =====================================================
+
         elif self.action == "reset":
+
             record["warnings"] = 0
+
             record["violations"] = 0
-            record["last_violation"] = None
+
+            record[
+                "last_violation"
+            ] = None
+
             changed = True
+
+        # =====================================================
+        # SAVE
+        # =====================================================
 
         if changed:
+
             await self.cog.save_database()
 
-        user = guild.get_member(user_id)
-        name = user.mention if user else f"<@{user_id}> (`{user_id}`)"
+        user = guild.get_member(
+            user_id
+        )
+
+        name = (
+            user.mention
+            if user
+            else f"<@{user_id}> (`{user_id}`)"
+        )
+
         embed = discord.Embed(
             title="Hasil Moderasi",
             description=(
-                f"Member: {name}\\n"
-                f"Warning aktif: **{record.get('warnings', 0)}/3**\\n"
-                f"Total pelanggaran dalam siklus: **{record.get('violations', 0)}**"
+                f"Member: {name}\n"
+                f"Warning aktif: "
+                f"**{record.get('warnings', 0)}/3**\n"
+                f"Total pelanggaran dalam siklus: "
+                f"**{record.get('violations', 0)}**"
             ),
             color=discord.Color.blurple()
         )
 
+        # =====================================================
+        # HISTORY
+        # =====================================================
+
         if self.action == "history":
-            history = record.get("history", [])[-10:]
+
+            history = record.get(
+                "history",
+                []
+            )[-10:]
+
             if history:
+
                 lines = []
-                for item in reversed(history):
-                    stamp = item.get("at", "")
+
+                for item in reversed(
+                    history
+                ):
+
+                    stamp = item.get(
+                        "at",
+                        ""
+                    )
+
                     try:
-                        stamp = datetime.fromisoformat(stamp).strftime("%d-%m-%Y %H:%M UTC")
-                    except (ValueError, TypeError):
+
+                        stamp = datetime.fromisoformat(
+                            stamp
+                        ).strftime(
+                            "%d-%m-%Y %H:%M UTC"
+                        )
+
+                    except (
+                        ValueError,
+                        TypeError
+                    ):
+
                         pass
-                    lines.append(f"• {stamp} — #{item.get('violation', '?')} — {item.get('action', '-')}")
-                embed.add_field(name="10 catatan terakhir", value="\\n".join(lines)[:1024], inline=False)
+
+                    lines.append(
+                        f"• {stamp} — "
+                        f"#{item.get('violation', '?')} — "
+                        f"{item.get('action', '-')}"
+                    )
+
+                embed.add_field(
+                    name="10 catatan terakhir",
+                    value="\n".join(
+                        lines
+                    )[:1024],
+                    inline=False
+                )
+
             else:
-                embed.add_field(name="Riwayat", value="Belum ada riwayat.", inline=False)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+                embed.add_field(
+                    name="Riwayat",
+                    value="Belum ada riwayat.",
+                    inline=False
+                )
+
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True
+        )
 
 
-class ToxicModerationView(discord.ui.View):
-    def __init__(self, cog):
-        super().__init__(timeout=None)
+# =========================================================
+# TOXIC MODERATION VIEW
+# =========================================================
+
+class ToxicModerationView(
+    discord.ui.View
+):
+
+    def __init__(
+        self,
+        cog
+    ):
+
+        super().__init__(
+            timeout=None
+        )
+
         self.cog = cog
 
-    async def _open(self, interaction, action):
-        if not self.cog._is_moderator(interaction.user):
-            await interaction.response.send_message("Kamu tidak memiliki izin menggunakan panel ini.", ephemeral=True)
+
+    async def _open(
+        self,
+        interaction,
+        action
+    ):
+
+        if not self.cog._is_moderator(
+            interaction.user
+        ):
+
+            await interaction.response.send_message(
+                "Kamu tidak memiliki izin menggunakan panel ini.",
+                ephemeral=True
+            )
+
             return
-        await interaction.response.send_modal(ToxicMemberModal(self.cog, action))
 
-    @discord.ui.button(label="Cek Warning", style=discord.ButtonStyle.primary, emoji="🔎", custom_id="nanz_toxic:check", row=0)
-    async def check(self, interaction, button):
-        await self._open(interaction, "check")
-
-    @discord.ui.button(label="Tambah Warning", style=discord.ButtonStyle.secondary, emoji="➕", custom_id="nanz_toxic:add", row=0)
-    async def add(self, interaction, button):
-        await self._open(interaction, "add")
-
-    @discord.ui.button(label="Kurangi Warning", style=discord.ButtonStyle.secondary, emoji="➖", custom_id="nanz_toxic:remove", row=0)
-    async def remove(self, interaction, button):
-        await self._open(interaction, "remove")
-
-    @discord.ui.button(label="Reset Warning", style=discord.ButtonStyle.danger, emoji="♻️", custom_id="nanz_toxic:reset", row=1)
-    async def reset(self, interaction, button):
-        await self._open(interaction, "reset")
-
-    @discord.ui.button(label="Riwayat Member", style=discord.ButtonStyle.secondary, emoji="📋", custom_id="nanz_toxic:history", row=1)
-    async def history(self, interaction, button):
-        await self._open(interaction, "history")
+        await interaction.response.send_modal(
+            ToxicMemberModal(
+                self.cog,
+                action
+            )
+        )
 
 
-class ToxicConfirmView(discord.ui.View):
-    # Disediakan sebagai view persistent tambahan untuk kompatibilitas pengembangan berikutnya.
-    def __init__(self, cog):
-        super().__init__(timeout=None)
+    @discord.ui.button(
+        label="Cek Warning",
+        style=discord.ButtonStyle.primary,
+        emoji="🔎",
+        custom_id="nanz_toxic:check",
+        row=0
+    )
+    async def check(
+        self,
+        interaction,
+        button
+    ):
+
+        await self._open(
+            interaction,
+            "check"
+        )
+
+
+    @discord.ui.button(
+        label="Tambah Warning",
+        style=discord.ButtonStyle.secondary,
+        emoji="➕",
+        custom_id="nanz_toxic:add",
+        row=0
+    )
+    async def add(
+        self,
+        interaction,
+        button
+    ):
+
+        await self._open(
+            interaction,
+            "add"
+        )
+
+
+    @discord.ui.button(
+        label="Kurangi Warning",
+        style=discord.ButtonStyle.secondary,
+        emoji="➖",
+        custom_id="nanz_toxic:remove",
+        row=0
+    )
+    async def remove(
+        self,
+        interaction,
+        button
+    ):
+
+        await self._open(
+            interaction,
+            "remove"
+        )
+
+
+    @discord.ui.button(
+        label="Reset Warning",
+        style=discord.ButtonStyle.danger,
+        emoji="♻️",
+        custom_id="nanz_toxic:reset",
+        row=1
+    )
+    async def reset(
+        self,
+        interaction,
+        button
+    ):
+
+        await self._open(
+            interaction,
+            "reset"
+        )
+
+
+    @discord.ui.button(
+        label="Riwayat Member",
+        style=discord.ButtonStyle.secondary,
+        emoji="📋",
+        custom_id="nanz_toxic:history",
+        row=1
+    )
+    async def history(
+        self,
+        interaction,
+        button
+    ):
+
+        await self._open(
+            interaction,
+            "history"
+        )
+
+
+# =========================================================
+# TOXIC CONFIRM VIEW
+# =========================================================
+
+class ToxicConfirmView(
+    discord.ui.View
+):
+
+    # Disediakan sebagai view persistent tambahan
+    # untuk kompatibilitas pengembangan berikutnya.
+
+    def __init__(
+        self,
+        cog
+    ):
+
+        super().__init__(
+            timeout=None
+        )
+
         self.cog = cog
 
 
+# =========================================================
+# SETUP
+# =========================================================
 
-async def setup(bot):
-    await bot.add_cog(AutoReply(bot))
+async def setup(
+    bot
+):
+
+    await bot.add_cog(
+        AutoReply(bot)
+    )
