@@ -71,10 +71,6 @@ class AutoReply(commands.Cog):
         # =============================================
         # KATA-KATA TERLARANG
         # =============================================
-        #
-        # "blog" sengaja TIDAK dimasukkan karena dapat
-        # menyebabkan false-positive terhadap kata normal.
-        # =============================================
 
         self.badwords = [
             # anjing variants
@@ -650,25 +646,37 @@ class AutoReply(commands.Cog):
     # =========================================================
 
     def _load_database(self):
+
         os.makedirs(
             os.path.dirname(TOXIC_DB_PATH) or ".",
             exist_ok=True
         )
 
-        if not os.path.exists(TOXIC_DB_PATH):
+        if not os.path.exists(
+            TOXIC_DB_PATH
+        ):
+
             self._save_database_sync()
             return
 
         try:
+
             with open(
                 TOXIC_DB_PATH,
                 "r",
                 encoding="utf-8"
             ) as f:
+
                 loaded = json.load(f)
 
-            if isinstance(loaded, dict):
-                self.toxic_data.update(loaded)
+            if isinstance(
+                loaded,
+                dict
+            ):
+
+                self.toxic_data.update(
+                    loaded
+                )
 
                 self.toxic_data.setdefault(
                     "members",
@@ -691,12 +699,15 @@ class AutoReply(commands.Cog):
 
 
     def _save_database_sync(self):
+
         os.makedirs(
             os.path.dirname(TOXIC_DB_PATH) or ".",
             exist_ok=True
         )
 
-        temp_path = TOXIC_DB_PATH + ".tmp"
+        temp_path = (
+            TOXIC_DB_PATH + ".tmp"
+        )
 
         with open(
             temp_path,
@@ -779,6 +790,7 @@ class AutoReply(commands.Cog):
 
 
     async def cog_unload(self):
+
         await self.save_database()
 
 
@@ -791,6 +803,7 @@ class AutoReply(commands.Cog):
         guild_id,
         user_id
     ):
+
         return f"{guild_id}:{user_id}"
 
 
@@ -839,6 +852,7 @@ class AutoReply(commands.Cog):
             )
 
             if last_dt.tzinfo is None:
+
                 last_dt = last_dt.replace(
                     tzinfo=timezone.utc
                 )
@@ -852,7 +866,9 @@ class AutoReply(commands.Cog):
             ):
 
                 record["warnings"] = 0
+
                 record["violations"] = 0
+
                 record["last_violation"] = None
 
                 return True
@@ -870,11 +886,6 @@ class AutoReply(commands.Cog):
     # =========================================================
     # MODERATOR CHECK
     # =========================================================
-    #
-    # Fungsi ini HANYA untuk akses panel.
-    #
-    # Jangan gunakan fungsi ini sebagai pengecualian toxic.
-    # =========================================================
 
     def _is_moderator(
         self,
@@ -882,9 +893,11 @@ class AutoReply(commands.Cog):
     ):
 
         if member.guild_permissions.administrator:
+
             return True
 
         if member.guild_permissions.manage_guild:
+
             return True
 
         allowed = {
@@ -933,6 +946,7 @@ class AutoReply(commands.Cog):
     ):
 
         if not TOXIC_LOG_CHANNEL_ID:
+
             return
 
         channel = guild.get_channel(
@@ -971,6 +985,7 @@ class AutoReply(commands.Cog):
     async def ensure_panel(self):
 
         if not TOXIC_PANEL_CHANNEL_ID:
+
             return
 
         channel = self.bot.get_channel(
@@ -1054,17 +1069,11 @@ class AutoReply(commands.Cog):
         guild = message.guild
 
         if guild is None:
+
             return
 
         # =====================================================
         # USER EXEMPT
-        # =====================================================
-        #
-        # HANYA ID 1169643619049799740 yang exempt.
-        #
-        # Moderator -> TETAP DIMODERASI
-        # Admin     -> TETAP DIMODERASI
-        # Staff     -> TETAP DIMODERASI
         # =====================================================
 
         if self._is_toxic_exempt(
@@ -1318,9 +1327,6 @@ class AutoReply(commands.Cog):
                 text="nanZ Toxic Moderation"
             )
 
-            # Mulai pelanggaran ke-7,
-            # kirim laporan ke log moderator.
-
             if violation >= 7:
 
                 log_embed = discord.Embed(
@@ -1372,7 +1378,6 @@ class AutoReply(commands.Cog):
             }
         )
 
-        # Maksimal 100 history
         record["history"] = (
             record["history"][-100:]
         )
@@ -1510,9 +1515,11 @@ class AutoReply(commands.Cog):
     ):
 
         if seconds < 60:
+
             return f"{seconds} detik"
 
         if seconds < 3600:
+
             return f"{seconds // 60} menit"
 
         return f"{seconds // 3600} jam"
@@ -1523,7 +1530,9 @@ class AutoReply(commands.Cog):
     # =========================================================
 
     @commands.Cog.listener()
-    async def on_ready(self):
+    async def on_ready(
+        self
+    ):
 
         try:
 
@@ -1543,6 +1552,13 @@ class AutoReply(commands.Cog):
     # =========================================================
     # NORMALIZE TOXIC TEXT
     # =========================================================
+    #
+    # VERSI DIPERBAIKI
+    #
+    # Tidak langsung menghapus semua separator.
+    # Ini penting supaya detector tidak melakukan
+    # pencocokan substring terhadap kalimat normal.
+    # =========================================================
 
     @staticmethod
     def _normalize_toxic_text(
@@ -1553,7 +1569,7 @@ class AutoReply(commands.Cog):
             content or ""
         ).lower()
 
-        # Normalisasi Unicode.
+        # Unicode normalization.
         text = unicodedata.normalize(
             "NFKC",
             text
@@ -1567,55 +1583,39 @@ class AutoReply(commands.Cog):
         )
 
         # Leetspeak umum.
-        translation = str.maketrans(
-            {
-                "0": "o",
-                "1": "i",
-                "3": "e",
-                "4": "a",
-                "5": "s",
-                "7": "t",
-                "@": "a",
-                "$": "s",
-            }
-        )
-
         text = text.translate(
-            translation
+            str.maketrans(
+                {
+                    "0": "o",
+                    "1": "i",
+                    "3": "e",
+                    "4": "a",
+                    "5": "s",
+                    "7": "t",
+                    "@": "a",
+                    "$": "s",
+                }
+            )
         )
 
-        # Semua selain huruf menjadi separator.
-        text = re.sub(
-            r"[^a-z]+",
-            " ",
-            text
-        )
-
-        return text.strip()
+        return text
 
 
-    @staticmethod
-    def _compact_toxic_text(
-        content: str
-    ):
-
-        return re.sub(
-            r"[^a-z]",
-            "",
-            content.lower()
-        )
-
+    # =========================================================
+    # COLLAPSE REPEATED LETTERS
+    # =========================================================
 
     @staticmethod
     def _collapse_repeated_letters(
         content: str
     ):
+        """
+        Contoh:
 
-        # Contoh:
-        # anjjjinggg -> anjing
-        # gobloookkk -> goblok
-        #
-        # Maksimal satu karakter berulang.
+        anjjjinggg -> anjing
+        gobloookkk -> goblok
+        """
+
         return re.sub(
             r"(.)\1+",
             r"\1",
@@ -1626,6 +1626,39 @@ class AutoReply(commands.Cog):
     # =========================================================
     # FIND BADWORD
     # =========================================================
+    #
+    # VERSI ANTI FALSE-POSITIVE
+    #
+    # Detector sekarang TIDAK lagi melakukan:
+    #
+    #     badword in seluruh_kalimat
+    #
+    # karena itu yang bisa menyebabkan false-positive.
+    #
+    # Yang digunakan:
+    #
+    # 1. Exact token
+    # 2. Exact token setelah repeated-letter collapse
+    # 3. Separator antar huruf
+    #
+    # Contoh terdeteksi:
+    #
+    # goblok
+    # g0bl0k
+    # g.o.b.l.o.k
+    # g-o-b-l-o-k
+    # g o b l o k
+    # gobloookkk
+    # anjjjinggg
+    #
+    # Contoh normal:
+    #
+    # bilang aja belum tidur
+    # aku mau tidur
+    # jangan ganggu
+    #
+    # tidak akan dianggap toxic.
+    # =========================================================
 
     def _find_badword(
         self,
@@ -1634,25 +1667,43 @@ class AutoReply(commands.Cog):
 
         original = (
             content or ""
-        ).lower()
+        )
+
+        if not original.strip():
+
+            return None
 
         normalized = self._normalize_toxic_text(
             original
         )
 
-        words = normalized.split()
+        # =====================================================
+        # TOKENIZE
+        #
+        # Hanya ambil rangkaian huruf.
+        #
+        # "bilang aja belum tidur"
+        #
+        # menjadi:
+        #
+        # bilang
+        # aja
+        # belum
+        # tidur
+        # =====================================================
 
-        compact_normalized = (
-            self._compact_toxic_text(
-                normalized
-            )
+        words = re.findall(
+            r"[a-z]+",
+            normalized
         )
 
-        collapsed_normalized = (
-            self._collapse_repeated_letters(
-                compact_normalized
-            )
-        )
+        if not words:
+
+            return None
+
+        # =====================================================
+        # LOOP BADWORDS
+        # =====================================================
 
         for bw in getattr(
             self,
@@ -1666,78 +1717,86 @@ class AutoReply(commands.Cog):
                 )
             )
 
-            if not bw_normalized:
+            # Hanya huruf.
+            bw_letters = re.sub(
+                r"[^a-z]",
+                "",
+                bw_normalized
+            )
+
+            if not bw_letters:
+
                 continue
 
-            bw_compact = (
-                self._compact_toxic_text(
-                    bw_normalized
-                )
-            )
-
-            bw_collapsed = (
-                self._collapse_repeated_letters(
-                    bw_compact
-                )
-            )
-
             # =================================================
-            # 1. Token penuh
+            # 1. EXACT TOKEN
+            #
+            # "goblok" -> kena
+            #
+            # "bilang aja belum tidur"
+            # -> tidak ada token toxic
             # =================================================
 
-            if bw_normalized in words:
+            if bw_letters in words:
+
                 return bw
 
             # =================================================
-            # 2. Variasi separator
+            # 2. REPEATED LETTER
+            #
+            # Hanya dibandingkan dengan SATU TOKEN.
+            #
+            # Tidak lagi:
+            #
+            # badword in seluruh_kalimat
+            # =================================================
+
+            for word in words:
+
+                collapsed_word = (
+                    self._collapse_repeated_letters(
+                        word
+                    )
+                )
+
+                if collapsed_word == bw_letters:
+
+                    return bw
+
+            # =================================================
+            # 3. SEPARATOR
+            #
+            # Contoh:
             #
             # g.o.b.l.o.k
             # g-o-b-l-o-k
             # g o b l o k
+            #
+            # Pattern harus membentuk SELURUH badword.
             # =================================================
 
-            pattern = (
+            separator_pattern = (
                 r"(?<![a-z])"
                 + r"[^a-z0-9]*".join(
-                    re.escape(ch)
-                    for ch in bw_normalized
+                    re.escape(char)
+                    for char in bw_letters
                 )
                 + r"(?![a-z])"
             )
 
             if re.search(
-                pattern,
-                original
+                separator_pattern,
+                normalized
             ):
-                return bw
 
-            # =================================================
-            # 3. Compact
-            #
-            # g.o.b.l.o.k -> goblok
-            # =================================================
-
-            if (
-                bw_compact
-                and bw_compact in compact_normalized
-            ):
-                return bw
-
-            # =================================================
-            # 4. Repeated letters
-            #
-            # anjjjinggg -> anjing
-            # gobloookkk -> goblok
-            # =================================================
-
-            if (
-                bw_collapsed
-                and bw_collapsed in collapsed_normalized
-            ):
                 return bw
 
         return None
 
+
+    # =========================================================
+    # PUBLIC TOXIC CHECK
+    # =========================================================
 
     def contains_badword(
         self,
@@ -1745,7 +1804,9 @@ class AutoReply(commands.Cog):
     ):
 
         return (
-            self._find_badword(content)
+            self._find_badword(
+                content
+            )
             is not None
         )
 
@@ -1762,6 +1823,7 @@ class AutoReply(commands.Cog):
 
         # Abaikan pesan bot.
         if message.author.bot:
+
             return
 
         content = (
@@ -1769,28 +1831,11 @@ class AutoReply(commands.Cog):
         ).strip()
 
         if not content:
+
             return
 
         # =====================================================
         # FITUR 1: TOXIC MODERATION
-        # =====================================================
-        #
-        # Toxic diperiksa SEBELUM command dan auto reply.
-        #
-        # Contoh test:
-        #
-        # goblok
-        # g0bl0k
-        # g.o.b.l.o.k
-        # g-o-b-l-o-k
-        # g o b l o k
-        # anjjjinggg
-        #
-        # User exempt:
-        #
-        # 1169643619049799740
-        #
-        # Moderator/admin lain tetap dimoderasi.
         # =====================================================
 
         detected_badword = self._find_badword(
@@ -1834,6 +1879,7 @@ class AutoReply(commands.Cog):
         )
 
         if ctx.valid:
+
             return
 
         # =====================================================
@@ -2372,9 +2418,6 @@ class ToxicModerationView(
 class ToxicConfirmView(
     discord.ui.View
 ):
-
-    # Disediakan sebagai view persistent tambahan
-    # untuk kompatibilitas pengembangan berikutnya.
 
     def __init__(
         self,
