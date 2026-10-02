@@ -38,229 +38,6 @@ class AutoReply(commands.Cog):
         self.toxic_data = {"members": {}, "panel_message_id": None}
         self._save_lock = asyncio.Lock()
 
-    def _load_database(self):
-        os.makedirs(os.path.dirname(TOXIC_DB_PATH) or ".", exist_ok=True)
-        if not os.path.exists(TOXIC_DB_PATH):
-            self._save_database_sync()
-            return
-        try:
-            with open(TOXIC_DB_PATH, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-            if isinstance(loaded, dict):
-                self.toxic_data.update(loaded)
-                self.toxic_data.setdefault("members", {})
-                self.toxic_data.setdefault("panel_message_id", None)
-        except (json.JSONDecodeError, OSError) as exc:
-            print(f"[TOXIC] Gagal membaca database: {exc}")
-
-    def _save_database_sync(self):
-        os.makedirs(os.path.dirname(TOXIC_DB_PATH) or ".", exist_ok=True)
-        temp_path = TOXIC_DB_PATH + ".tmp"
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(self.toxic_data, f, ensure_ascii=False, indent=2)
-        os.replace(temp_path, TOXIC_DB_PATH)
-
-    async def save_database(self):
-        async with self._save_lock:
-            await asyncio.to_thread(self._save_database_sync)
-
-    async def cog_load(self):
-        self._load_database()
-        self.bot.add_view(ToxicModerationView(self))
-        self.bot.add_view(ToxicConfirmView(self))
-
-    async def cog_unload(self):
-        await self.save_database()
-
-    def _member_key(self, guild_id, user_id):
-        return f"{guild_id}:{user_id}"
-
-    def _get_record(self, guild_id, user_id):
-        key = self._member_key(guild_id, user_id)
-        record = self.toxic_data["members"].setdefault(key, {
-            "warnings": 0,
-            "last_violation": None,
-            "violations": 0,
-            "history": []
-        })
-        return record
-
-    def _refresh_expired(self, record):
-        last = record.get("last_violation")
-        if not last:
-            return False
-        try:
-            last_dt = datetime.fromisoformat(last)
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) - last_dt >= timedelta(hours=WARNING_EXPIRE_HOURS):
-                record["warnings"] = 0
-                record["violations"] = 0
-                record["last_violation"] = None
-                return True
-        except (ValueError, TypeError):
-            return False
-        return False
-
-    def _is_moderator(self, member):
-        if member.guild_permissions.administrator or member.guild_permissions.manage_guild:
-            return True
-        allowed = {rid for rid in MODERATOR_ROLE_IDS if rid}
-        return any(role.id in allowed for role in getattr(member, "roles", []))
-
-    async def _send_log(self, guild, embed):
-        if not TOXIC_LOG_CHANNEL_ID:
-            return
-        channel = guild.get_channel(TOXIC_LOG_CHANNEL_ID)
-        if channel:
-            try:
-                await channel.send(embed=embed)
-            except discord.HTTPException:
-                pass
-
-    async def ensure_panel(self):
-        if not TOXIC_PANEL_CHANNEL_ID:
-            return
-        channel = self.bot.get_channel(TOXIC_PANEL_CHANNEL_ID)
-        if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(TOXIC_PANEL_CHANNEL_ID)
-            except discord.HTTPException:
-                return
-        message_id = self.toxic_data.get("panel_message_id")
-        if message_id:
-            try:
-                await channel.fetch_message(int(message_id))
-                return
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException, ValueError):
-                self.toxic_data["panel_message_id"] = None
-        embed = discord.Embed(
-            title="🛡️ NANZ Toxic Moderation",
-            description=(
-                "Gunakan tombol di bawah untuk mengelola warning member. "
-                "Panel ini bersifat permanen dan tetap aktif setelah bot restart."
-            ),
-            color=discord.Color.blurple()
-        )
-        msg = await channel.send(embed=embed, view=ToxicModerationView(self))
-        self.toxic_data["panel_message_id"] = msg.id
-        await self.save_database()
-
-    async def _moderate_toxic_message(self, message):
-        guild = message.guild
-        if guild is None:
-            return
-        # Bot tidak memoderasi administrator atau moderator yang diizinkan.
-        if isinstance(message.author, discord.Member) and self._is_moderator(message.author):
-            return
-
-        record = self._get_record(guild.id, message.author.id)
-        self._refresh_expired(record)
-        now = datetime.now(timezone.utc)
-        record["violations"] = int(record.get("violations", 0)) + 1
-        violation = record["violations"]
-        record["last_violation"] = now.isoformat()
-
-        try:
-            await message.delete()
-        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-            pass
-
-        if violation <= WARNING_LIMIT:
-            record["warnings"] = violation
-            titles = {
-                1: "⚠️ Peringatan Toxic 1/3",
-                2: "⚠️ Peringatan Toxic 2/3",
-                3: "🚨 Peringatan Terakhir 3/3",
-            }
-            descriptions = {
-                1: "Tolong jaga kata-kata, ya. Mari saling menghargai.",
-                2: "Ini peringatan kedua. Jika terus berlanjut, tindakan timeout akan diberikan.",
-                3: "Ini peringatan terakhir. Pelanggaran berikutnya akan membuatmu terkena timeout.",
-            }
-            embed = discord.Embed(
-                title=titles[violation],
-                description=f"{message.author.mention}\n{descriptions[violation]}",
-                color=discord.Color.orange() if violation < 3 else discord.Color.red()
-            )
-        else:
-            duration = TIMEOUT_DURATIONS.get(violation, MAX_TIMEOUT_SECONDS)
-            duration = min(duration, MAX_TIMEOUT_SECONDS)
-            member = guild.get_member(message.author.id)
-            timeout_ok = False
-            if member:
-                try:
-                    await member.timeout(
-                        timedelta(seconds=duration),
-                        reason=f"Auto toxic moderation: pelanggaran ke-{violation}"
-                    )
-                    timeout_ok = True
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
-
-            duration_text = self._format_duration(duration)
-            embed = discord.Embed(
-                title="🔇 Timeout Otomatis",
-                description=(
-                    f"{message.author.mention} terkena timeout **{duration_text}** "
-                    f"karena pelanggaran toxic ke-{violation}."
-                    + ("" if timeout_ok else "\n⚠️ Timeout gagal diterapkan. Periksa izin bot dan hierarki role.")
-                ),
-                color=discord.Color.red()
-            )
-            # Mulai pelanggaran ke-7, kirim laporan ke log moderator.
-            if violation >= 7:
-                log_embed = discord.Embed(
-                    title="🚨 Pelanggaran Toxic Berulang",
-                    description=(
-                        f"Member: {message.author.mention} (`{message.author.id}`)\n"
-                        f"Pelanggaran: **#{violation}**\n"
-                        f"Tindakan: **Timeout {duration_text}**\n"
-                        f"Channel: {message.channel.mention}"
-                    ),
-                    color=discord.Color.dark_red(),
-                    timestamp=now
-                )
-                await self._send_log(guild, log_embed)
-
-        record.setdefault("history", []).append({
-            "at": now.isoformat(),
-            "violation": violation,
-            "channel_id": message.channel.id,
-            "action": "warning" if violation <= WARNING_LIMIT else "timeout",
-            "duration": TIMEOUT_DURATIONS.get(violation, MAX_TIMEOUT_SECONDS) if violation > WARNING_LIMIT else 0
-        })
-        # Batasi ukuran riwayat agar file JSON tidak terus membesar.
-        record["history"] = record["history"][-100:]
-        await self.save_database()
-
-        try:
-            await message.channel.send(embed=embed, delete_after=15)
-        except discord.HTTPException:
-            pass
-
-        log_embed = discord.Embed(
-            title="Catatan Moderasi Toxic",
-            description=(
-                f"Member: {message.author.mention} (`{message.author.id}`)\n"
-                f"Pelanggaran: **#{violation}**\n"
-                f"Channel: {message.channel.mention}\n"
-                f"Tindakan: **{'Warning' if violation <= WARNING_LIMIT else 'Timeout'}**"
-            ),
-            color=discord.Color.orange(),
-            timestamp=now
-        )
-        await self._send_log(guild, log_embed)
-
-    @staticmethod
-    def _format_duration(seconds):
-        if seconds < 60:
-            return f"{seconds} detik"
-        if seconds < 3600:
-            return f"{seconds // 60} menit"
-        return f"{seconds // 3600} jam"
-
-
         # =============================================
         # KATA-KATA TERLARANG
         # =============================================
@@ -685,6 +462,230 @@ class AutoReply(commands.Cog):
             ],
         }
 
+
+    def _load_database(self):
+        os.makedirs(os.path.dirname(TOXIC_DB_PATH) or ".", exist_ok=True)
+        if not os.path.exists(TOXIC_DB_PATH):
+            self._save_database_sync()
+            return
+        try:
+            with open(TOXIC_DB_PATH, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                self.toxic_data.update(loaded)
+                self.toxic_data.setdefault("members", {})
+                self.toxic_data.setdefault("panel_message_id", None)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"[TOXIC] Gagal membaca database: {exc}")
+
+    def _save_database_sync(self):
+        os.makedirs(os.path.dirname(TOXIC_DB_PATH) or ".", exist_ok=True)
+        temp_path = TOXIC_DB_PATH + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(self.toxic_data, f, ensure_ascii=False, indent=2)
+        os.replace(temp_path, TOXIC_DB_PATH)
+
+    async def save_database(self):
+        async with self._save_lock:
+            await asyncio.to_thread(self._save_database_sync)
+
+    async def cog_load(self):
+        self._load_database()
+        self.bot.add_view(ToxicModerationView(self))
+        self.bot.add_view(ToxicConfirmView(self))
+
+    async def cog_unload(self):
+        await self.save_database()
+
+    def _member_key(self, guild_id, user_id):
+        return f"{guild_id}:{user_id}"
+
+    def _get_record(self, guild_id, user_id):
+        key = self._member_key(guild_id, user_id)
+        record = self.toxic_data["members"].setdefault(key, {
+            "warnings": 0,
+            "last_violation": None,
+            "violations": 0,
+            "history": []
+        })
+        return record
+
+    def _refresh_expired(self, record):
+        last = record.get("last_violation")
+        if not last:
+            return False
+        try:
+            last_dt = datetime.fromisoformat(last)
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - last_dt >= timedelta(hours=WARNING_EXPIRE_HOURS):
+                record["warnings"] = 0
+                record["violations"] = 0
+                record["last_violation"] = None
+                return True
+        except (ValueError, TypeError):
+            return False
+        return False
+
+    def _is_moderator(self, member):
+        if member.guild_permissions.administrator or member.guild_permissions.manage_guild:
+            return True
+        allowed = {rid for rid in MODERATOR_ROLE_IDS if rid}
+        return any(role.id in allowed for role in getattr(member, "roles", []))
+
+    async def _send_log(self, guild, embed):
+        if not TOXIC_LOG_CHANNEL_ID:
+            return
+        channel = guild.get_channel(TOXIC_LOG_CHANNEL_ID)
+        if channel:
+            try:
+                await channel.send(embed=embed)
+            except discord.HTTPException:
+                pass
+
+    async def ensure_panel(self):
+        if not TOXIC_PANEL_CHANNEL_ID:
+            return
+        channel = self.bot.get_channel(TOXIC_PANEL_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(TOXIC_PANEL_CHANNEL_ID)
+            except discord.HTTPException:
+                return
+        message_id = self.toxic_data.get("panel_message_id")
+        if message_id:
+            try:
+                await channel.fetch_message(int(message_id))
+                return
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException, ValueError):
+                self.toxic_data["panel_message_id"] = None
+        embed = discord.Embed(
+            title="🛡️ NANZ Toxic Moderation",
+            description=(
+                "Gunakan tombol di bawah untuk mengelola warning member. "
+                "Panel ini bersifat permanen dan tetap aktif setelah bot restart."
+            ),
+            color=discord.Color.blurple()
+        )
+        msg = await channel.send(embed=embed, view=ToxicModerationView(self))
+        self.toxic_data["panel_message_id"] = msg.id
+        await self.save_database()
+
+    async def _moderate_toxic_message(self, message):
+        guild = message.guild
+        if guild is None:
+            return
+        # Bot tidak memoderasi administrator atau moderator yang diizinkan.
+        if isinstance(message.author, discord.Member) and self._is_moderator(message.author):
+            return
+
+        record = self._get_record(guild.id, message.author.id)
+        self._refresh_expired(record)
+        now = datetime.now(timezone.utc)
+        record["violations"] = int(record.get("violations", 0)) + 1
+        violation = record["violations"]
+        record["last_violation"] = now.isoformat()
+
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
+
+        if violation <= WARNING_LIMIT:
+            record["warnings"] = violation
+            titles = {
+                1: "⚠️ Peringatan Toxic 1/3",
+                2: "⚠️ Peringatan Toxic 2/3",
+                3: "🚨 Peringatan Terakhir 3/3",
+            }
+            descriptions = {
+                1: "Tolong jaga kata-kata, ya. Mari saling menghargai.",
+                2: "Ini peringatan kedua. Jika terus berlanjut, tindakan timeout akan diberikan.",
+                3: "Ini peringatan terakhir. Pelanggaran berikutnya akan membuatmu terkena timeout.",
+            }
+            embed = discord.Embed(
+                title=titles[violation],
+                description=f"{message.author.mention}\n{descriptions[violation]}",
+                color=discord.Color.orange() if violation < 3 else discord.Color.red()
+            )
+        else:
+            duration = TIMEOUT_DURATIONS.get(violation, MAX_TIMEOUT_SECONDS)
+            duration = min(duration, MAX_TIMEOUT_SECONDS)
+            member = guild.get_member(message.author.id)
+            timeout_ok = False
+            if member:
+                try:
+                    await member.timeout(
+                        timedelta(seconds=duration),
+                        reason=f"Auto toxic moderation: pelanggaran ke-{violation}"
+                    )
+                    timeout_ok = True
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+
+            duration_text = self._format_duration(duration)
+            embed = discord.Embed(
+                title="🔇 Timeout Otomatis",
+                description=(
+                    f"{message.author.mention} terkena timeout **{duration_text}** "
+                    f"karena pelanggaran toxic ke-{violation}."
+                    + ("" if timeout_ok else "\n⚠️ Timeout gagal diterapkan. Periksa izin bot dan hierarki role.")
+                ),
+                color=discord.Color.red()
+            )
+            # Mulai pelanggaran ke-7, kirim laporan ke log moderator.
+            if violation >= 7:
+                log_embed = discord.Embed(
+                    title="🚨 Pelanggaran Toxic Berulang",
+                    description=(
+                        f"Member: {message.author.mention} (`{message.author.id}`)\n"
+                        f"Pelanggaran: **#{violation}**\n"
+                        f"Tindakan: **Timeout {duration_text}**\n"
+                        f"Channel: {message.channel.mention}"
+                    ),
+                    color=discord.Color.dark_red(),
+                    timestamp=now
+                )
+                await self._send_log(guild, log_embed)
+
+        record.setdefault("history", []).append({
+            "at": now.isoformat(),
+            "violation": violation,
+            "channel_id": message.channel.id,
+            "action": "warning" if violation <= WARNING_LIMIT else "timeout",
+            "duration": TIMEOUT_DURATIONS.get(violation, MAX_TIMEOUT_SECONDS) if violation > WARNING_LIMIT else 0
+        })
+        # Batasi ukuran riwayat agar file JSON tidak terus membesar.
+        record["history"] = record["history"][-100:]
+        await self.save_database()
+
+        try:
+            await message.channel.send(embed=embed, delete_after=15)
+        except discord.HTTPException:
+            pass
+
+        log_embed = discord.Embed(
+            title="Catatan Moderasi Toxic",
+            description=(
+                f"Member: {message.author.mention} (`{message.author.id}`)\n"
+                f"Pelanggaran: **#{violation}**\n"
+                f"Channel: {message.channel.mention}\n"
+                f"Tindakan: **{'Warning' if violation <= WARNING_LIMIT else 'Timeout'}**"
+            ),
+            color=discord.Color.orange(),
+            timestamp=now
+        )
+        await self._send_log(guild, log_embed)
+
+    @staticmethod
+    def _format_duration(seconds):
+        if seconds < 60:
+            return f"{seconds} detik"
+        if seconds < 3600:
+            return f"{seconds // 60} menit"
+        return f"{seconds // 3600} jam"
+
+
     @commands.Cog.listener()
     async def on_ready(self):
         try:
@@ -697,11 +698,11 @@ class AutoReply(commands.Cog):
         import re
         normalized = re.sub(r"[^a-z0-9]+", " ", content.lower()).strip()
         words = normalized.split()
-        for bw in self.badwords:
+        for bw in getattr(self, "badwords", []):
             bw_normalized = re.sub(r"[^a-z0-9]+", " ", bw.lower()).strip()
             if not bw_normalized:
                 continue
-            if bw_normalized in words or bw_normalized == normalized:
+            if bw_normalized in words or f" {bw_normalized} " in f" {normalized} ":
                 return True
         return False
 
@@ -717,7 +718,9 @@ class AutoReply(commands.Cog):
         if ctx.valid:
             return
 
-        content = message.content.lower().strip()
+        content = (message.content or "").lower().strip()
+        if not content:
+            return
         # =============================================
         # FITUR 1: WARNING KATA KASAR
         # =============================================
