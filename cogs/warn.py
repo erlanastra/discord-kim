@@ -14,7 +14,7 @@ from datetime import timedelta, datetime
 # ROLE IDS
 # ==================================================
 
-MOD_ROLE_ID = 1453103644244316343
+MOD_ROLE_ID = 1555556260269527151
 PEMBINA_ROLE_ID = 1467360501745844446
 OSIS_ROLE_ID = 1427276194876751902
 

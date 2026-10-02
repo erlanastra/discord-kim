@@ -74,12 +74,10 @@ class About(commands.Cog):
                 "**Staff / Pengurus:**\n"
                 "• Guru Besar – Owner\n"
                 "• Mod DC – Mengelola Discord dengan full permission\n"
-                "• Mod YT – Mengelola viewer YouTube Kim dan kadang bantu Mod DC\n"
+                "• Pembina OSIS – Mengarahkan aktivitas OSIS\n"
                 "• OSIS – Membantu pengelolaan event server\n\n"
                 "**Member / Siswa:**\n"
-                "• Murid – Member umum\n"
-                "• Murid Baik – Member yang aktif dan berperilaku positif\n"
-                "• Murid Nakal – Member yang perlu pengawasan lebih"
+                "• Murid – Member umum"
             ),
             color=discord.Color.from_rgb(129, 199, 132)
         ))
