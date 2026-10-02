@@ -226,3 +226,27 @@ afk_data.json
 
 # VS Code
 .vscode/
+
+# =========================================================
+# VPS RUNTIME DATA - JANGAN DI-COMMIT
+# =========================================================
+
+ai_activity.json
+ai_chat_history.json
+staff_activity.json
+staff_attendance.json
+top_stats.json
+
+# Database runtime
+data/streak.db
+donation.db
+donation_backup.db
+cogs/hall_of_time.db
+database/
+
+# Runtime JSON
+data/suggestion_data.json
+data/toxic_moderation.json
+donation_leaderboard.json
+donation_panel.json
+nanz_channel_guide.json
