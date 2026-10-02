@@ -12,50 +12,119 @@ class StaffDirectory(commands.Cog):
         self.bot = bot
 
         # ==========================================
-        # CONFIG
+        # CONFIG NANZ SERVER
         # ==========================================
 
-        self.CHANNEL_ID = 1553032690465251410
+        # Channel utama Staff Directory
+        self.CHANNEL_ID = 1540754204161736915
 
-        # Emoji animasi server (judul panel pertama)
-        self.ARROW_BLUE = "<a:arrowblue:1555096801629970523>"
+        # ==========================================
+        # ROLE NANZ SERVER
+        # ==========================================
 
-        # Judul panel pertama
-        self.HEADER_TITLE = "STAFF DIRECTORY"
-        self.HEADER_COLOR = discord.Color.from_rgb(139, 92, 246)
+        # Role dasar / akses internal seluruh staff
+        self.STAFF_NANZ_ROLE_ID = 1515023431815528468
 
-        # Emoji status server
+        # Guru Besar / Owner
+        self.OWNER_ROLE_ID = 1417582562100117584
+
+        # Moderator Discord
+        self.MOD_DC_ROLE_ID = 1555556260269527151
+
+        # Pembina OSIS
+        self.PEMBINA_OSIS_ROLE_ID = 1467360501745844446
+
+        # OSIS
+        self.OSIS_ROLE_ID = 1427276194876751902
+
+        # Role Off Duty
+        self.OFF_DUTY_ROLE_ID = 1532403343928987909
+
+        # ==========================================
+        # EMOJI KHAS NANZ
+        # ==========================================
+
+        # Semua emoji berikut adalah emoji animasi.
+        # Emoji diambil berdasarkan ID langsung dari guild.
+
+        self.ARROW_BLUE_ID = 1512787254312042496
+        self.ARROW_PURPLE_ID = 1512787191234035803
+
+        # ==========================================
+        # HEADER
+        # ==========================================
+
+        self.HEADER_TITLE = "nanZ SERVER — STAFF DIRECTORY"
+
+        self.HEADER_COLOR = discord.Color.from_rgb(
+            139,
+            92,
+            246
+        )
+
+        # ==========================================
+        # STATUS EMOJI
+        # ==========================================
+
         self.ONLINE_EMOJI_ID = 1553033618845343786
         self.OFFLINE_EMOJI_ID = 1553033468265631796
 
-        # Role staff
+        # ==========================================
+        # STAFF ROLES
+        # ==========================================
+
         self.STAFF_ROLES = [
             {
-                "role_id": 1496838207822889050,
-                "name": "Own",
-                "color": discord.Color.from_rgb(155, 89, 182)
+                "role_id": self.OWNER_ROLE_ID,
+                "name": "GURU BESAR",
+                "color": discord.Color.from_rgb(
+                    255,
+                    193,
+                    7
+                )
             },
             {
-                "role_id": 1496846251914956820,
-                "name": "Guardian",
-                "color": discord.Color.from_rgb(126, 87, 194)
+                "role_id": self.MOD_DC_ROLE_ID,
+                "name": "MOD DC",
+                "color": discord.Color.from_rgb(
+                    88,
+                    101,
+                    242
+                )
             },
             {
-                "role_id": 1542886846508437515,
-                "name": "Event Organizer",
-                "color": discord.Color.from_rgb(171, 112, 214)
+                "role_id": self.PEMBINA_OSIS_ROLE_ID,
+                "name": "PEMBINA OSIS",
+                "color": discord.Color.from_rgb(
+                    46,
+                    204,
+                    113
+                )
             },
             {
-                "role_id": 1542887345873756272,
-                "name": "Creative Studio",
-                "color": discord.Color.from_rgb(186, 104, 200)
-            },
-            {
-                "role_id": 1542887778658951208,
-                "name": "Community Relations",
-                "color": discord.Color.from_rgb(139, 92, 246)
+                "role_id": self.OSIS_ROLE_ID,
+                "name": "OSIS",
+                "color": discord.Color.from_rgb(
+                    52,
+                    152,
+                    219
+                )
             }
         ]
+
+        # ==========================================
+        # OFF DUTY
+        # ==========================================
+
+        self.OFF_DUTY_ROLE = {
+            "role_id": self.OFF_DUTY_ROLE_ID,
+            "name": "OFF DUTY",
+            "color": discord.Color.from_rgb(
+                149,
+                165,
+                166
+            )
+        }
 
         # ==========================================
         # MESSAGE ID
@@ -68,12 +137,14 @@ class StaffDirectory(commands.Cog):
             for role in self.STAFF_ROLES
         }
 
+        self.off_duty_message_id = None
+
         # ==========================================
         # EMBED CACHE
         # ==========================================
 
-        # Menyimpan isi embed terakhir.
-        # Kalau tidak berubah, bot tidak akan PATCH message.
+        # Menyimpan embed terakhir.
+        # Jika tidak berubah, bot tidak melakukan PATCH.
         self.embed_cache = {}
 
         # ==========================================
@@ -81,19 +152,18 @@ class StaffDirectory(commands.Cog):
         # ==========================================
 
         self.activity_file = "staff_activity.json"
+
         self.activity_data = self.load_activity()
 
         # ==========================================
         # REFRESH CONTROL
         # ==========================================
 
-        # Mencegah dua refresh berjalan bersamaan.
         self.refresh_lock = asyncio.Lock()
 
-        # Task debounce untuk presence / role update.
         self.refresh_task = None
 
-        # Waktu debounce.
+        # Debounce refresh
         self.REFRESH_DELAY = 5
 
         # ==========================================
@@ -103,16 +173,45 @@ class StaffDirectory(commands.Cog):
         self.update_directory.start()
 
     # ==========================================
+    # GET NANZ EMOJI
+    # ==========================================
+
+    def get_nanz_emoji(
+        self,
+        guild,
+        emoji_id,
+        fallback
+    ):
+        """
+        Mengambil emoji nanZ berdasarkan ID.
+
+        str(emoji) akan mempertahankan format emoji
+        animasi Discord seperti <a:nama:id>.
+        """
+
+        emoji = guild.get_emoji(
+            emoji_id
+        )
+
+        if emoji:
+
+            return str(emoji)
+
+        return fallback
+
+    # ==========================================
     # LOAD ACTIVITY
     # ==========================================
 
     def load_activity(self):
-        """Membaca database aktivitas staff."""
 
-        if not os.path.exists(self.activity_file):
+        if not os.path.exists(
+            self.activity_file
+        ):
             return {}
 
         try:
+
             with open(
                 self.activity_file,
                 "r",
@@ -124,7 +223,7 @@ class StaffDirectory(commands.Cog):
         except Exception as e:
 
             print(
-                f"[STAFF DIRECTORY] "
+                "[NANZ STAFF DIRECTORY] "
                 f"Gagal membaca activity data: {e}"
             )
 
@@ -135,12 +234,31 @@ class StaffDirectory(commands.Cog):
     # ==========================================
 
     def save_activity(self):
-        """Menyimpan database aktivitas staff."""
 
         try:
 
+            # Pastikan directory tempat file berada
+            # tersedia.
+            directory = os.path.dirname(
+                os.path.abspath(
+                    self.activity_file
+                )
+            )
+
+            os.makedirs(
+                directory,
+                exist_ok=True
+            )
+
+            # Gunakan temporary file agar
+            # penyimpanan lebih aman.
+            temp_file = (
+                self.activity_file
+                + ".tmp"
+            )
+
             with open(
-                self.activity_file,
+                temp_file,
                 "w",
                 encoding="utf-8"
             ) as f:
@@ -152,18 +270,49 @@ class StaffDirectory(commands.Cog):
                     ensure_ascii=False
                 )
 
+                f.flush()
+
+                try:
+                    os.fsync(
+                        f.fileno()
+                    )
+                except Exception:
+                    pass
+
+            os.replace(
+                temp_file,
+                self.activity_file
+            )
+
         except Exception as e:
 
             print(
-                f"[STAFF DIRECTORY] "
+                "[NANZ STAFF DIRECTORY] "
                 f"Gagal menyimpan activity data: {e}"
             )
+
+            # Bersihkan file temporary jika gagal.
+            try:
+
+                if os.path.exists(
+                    temp_file
+                ):
+
+                    os.remove(
+                        temp_file
+                    )
+
+            except Exception:
+                pass
 
     # ==========================================
     # UPDATE LAST ACTIVE
     # ==========================================
 
-    def update_activity(self, member_id):
+    def update_activity(
+        self,
+        member_id
+    ):
 
         timestamp = int(
             datetime.now(
@@ -171,43 +320,128 @@ class StaffDirectory(commands.Cog):
             ).timestamp()
         )
 
-        old_timestamp = self.activity_data.get(
-            str(member_id)
+        old_timestamp = (
+            self.activity_data.get(
+                str(member_id)
+            )
         )
 
-        # Jangan tulis file kalau timestamp
-        # sebenarnya tidak berubah.
+        # Jangan menulis file jika timestamp
+        # ternyata sama.
         if old_timestamp == timestamp:
             return
 
-        self.activity_data[str(member_id)] = timestamp
+        self.activity_data[
+            str(member_id)
+        ] = timestamp
 
         self.save_activity()
+
+    # ==========================================
+    # CHECK OFF DUTY
+    # ==========================================
+
+    def is_off_duty(
+        self,
+        member
+    ):
+
+        return any(
+            role.id
+            == self.OFF_DUTY_ROLE_ID
+            for role in member.roles
+        )
+
+    # ==========================================
+    # CHECK JABATAN STAFF
+    # ==========================================
+
+    def has_staff_position(
+        self,
+        member
+    ):
+
+        staff_role_ids = {
+            self.OWNER_ROLE_ID,
+            self.MOD_DC_ROLE_ID,
+            self.PEMBINA_OSIS_ROLE_ID,
+            self.OSIS_ROLE_ID
+        }
+
+        return any(
+            role.id in staff_role_ids
+            for role in member.roles
+        )
+
+    # ==========================================
+    # CHECK STAFF NANZ
+    # ==========================================
+
+    def has_staff_nanz_role(
+        self,
+        member
+    ):
+
+        return any(
+            role.id
+            == self.STAFF_NANZ_ROLE_ID
+            for role in member.roles
+        )
+
+    # ==========================================
+    # CHECK MEMBER STAFF
+    # ==========================================
+
+    def is_staff_member(
+        self,
+        member
+    ):
+
+        return (
+            self.has_staff_position(
+                member
+            )
+            or
+            self.has_staff_nanz_role(
+                member
+            )
+            or
+            self.is_off_duty(
+                member
+            )
+        )
 
     # ==========================================
     # GET STAFF STATUS
     # ==========================================
 
-    def get_activity_status(self, member):
-        """Mengembalikan (emoji status, teks status)."""
+    def get_activity_status(
+        self,
+        member
+    ):
 
-        timestamp = self.activity_data.get(
-            str(member.id)
+        timestamp = (
+            self.activity_data.get(
+                str(member.id)
+            )
         )
 
         # ======================================
-        # AMBIL EMOJI DARI SERVER BERDASARKAN ID
+        # STATUS EMOJI
         # ======================================
 
-        online_emoji = member.guild.get_emoji(
-            self.ONLINE_EMOJI_ID
+        online_emoji = (
+            member.guild.get_emoji(
+                self.ONLINE_EMOJI_ID
+            )
         )
 
-        offline_emoji = member.guild.get_emoji(
-            self.OFFLINE_EMOJI_ID
+        offline_emoji = (
+            member.guild.get_emoji(
+                self.OFFLINE_EMOJI_ID
+            )
         )
 
-        # Fallback jika emoji tidak ditemukan
         online_emoji = (
             str(online_emoji)
             if online_emoji
@@ -221,13 +455,14 @@ class StaffDirectory(commands.Cog):
         )
 
         # ======================================
-        # STAFF SEDANG AKTIF
+        # STAFF ONLINE
         # ======================================
 
-        if member.status != discord.Status.offline:
+        if (
+            member.status
+            != discord.Status.offline
+        ):
 
-            # Kalau belum ada data sebelumnya,
-            # simpan waktu sekarang.
             if not timestamp:
 
                 timestamp = int(
@@ -242,47 +477,67 @@ class StaffDirectory(commands.Cog):
 
                 self.save_activity()
 
-            return online_emoji, "Aktif sekarang"
+            return (
+                online_emoji,
+                "Aktif sekarang"
+            )
 
         # ======================================
-        # STAFF SUDAH OFFLINE
+        # STAFF OFFLINE
         # ======================================
 
         if timestamp:
 
-            return offline_emoji, f"Aktif <t:{timestamp}:R>"
+            return (
+                offline_emoji,
+                f"Aktif <t:{timestamp}:R>"
+            )
 
         # ======================================
-        # BELUM ADA DATA
+        # BELUM TERDETEKSI
         # ======================================
 
-        return offline_emoji, "Belum terdeteksi"
+        return (
+            offline_emoji,
+            "Belum terdeteksi"
+        )
 
     # ==========================================
     # SORT STAFF
     # ==========================================
 
-    def sort_key(self, member):
-        """Aktif dulu, lalu offline dari yang terakhir aktif terbaru."""
+    def sort_key(
+        self,
+        member
+    ):
 
-        timestamp = self.activity_data.get(
-            str(member.id),
-            0
+        timestamp = (
+            self.activity_data.get(
+                str(member.id),
+                0
+            )
         )
 
         return (
-            0 if member.status != discord.Status.offline else 1,
+            0
+            if member.status
+            != discord.Status.offline
+            else 1,
+
             -timestamp,
+
             member.display_name.lower()
         )
 
     # ==========================================
-    # GENERATE HEADER EMBED
+    # GET ACTIVE STAFF
     # ==========================================
 
-    async def generate_header_embed(self, guild):
+    def get_all_staff_members(
+        self,
+        guild
+    ):
 
-        # Staff unik (satu orang bisa punya lebih dari satu role)
         unique_members = {}
 
         for role_info in self.STAFF_ROLES:
@@ -295,29 +550,151 @@ class StaffDirectory(commands.Cog):
                 continue
 
             for member in role.members:
-                unique_members[member.id] = member
 
-        total = len(unique_members)
+                # ==================================
+                # OFF DUTY DIPISAH
+                # ==================================
+
+                if self.is_off_duty(
+                    member
+                ):
+                    continue
+
+                unique_members[
+                    member.id
+                ] = member
+
+        return unique_members
+
+    # ==========================================
+    # GET OFF DUTY MEMBERS
+    # ==========================================
+
+    def get_off_duty_members(
+        self,
+        guild
+    ):
+
+        role = guild.get_role(
+            self.OFF_DUTY_ROLE_ID
+        )
+
+        if not role:
+            return []
+
+        members = []
+
+        for member in role.members:
+
+            # Member harus punya salah satu
+            # jabatan staff nanZ.
+            if self.has_staff_position(
+                member
+            ):
+
+                members.append(
+                    member
+                )
+
+        return members
+
+    # ==========================================
+    # GENERATE HEADER EMBED
+    # ==========================================
+
+    async def generate_header_embed(
+        self,
+        guild
+    ):
+
+        # ======================================
+        # EMOJI KHAS NANZ
+        # ======================================
+
+        arrow_blue = self.get_nanz_emoji(
+            guild,
+            self.ARROW_BLUE_ID,
+            "🔵"
+        )
+
+        arrow_purple = self.get_nanz_emoji(
+            guild,
+            self.ARROW_PURPLE_ID,
+            "🟣"
+        )
+
+        # ======================================
+        # DATA STAFF
+        # ======================================
+
+        unique_members = (
+            self.get_all_staff_members(
+                guild
+            )
+        )
+
+        off_duty_members = (
+            self.get_off_duty_members(
+                guild
+            )
+        )
+
+        total = len(
+            unique_members
+        )
 
         active = sum(
             1
-            for member in unique_members.values()
-            if member.status != discord.Status.offline
+            for member
+            in unique_members.values()
+            if (
+                member.status
+                != discord.Status.offline
+            )
         )
 
+        offline = (
+            total - active
+        )
+
+        # ======================================
+        # EMBED
+        # ======================================
+
         embed = discord.Embed(
-            title=f"{self.ARROW_BLUE} {self.HEADER_TITLE}",
+            title=(
+                f"{arrow_blue} "
+                f"nanZ SERVER — STAFF DIRECTORY"
+            ),
             description=(
-                "Daftar staff Astralan dan status aktivitasnya."
+                f"{arrow_purple} "
+                "**Staff Directory nanZ Server**\n\n"
+                "Panel ini menampilkan daftar staff "
+                "berdasarkan jabatan dan status aktivitas.\n\n"
+                f"{arrow_blue} Staff yang sedang aktif "
+                "akan ditampilkan dengan status aktif.\n"
+                f"{arrow_purple} Staff yang sedang offline "
+                "tetap ditampilkan berdasarkan aktivitas "
+                "terakhir.\n"
+                f"🔕 Staff yang mengambil **Off Duty** "
+                "dipisahkan ke panel Off Duty."
             ),
             color=self.HEADER_COLOR
         )
 
+        # ======================================
+        # TOTAL
+        # ======================================
+
         embed.add_field(
-            name="Total staff",
+            name="Total Staff",
             value=str(total),
             inline=True
         )
+
+        # ======================================
+        # AKTIF
+        # ======================================
 
         embed.add_field(
             name="Aktif",
@@ -325,10 +702,30 @@ class StaffDirectory(commands.Cog):
             inline=True
         )
 
+        # ======================================
+        # OFFLINE
+        # ======================================
+
         embed.add_field(
             name="Offline",
-            value=str(total - active),
+            value=str(offline),
             inline=True
+        )
+
+        # ======================================
+        # OFF DUTY
+        # ======================================
+
+        embed.add_field(
+            name="Off Duty",
+            value=str(
+                len(off_duty_members)
+            ),
+            inline=True
+        )
+
+        embed.set_footer(
+            text="nanZ Server • Staff Directory"
         )
 
         return embed
@@ -364,7 +761,9 @@ class StaffDirectory(commands.Cog):
 
         if not role:
 
-            embed.title = role_info["name"]
+            embed.title = (
+                role_info["name"]
+            )
 
             embed.description = (
                 "Role tidak ditemukan."
@@ -373,20 +772,182 @@ class StaffDirectory(commands.Cog):
             return embed
 
         # ======================================
-        # URUTKAN MEMBER
+        # MEMBER
+        # ======================================
+
+        # Staff Off Duty tidak muncul
+        # pada panel jabatan masing-masing.
+        members = [
+            member
+            for member in role.members
+            if not self.is_off_duty(
+                member
+            )
+        ]
+
+        # ======================================
+        # SORT
         # ======================================
 
         members = sorted(
-            role.members,
+            members,
             key=self.sort_key
         )
 
         # ======================================
-        # JUDUL
+        # TITLE
         # ======================================
 
         embed.title = (
-            f"{role_info['name']} · {len(members)} staff"
+            f"{role_info['name']} · "
+            f"{len(members)} staff"
+        )
+
+        # ======================================
+        # TIDAK ADA MEMBER
+        # ======================================
+
+        if not members:
+
+            embed.description = (
+                "Belum ada staff pada role ini."
+            )
+
+            return embed
+
+        # ======================================
+        # ENTRIES
+        # ======================================
+
+        entries = []
+
+        for member in members:
+
+            dot, status = (
+                self.get_activity_status(
+                    member
+                )
+            )
+
+            name = (
+                discord.utils.escape_markdown(
+                    member.display_name
+                )
+            )
+
+            entries.append(
+                f"{dot} **{name}** "
+                f"{member.mention}\n"
+                f"-# {status}"
+            )
+
+        # ======================================
+        # LIMIT DISCORD 4096
+        # ======================================
+
+        description = ""
+
+        shown = 0
+
+        for entry in entries:
+
+            if (
+                len(description)
+                + len(entry)
+                + 40
+                > 4096
+            ):
+
+                break
+
+            description += (
+                entry
+                + "\n"
+            )
+
+            shown += 1
+
+        hidden = (
+            len(entries)
+            - shown
+        )
+
+        if hidden > 0:
+
+            description += (
+                f"\n… dan {hidden} "
+                "staff lainnya"
+            )
+
+        embed.description = (
+            description.strip()
+        )
+
+        return embed
+
+    # ==========================================
+    # GENERATE OFF DUTY EMBED
+    # ==========================================
+
+    async def generate_off_duty_embed(
+        self,
+        guild
+    ):
+
+        arrow_purple = self.get_nanz_emoji(
+            guild,
+            self.ARROW_PURPLE_ID,
+            "🟣"
+        )
+
+        role = guild.get_role(
+            self.OFF_DUTY_ROLE_ID
+        )
+
+        embed = discord.Embed(
+            title=(
+                f"{arrow_purple} OFF DUTY"
+            ),
+            color=self.OFF_DUTY_ROLE[
+                "color"
+            ]
+        )
+
+        # ======================================
+        # ROLE TIDAK ADA
+        # ======================================
+
+        if not role:
+
+            embed.description = (
+                "Role Off Duty tidak ditemukan."
+            )
+
+            return embed
+
+        # ======================================
+        # MEMBER OFF DUTY
+        # ======================================
+
+        members = (
+            self.get_off_duty_members(
+                guild
+            )
+        )
+
+        members = sorted(
+            members,
+            key=lambda member:
+                member.display_name.lower()
+        )
+
+        # ======================================
+        # TITLE
+        # ======================================
+
+        embed.title = (
+            f"{arrow_purple} OFF DUTY · "
+            f"{len(members)} staff"
         )
 
         # ======================================
@@ -396,50 +957,175 @@ class StaffDirectory(commands.Cog):
         if not members:
 
             embed.description = (
-                "Belum ada staff di role ini."
+                "Tidak ada staff yang sedang "
+                "mengambil Off Duty."
+            )
+
+            embed.set_footer(
+                text="nanZ Server • Off Duty"
             )
 
             return embed
 
         # ======================================
-        # ADA STAFF
+        # ENTRIES
         # ======================================
 
         entries = []
 
         for member in members:
 
-            dot, status = self.get_activity_status(
-                member
+            name = (
+                discord.utils.escape_markdown(
+                    member.display_name
+                )
             )
 
-            name = discord.utils.escape_markdown(
-                member.display_name
-            )
+            positions = []
+
+            # ==================================
+            # GURU BESAR
+            # ==================================
+
+            if any(
+                role_check.id
+                == self.OWNER_ROLE_ID
+                for role_check
+                in member.roles
+            ):
+
+                positions.append(
+                    "Guru Besar"
+                )
+
+            # ==================================
+            # MOD DC
+            # ==================================
+
+            if any(
+                role_check.id
+                == self.MOD_DC_ROLE_ID
+                for role_check
+                in member.roles
+            ):
+
+                positions.append(
+                    "Mod DC"
+                )
+
+            # ==================================
+            # PEMBINA OSIS
+            # ==================================
+
+            if any(
+                role_check.id
+                == self.PEMBINA_OSIS_ROLE_ID
+                for role_check
+                in member.roles
+            ):
+
+                positions.append(
+                    "Pembina OSIS"
+                )
+
+            # ==================================
+            # OSIS
+            # ==================================
+
+            if any(
+                role_check.id
+                == self.OSIS_ROLE_ID
+                for role_check
+                in member.roles
+            ):
+
+                positions.append(
+                    "OSIS"
+                )
+
+            if positions:
+
+                position_text = (
+                    " • ".join(
+                        positions
+                    )
+                )
+
+            else:
+
+                position_text = (
+                    "Staff nanZ"
+                )
 
             entries.append(
-                f"{dot} **{name}** {member.mention}\n"
-                f"-# {status}"
+                f"🔕 **{name}** "
+                f"{member.mention}\n"
+                f"-# {position_text} • "
+                "Sedang Off Duty"
             )
 
-        # Batas deskripsi embed = 4096 karakter
+        # ======================================
+        # DESCRIPTION LIMIT
+        # ======================================
+
         description = ""
+
         shown = 0
 
         for entry in entries:
 
-            if len(description) + len(entry) + 40 > 4096:
+            if (
+                len(description)
+                + len(entry)
+                + 40
+                > 4096
+            ):
+
                 break
 
-            description += entry + "\n"
+            description += (
+                entry
+                + "\n"
+            )
+
             shown += 1
 
-        hidden = len(entries) - shown
+        hidden = (
+            len(entries)
+            - shown
+        )
 
         if hidden > 0:
-            description += f"\n… dan {hidden} staff lainnya"
 
-        embed.description = description.strip()
+            description += (
+                f"\n… dan {hidden} "
+                "staff lainnya"
+            )
+
+        embed.description = (
+            description.strip()
+        )
+
+        # ======================================
+        # INFO
+        # ======================================
+
+        embed.add_field(
+            name="Status Off Duty",
+            value=(
+                "Staff yang tercantum di panel ini "
+                "sedang mengambil Off Duty.\n\n"
+                "Selama Off Duty, role **Staff nanZ** "
+                "dapat dicabut sehingga staff tidak "
+                "memiliki akses ke internal server "
+                "sesuai sistem role server."
+            ),
+            inline=False
+        )
+
+        embed.set_footer(
+            text="nanZ Server • Off Duty"
+        )
 
         return embed
 
@@ -447,40 +1133,105 @@ class StaffDirectory(commands.Cog):
     # BUILD PANEL
     # ==========================================
 
-    async def build_panel(self, guild, key, role_info):
+    async def build_panel(
+        self,
+        guild,
+        key,
+        role_info
+    ):
+
+        # ======================================
+        # HEADER
+        # ======================================
 
         if key == "header":
-            return await self.generate_header_embed(guild)
 
-        return await self.generate_role_embed(
-            guild,
-            role_info
+            return await (
+                self.generate_header_embed(
+                    guild
+                )
+            )
+
+        # ======================================
+        # OFF DUTY
+        # ======================================
+
+        if key == "off_duty":
+
+            return await (
+                self.generate_off_duty_embed(
+                    guild
+                )
+            )
+
+        # ======================================
+        # STAFF ROLE
+        # ======================================
+
+        return await (
+            self.generate_role_embed(
+                guild,
+                role_info
+            )
         )
 
     # ==========================================
-    # PANEL ID HELPER
+    # GET PANEL ID
     # ==========================================
 
-    def get_panel_id(self, key):
+    def get_panel_id(
+        self,
+        key
+    ):
 
         if key == "header":
+
             return self.header_message_id
 
-        return self.message_ids.get(key)
+        if key == "off_duty":
 
-    def set_panel_id(self, key, message_id):
+            return self.off_duty_message_id
+
+        return self.message_ids.get(
+            key
+        )
+
+    # ==========================================
+    # SET PANEL ID
+    # ==========================================
+
+    def set_panel_id(
+        self,
+        key,
+        message_id
+    ):
 
         if key == "header":
-            self.header_message_id = message_id
+
+            self.header_message_id = (
+                message_id
+            )
+
+        elif key == "off_duty":
+
+            self.off_duty_message_id = (
+                message_id
+            )
 
         else:
-            self.message_ids[key] = message_id
+
+            self.message_ids[key] = (
+                message_id
+            )
 
     # ==========================================
-    # FIND OLD STAFF MESSAGES
+    # FIND EXISTING MESSAGES
     # ==========================================
 
-    async def find_existing_messages(self, channel):
+    async def find_existing_messages(
+        self,
+        channel
+    ):
 
         found = {}
 
@@ -490,54 +1241,120 @@ class StaffDirectory(commands.Cog):
                 limit=100
             ):
 
-                if message.author != self.bot.user:
+                # ==================================
+                # HANYA MESSAGE BOT
+                # ==================================
+
+                if (
+                    message.author
+                    != self.bot.user
+                ):
+
                     continue
 
                 if not message.embeds:
                     continue
 
-                title = message.embeds[0].title
+                title = (
+                    message.embeds[0].title
+                )
 
                 if not title:
                     continue
 
-                # Panel pertama
+                # ==================================
+                # HEADER
+                # ==================================
+
                 if (
-                    self.HEADER_TITLE in title
-                    and not self.header_message_id
-                    and "header" not in found
+                    (
+                        self.HEADER_TITLE
+                        in title
+                        or
+                        "STAFF DIRECTORY"
+                        in title
+                    )
+                    and
+                    not self.header_message_id
+                    and
+                    "header"
+                    not in found
                 ):
 
-                    found["header"] = message.id
+                    found[
+                        "header"
+                    ] = message.id
 
                     continue
 
-                # Panel role
-                for role_info in self.STAFF_ROLES:
+                # ==================================
+                # OFF DUTY
+                # ==================================
 
-                    role_id = role_info["role_id"]
+                if (
+                    "OFF DUTY"
+                    in title.upper()
+                    and
+                    "off_duty"
+                    not in found
+                    and
+                    not self.off_duty_message_id
+                ):
 
-                    if self.message_ids.get(role_id):
+                    found[
+                        "off_duty"
+                    ] = message.id
+
+                    continue
+
+                # ==================================
+                # STAFF ROLE PANEL
+                # ==================================
+
+                for role_info in (
+                    self.STAFF_ROLES
+                ):
+
+                    role_id = (
+                        role_info[
+                            "role_id"
+                        ]
+                    )
+
+                    if self.message_ids.get(
+                        role_id
+                    ):
+
                         continue
 
                     if role_id in found:
+
                         continue
 
-                    name = role_info["name"]
+                    name = (
+                        role_info[
+                            "name"
+                        ]
+                    )
 
                     if (
                         title == name
-                        or title.startswith(f"{name} · ")
+                        or
+                        title.startswith(
+                            f"{name} · "
+                        )
                     ):
 
-                        found[role_id] = message.id
+                        found[
+                            role_id
+                        ] = message.id
 
                         break
 
         except discord.HTTPException as e:
 
             print(
-                f"[STAFF DIRECTORY] "
+                "[NANZ STAFF DIRECTORY] "
                 f"Gagal mencari message lama: {e}"
             )
 
@@ -547,30 +1364,37 @@ class StaffDirectory(commands.Cog):
     # SCHEDULE REFRESH
     # ==========================================
 
-    def schedule_refresh(self, guild):
+    def schedule_refresh(
+        self,
+        guild
+    ):
 
-        # Kalau task sebelumnya masih berjalan,
-        # tidak membuat task baru.
         if (
             self.refresh_task
             and not self.refresh_task.done()
         ):
+
             return
 
-        self.refresh_task = asyncio.create_task(
-            self._delayed_refresh(guild)
+        self.refresh_task = (
+            asyncio.create_task(
+                self._delayed_refresh(
+                    guild
+                )
+            )
         )
 
     # ==========================================
     # DELAYED REFRESH
     # ==========================================
 
-    async def _delayed_refresh(self, guild):
+    async def _delayed_refresh(
+        self,
+        guild
+    ):
 
         try:
 
-            # Tunggu beberapa detik supaya
-            # event yang datang bersamaan digabung.
             await asyncio.sleep(
                 self.REFRESH_DELAY
             )
@@ -586,7 +1410,7 @@ class StaffDirectory(commands.Cog):
         except Exception as e:
 
             print(
-                f"[STAFF DIRECTORY] "
+                "[NANZ STAFF DIRECTORY] "
                 f"Refresh task error: {e}"
             )
 
@@ -594,16 +1418,24 @@ class StaffDirectory(commands.Cog):
     # REFRESH ALL PANELS
     # ==========================================
 
-    async def refresh_all_panels(self, guild):
+    async def refresh_all_panels(
+        self,
+        guild
+    ):
 
         # ======================================
         # LOCK
         # ======================================
 
         if self.refresh_lock.locked():
+
             return
 
         async with self.refresh_lock:
+
+            # ==================================
+            # CHANNEL
+            # ==================================
 
             channel = self.bot.get_channel(
                 self.CHANNEL_ID
@@ -612,23 +1444,27 @@ class StaffDirectory(commands.Cog):
             if not channel:
 
                 print(
-                    "[STAFF DIRECTORY] "
+                    "[NANZ STAFF DIRECTORY] "
                     "Channel tidak ditemukan."
                 )
 
                 return
 
             # ==================================
-            # CARI MESSAGE LAMA SEKALI SAJA
+            # FIND OLD MESSAGES
             # ==================================
 
             has_missing = (
                 not self.header_message_id
+                or not self.off_duty_message_id
                 or any(
                     not self.message_ids.get(
-                        role_info["role_id"]
+                        role_info[
+                            "role_id"
+                        ]
                     )
-                    for role_info in self.STAFF_ROLES
+                    for role_info
+                    in self.STAFF_ROLES
                 )
             )
 
@@ -640,7 +1476,10 @@ class StaffDirectory(commands.Cog):
                     )
                 )
 
-                for key, message_id in found_messages.items():
+                for (
+                    key,
+                    message_id
+                ) in found_messages.items():
 
                     self.set_panel_id(
                         key,
@@ -648,20 +1487,58 @@ class StaffDirectory(commands.Cog):
                     )
 
             # ==================================
-            # UPDATE SETIAP PANEL
+            # PANEL ORDER
             # ==================================
 
-            panels = [("header", None)] + [
-                (role_info["role_id"], role_info)
-                for role_info in self.STAFF_ROLES
+            panels = [
+                (
+                    "header",
+                    None
+                )
             ]
 
-            for key, role_info in panels:
+            # Guru Besar
+            # Mod DC
+            # Pembina OSIS
+            # OSIS
+            panels.extend(
+                [
+                    (
+                        role_info[
+                            "role_id"
+                        ],
+                        role_info
+                    )
+                    for role_info
+                    in self.STAFF_ROLES
+                ]
+            )
+
+            # Off Duty paling bawah
+            panels.append(
+                (
+                    "off_duty",
+                    self.OFF_DUTY_ROLE
+                )
+            )
+
+            # ==================================
+            # UPDATE PANEL
+            # ==================================
+
+            for (
+                key,
+                role_info
+            ) in panels:
 
                 label = (
-                    "Header"
+                    "Judul"
                     if key == "header"
-                    else role_info["name"]
+                    else
+                    "Off Duty"
+                    if key == "off_duty"
+                    else
+                    role_info["name"]
                 )
 
                 try:
@@ -673,10 +1550,12 @@ class StaffDirectory(commands.Cog):
                     )
 
                     # ==================================
-                    # UBAH EMBED MENJADI DATA
+                    # EMBED DATA
                     # ==================================
 
-                    embed_data = embed.to_dict()
+                    embed_data = (
+                        embed.to_dict()
+                    )
 
                     old_embed_data = (
                         self.embed_cache.get(
@@ -684,8 +1563,10 @@ class StaffDirectory(commands.Cog):
                         )
                     )
 
-                    message_id = self.get_panel_id(
-                        key
+                    message_id = (
+                        self.get_panel_id(
+                            key
+                        )
                     )
 
                     # ==================================
@@ -694,8 +1575,8 @@ class StaffDirectory(commands.Cog):
 
                     if message_id:
 
-                        # Kalau embed sama persis,
-                        # JANGAN kirim PATCH.
+                        # Tidak berubah,
+                        # jangan PATCH Discord.
                         if (
                             old_embed_data
                             == embed_data
@@ -705,8 +1586,6 @@ class StaffDirectory(commands.Cog):
 
                         try:
 
-                            # PartialMessage memungkinkan
-                            # edit langsung tanpa fetch_message().
                             message = (
                                 channel.get_partial_message(
                                     message_id
@@ -726,7 +1605,7 @@ class StaffDirectory(commands.Cog):
                         except discord.NotFound:
 
                             print(
-                                "[STAFF DIRECTORY] "
+                                "[NANZ STAFF DIRECTORY] "
                                 f"Message {label} "
                                 "sudah tidak ditemukan."
                             )
@@ -744,7 +1623,7 @@ class StaffDirectory(commands.Cog):
                         except discord.HTTPException as e:
 
                             print(
-                                "[STAFF DIRECTORY] "
+                                "[NANZ STAFF DIRECTORY] "
                                 f"Gagal edit "
                                 f"{label}: {e}"
                             )
@@ -752,11 +1631,13 @@ class StaffDirectory(commands.Cog):
                             continue
 
                     # ==================================
-                    # MESSAGE TIDAK ADA
+                    # MESSAGE BELUM ADA
                     # ==================================
 
-                    new_message = await channel.send(
-                        embed=embed
+                    new_message = (
+                        await channel.send(
+                            embed=embed
+                        )
                     )
 
                     self.set_panel_id(
@@ -769,14 +1650,14 @@ class StaffDirectory(commands.Cog):
                     ] = embed_data
 
                     print(
-                        "[STAFF DIRECTORY] "
+                        "[NANZ STAFF DIRECTORY] "
                         f"Panel {label} dibuat."
                     )
 
                 except Exception as e:
 
                     print(
-                        "[STAFF DIRECTORY] "
+                        "[NANZ STAFF DIRECTORY] "
                         f"Error {label}: {e}"
                     )
 
@@ -785,35 +1666,46 @@ class StaffDirectory(commands.Cog):
     # ==========================================
 
     @commands.Cog.listener()
-    async def on_message(self, message):
+    async def on_message(
+        self,
+        message
+    ):
 
+        # Jangan proses bot
         if message.author.bot:
+
             return
 
+        # Pastikan Member
         if not isinstance(
             message.author,
             discord.Member
         ):
+
             return
 
         member = message.author
 
-        # Cek apakah member adalah staff
-        is_staff = any(
-            role.id in self.message_ids
-            for role in member.roles
-        )
+        # ======================================
+        # STAFF
+        # ======================================
 
-        if not is_staff:
+        if not self.is_staff_member(
+            member
+        ):
+
             return
 
-        # Simpan aktivitas terakhir
+        # ======================================
+        # UPDATE ACTIVITY
+        # ======================================
+
         self.update_activity(
             member.id
         )
 
     # ==========================================
-    # STAFF ONLINE / OFFLINE
+    # PRESENCE UPDATE
     # ==========================================
 
     @commands.Cog.listener()
@@ -823,13 +1715,14 @@ class StaffDirectory(commands.Cog):
         after
     ):
 
-        # Cek apakah staff
-        is_staff = any(
-            role.id in self.message_ids
-            for role in after.roles
-        )
+        # ======================================
+        # STAFF
+        # ======================================
 
-        if not is_staff:
+        if not self.is_staff_member(
+            after
+        ):
+
             return
 
         # ======================================
@@ -837,23 +1730,23 @@ class StaffDirectory(commands.Cog):
         # ======================================
 
         if (
-            before.status == discord.Status.offline
-            and after.status != discord.Status.offline
+            before.status
+            == discord.Status.offline
+            and
+            after.status
+            != discord.Status.offline
         ):
 
-            # Simpan aktivitas terakhir
             self.update_activity(
                 after.id
             )
 
-            # Jangan langsung refresh.
-            # Masukkan ke debounce.
             self.schedule_refresh(
                 after.guild
             )
 
     # ==========================================
-    # ROLE STAFF BERUBAH
+    # MEMBER UPDATE
     # ==========================================
 
     @commands.Cog.listener()
@@ -864,19 +1757,24 @@ class StaffDirectory(commands.Cog):
     ):
 
         # ======================================
-        # TIDAK ADA PERUBAHAN ROLE
+        # ROLE TIDAK BERUBAH
         # ======================================
 
         if before.roles == after.roles:
+
             return
 
         # ======================================
-        # CEK APAKAH ROLE STAFF TERKAIT
+        # ROLE YANG DIPANTAU
         # ======================================
 
         staff_role_ids = {
-            role["role_id"]
-            for role in self.STAFF_ROLES
+            self.OWNER_ROLE_ID,
+            self.MOD_DC_ROLE_ID,
+            self.PEMBINA_OSIS_ROLE_ID,
+            self.OSIS_ROLE_ID,
+            self.STAFF_NANZ_ROLE_ID,
+            self.OFF_DUTY_ROLE_ID
         }
 
         before_roles = {
@@ -889,21 +1787,24 @@ class StaffDirectory(commands.Cog):
             for role in after.roles
         }
 
-        # Role yang berubah
         changed_roles = (
-            before_roles ^ after_roles
+            before_roles
+            ^ after_roles
         )
 
-        # Kalau bukan role staff,
-        # tidak perlu refresh directory.
+        # ======================================
+        # BUKAN ROLE STAFF
+        # ======================================
+
         if not (
             changed_roles
             & staff_role_ids
         ):
+
             return
 
         # ======================================
-        # REFRESH DENGAN DEBOUNCE
+        # REFRESH
         # ======================================
 
         self.schedule_refresh(
@@ -911,11 +1812,15 @@ class StaffDirectory(commands.Cog):
         )
 
     # ==========================================
-    # AUTO REFRESH
+    # AUTO REFRESH 10 MENIT
     # ==========================================
 
-    @tasks.loop(minutes=10)
-    async def update_directory(self):
+    @tasks.loop(
+        minutes=10
+    )
+    async def update_directory(
+        self
+    ):
 
         await self.bot.wait_until_ready()
 
@@ -924,6 +1829,7 @@ class StaffDirectory(commands.Cog):
         )
 
         if not channel:
+
             return
 
         await self.refresh_all_panels(
@@ -935,7 +1841,9 @@ class StaffDirectory(commands.Cog):
     # ==========================================
 
     @update_directory.before_loop
-    async def before_update_directory(self):
+    async def before_update_directory(
+        self
+    ):
 
         await self.bot.wait_until_ready()
 
@@ -954,36 +1862,108 @@ class StaffDirectory(commands.Cog):
         ctx
     ):
 
-        self.CHANNEL_ID = ctx.channel.id
+        # ======================================
+        # CHANNEL TETAP NANZ
+        # ======================================
+
+        self.CHANNEL_ID = (
+            1540754204161736915
+        )
+
+        # ======================================
+        # HAPUS COMMAND
+        # ======================================
 
         try:
 
             await ctx.message.delete()
 
         except Exception:
+
             pass
 
-        # Reset cache
+        # ======================================
+        # RESET CACHE
+        # ======================================
+
         self.embed_cache.clear()
 
         # ======================================
-        # BUAT PANEL BARU
+        # RESET MESSAGE IDS
         # ======================================
 
-        panels = [("header", None)] + [
-            (role_info["role_id"], role_info)
-            for role_info in self.STAFF_ROLES
+        self.header_message_id = None
+
+        self.off_duty_message_id = None
+
+        self.message_ids = {
+            role["role_id"]: None
+            for role in self.STAFF_ROLES
+        }
+
+        # ======================================
+        # AMBIL CHANNEL
+        # ======================================
+
+        channel = self.bot.get_channel(
+            self.CHANNEL_ID
+        )
+
+        if not channel:
+
+            await ctx.send(
+                "❌ Channel Staff Directory "
+                "nanZ tidak ditemukan.",
+                delete_after=10
+            )
+
+            return
+
+        # ======================================
+        # PANEL ORDER
+        # ======================================
+
+        panels = [
+            (
+                "header",
+                None
+            )
         ]
 
-        for key, role_info in panels:
+        panels.extend(
+            [
+                (
+                    role_info["role_id"],
+                    role_info
+                )
+                for role_info
+                in self.STAFF_ROLES
+            ]
+        )
+
+        panels.append(
+            (
+                "off_duty",
+                self.OFF_DUTY_ROLE
+            )
+        )
+
+        # ======================================
+        # BUAT PANEL
+        # ======================================
+
+        for (
+            key,
+            role_info
+        ) in panels:
 
             embed = await self.build_panel(
-                ctx.guild,
+                channel.guild,
                 key,
                 role_info
             )
 
-            message = await ctx.send(
+            message = await channel.send(
                 embed=embed
             )
 
@@ -997,7 +1977,7 @@ class StaffDirectory(commands.Cog):
             ] = embed.to_dict()
 
         print(
-            "[STAFF DIRECTORY] "
+            "[NANZ STAFF DIRECTORY] "
             "Directory berhasil dibuat."
         )
 
@@ -1005,7 +1985,9 @@ class StaffDirectory(commands.Cog):
     # UNLOAD
     # ==========================================
 
-    def cog_unload(self):
+    def cog_unload(
+        self
+    ):
 
         self.update_directory.cancel()
 
@@ -1021,7 +2003,9 @@ class StaffDirectory(commands.Cog):
 # SETUP
 # ==============================================
 
-async def setup(bot):
+async def setup(
+    bot
+):
 
     await bot.add_cog(
         StaffDirectory(bot)
