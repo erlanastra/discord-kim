@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 # KONFIGURASI TOXIC MODERATION
 # Isi ID channel/role setelah dibuat. Nilai 0 = belum diatur.
 # =========================================================
-TOXIC_LOG_CHANNEL_ID = 1555580646879924294
+TOXIC_LOG_CHANNEL_ID = 1555580646879924294 
 TOXIC_PANEL_CHANNEL_ID = 1555580562742444192
 MODERATOR_ROLE_IDS = [1555556260269527151]
 TOXIC_DB_PATH = "data/toxic_moderation.json"
@@ -486,12 +486,12 @@ class AutoReply(commands.Cog):
         os.replace(temp_path, TOXIC_DB_PATH)
 
     async def save_database(self):
-    async with self._save_lock:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            self._save_database_sync
-        )
+        async with self._save_lock:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                self._save_database_sync
+            )
 
     async def cog_load(self):
         self._load_database()
