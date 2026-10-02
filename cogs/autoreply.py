@@ -697,18 +697,58 @@ class AutoReply(commands.Cog):
         except (discord.HTTPException, discord.Forbidden) as exc:
             print(f"[TOXIC] Gagal memastikan panel: {exc}")
 
-    def contains_badword(self, content: str) -> bool:
-        # Normalisasi tanda baca agar kata seperti "anjing!" tetap terdeteksi.
+    @staticmethod
+    def _normalize_toxic_text(content: str) -> str:
+        """Normalisasi teks untuk menangkap variasi huruf/angka tanpa mengubah kata biasa."""
         import re
-        normalized = re.sub(r"[^a-z0-9]+", " ", content.lower()).strip()
+
+        text = (content or "").lower()
+
+        # Leetspeak umum -> huruf normal.
+        translation = str.maketrans({
+            "0": "o",
+            "1": "i",
+            "3": "e",
+            "4": "a",
+            "5": "s",
+            "7": "t",
+            "@": "a",
+            "$": "s",
+        })
+        text = text.translate(translation)
+
+        # Tanda baca/spasi menjadi pemisah biasa.
+        return re.sub(r"[^a-z]+", " ", text).strip()
+
+    def _find_badword(self, content: str):
+        """Kembalikan kata toxic yang terdeteksi, atau None jika tidak ada."""
+        import re
+
+        original = (content or "").lower()
+        normalized = self._normalize_toxic_text(original)
         words = normalized.split()
+
         for bw in getattr(self, "badwords", []):
-            bw_normalized = re.sub(r"[^a-z0-9]+", " ", bw.lower()).strip()
+            bw_normalized = self._normalize_toxic_text(bw)
             if not bw_normalized:
                 continue
-            if bw_normalized in words or f" {bw_normalized} " in f" {normalized} ":
-                return True
-        return False
+
+            # 1. Deteksi kata normal / token penuh.
+            if bw_normalized in words:
+                return bw
+
+            # 2. Deteksi variasi seperti a.n.j.i.n.g / a-n-j-i-n-g.
+            #    Batas karakter mencegah substring di dalam kata lain.
+            pattern = r"(?<![a-z])" + r"[^a-z0-9]*".join(
+                re.escape(ch) for ch in bw_normalized
+            ) + r"(?![a-z])"
+            if re.search(pattern, original):
+                return bw
+
+        return None
+
+    def contains_badword(self, content: str) -> bool:
+        return self._find_badword(content) is not None
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -716,25 +756,35 @@ class AutoReply(commands.Cog):
         if message.author.bot:
             return
 
-        ctx = await self.bot.get_context(message)
-
-        # Ignore command bot
-        if ctx.valid:
-            return
-
-        content = (message.content or "").lower().strip()
+        content = (message.content or "").strip()
         if not content:
             return
+
         # =============================================
-        # FITUR 1: WARNING KATA KASAR
+        # FITUR 1: TOXIC MODERATION — PRIORITAS UTAMA
         # =============================================
-        if self.contains_badword(content):
+        # Toxic harus diperiksa SEBELUM command/auto-reply supaya pesan seperti
+        # "!command goblok" tidak lolos hanya karena dianggap command valid.
+        detected_badword = self._find_badword(content)
+        if detected_badword:
+            print(
+                f"[TOXIC] DETECTED | user={message.author} "
+                f"({message.author.id}) | word={detected_badword!r} | "
+                f"channel=#{getattr(message.channel, 'name', message.channel.id)} | "
+                f"content={content[:200]!r}"
+            )
             await self._moderate_toxic_message(message)
             return
 
         # =============================================
-        # FITUR 2: AUTO REPLY RESPONSES
-        # FITUR 2: AUTO REPLY RESPONSES
+        # FITUR 2: COMMAND CHECK
+        # =============================================
+        ctx = await self.bot.get_context(message)
+        if ctx.valid:
+            return
+
+        # =============================================
+        # FITUR 3: AUTO REPLY RESPONSES
         # Cek keyword dulu — kalau cocok, balas teks seperti biasa.
         # Kalau ini adalah reply ke bot tapi tidak ada keyword → kirim stiker.
         # =============================================
