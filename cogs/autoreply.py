@@ -57,7 +57,7 @@ class AutoReply(commands.Cog):
             "setan", "setang", "biadab", "firaun",
             # goblok/bodoh variants
             "goblok", "gblok", "govlok", "goblock", "goblog", "gblog", "goblough",
-            "blog", "blough", "bego", "bgo", "bodo", "bdo", "bdoh", "bodoh",
+            "blough", "bego", "bgo", "bodo", "bdo", "bdoh", "bodoh",
             "t0l0l", "b0d0h", "gblk",
             # monyet variants
             "monyet", "monket", "monkey", "mnyet", "nyet",
@@ -498,6 +498,26 @@ class AutoReply(commands.Cog):
         self.bot.add_view(ToxicModerationView(self))
         self.bot.add_view(ToxicConfirmView(self))
 
+        # =====================================================
+        # TOXIC STARTUP CHECK
+        # =====================================================
+        intents = getattr(self.bot, "intents", None)
+        message_content_enabled = bool(
+            intents and getattr(intents, "message_content", False)
+        )
+
+        print(
+            "[TOXIC] Cog aktif | "
+            f"message_content_intent={message_content_enabled} | "
+            f"badwords={len(self.badwords)}"
+        )
+
+        if not message_content_enabled:
+            print(
+                "[TOXIC] WARNING: message_content intent OFF. "
+                "Bot tidak akan dapat membaca isi pesan Discord."
+            )
+
     async def cog_unload(self):
         await self.save_database()
 
@@ -699,13 +719,25 @@ class AutoReply(commands.Cog):
 
     @staticmethod
     def _normalize_toxic_text(content: str) -> str:
-        """Normalisasi teks untuk menangkap variasi huruf/angka tanpa mengubah kata biasa."""
+        """
+        Normalisasi teks toxic.
+
+        Tujuan:
+        - huruf besar/kecil tidak berpengaruh
+        - leetspeak umum: 0/o, 1/i, 3/e, 4/a, 5/s, 7/t
+        - karakter pemisah seperti ".", "-", "_", dan spasi tetap bisa dideteksi
+        - zero-width/invisible characters dibuang
+        """
         import re
+        import unicodedata
 
-        text = (content or "").lower()
+        text = unicodedata.normalize("NFKC", content or "").lower()
 
-        # Leetspeak umum -> huruf normal.
-        translation = str.maketrans({
+        # Karakter tak terlihat yang sering dipakai untuk mengakali filter.
+        text = re.sub(r"[\u200b-\u200f\u2060\ufeff]", "", text)
+
+        # Leetspeak umum.
+        text = text.translate(str.maketrans({
             "0": "o",
             "1": "i",
             "3": "e",
@@ -714,34 +746,73 @@ class AutoReply(commands.Cog):
             "7": "t",
             "@": "a",
             "$": "s",
-        })
-        text = text.translate(translation)
+        }))
 
-        # Tanda baca/spasi menjadi pemisah biasa.
+        # Semua karakter non-huruf dijadikan spasi.
         return re.sub(r"[^a-z]+", " ", text).strip()
 
+    @staticmethod
+    def _compact_toxic_text(content: str) -> str:
+        """
+        Bentuk compact untuk menangkap:
+        g.o.b.l.o.k
+        g-o-b-l-o-k
+        g o b l o k
+        """
+        import re
+        normalized = AutoReply._normalize_toxic_text(content)
+        return re.sub(r"[^a-z]", "", normalized)
+
+    @staticmethod
+    def _collapse_repeated_letters(content: str) -> str:
+        """
+        ggoobblokk -> goblok
+        anjjjinggg -> anjing
+
+        Hanya dipakai sebagai jalur tambahan agar kata normal
+        tidak langsung dianggap toxic.
+        """
+        import re
+        return re.sub(r"(.)\1{2,}", r"\1\1", content)
+
     def _find_badword(self, content: str):
-        """Kembalikan kata toxic yang terdeteksi, atau None jika tidak ada."""
+        """Kembalikan kata toxic yang terdeteksi, atau None."""
         import re
 
         original = (content or "").lower()
         normalized = self._normalize_toxic_text(original)
         words = normalized.split()
+        compact = self._compact_toxic_text(original)
+        collapsed = self._collapse_repeated_letters(original)
+        collapsed_normalized = self._normalize_toxic_text(collapsed)
+        collapsed_words = collapsed_normalized.split()
 
         for bw in getattr(self, "badwords", []):
             bw_normalized = self._normalize_toxic_text(bw)
             if not bw_normalized:
                 continue
 
-            # 1. Deteksi kata normal / token penuh.
+            # 1. Kata utuh: paling aman dari false positive.
             if bw_normalized in words:
                 return bw
 
-            # 2. Deteksi variasi seperti a.n.j.i.n.g / a-n-j-i-n-g.
-            #    Batas karakter mencegah substring di dalam kata lain.
-            pattern = r"(?<![a-z])" + r"[^a-z0-9]*".join(
-                re.escape(ch) for ch in bw_normalized
-            ) + r"(?![a-z])"
+            # 2. Kata utuh setelah pengulangan huruf dikurangi.
+            if bw_normalized in collapsed_words:
+                return bw
+
+            # 3. Bentuk dipisah tanda baca/spasi:
+            #    g.o.b.l.o.k / g-o-b-l-o-k / g o b l o k
+            compact_bw = re.sub(r"[^a-z]", "", bw_normalized)
+            if len(compact_bw) >= 4 and compact_bw in compact:
+                return bw
+
+            # 4. Variasi dengan separator di antara setiap huruf.
+            #    Batas non-huruf mencegah substring kata biasa ikut kena.
+            pattern = (
+                r"(?<![a-z])"
+                + r"[^a-z0-9]*".join(re.escape(ch) for ch in bw_normalized)
+                + r"(?![a-z])"
+            )
             if re.search(pattern, original):
                 return bw
 
@@ -750,22 +821,64 @@ class AutoReply(commands.Cog):
     def contains_badword(self, content: str) -> bool:
         return self._find_badword(content) is not None
 
+
     @commands.Cog.listener()
     async def on_message(self, message):
+        """
+        Listener utama.
 
+        URUTAN:
+        1. Abaikan bot.
+        2. Ambil message.content.
+        3. DETEKSI TOXIC TERLEBIH DAHULU.
+        4. Kalau toxic -> hapus, warning/timeout, simpan history, log.
+        5. Kalau bukan toxic -> lanjut command/auto-reply.
+
+        =========================================================
+        # TEST TOXIC
+        =========================================================
+        Setelah bot restart, kirim pesan berikut di channel biasa:
+
+            goblok
+            anjing
+            k.o.n.t.o.l
+            g-o-b-l-o-k
+            g o b l o k
+            g0bl0k
+            anjjjinggg
+
+        Untuk tes normal yang TIDAK boleh dianggap toxic:
+
+            blog
+            gol
+            anjing-anjing (bagian "anjing" tetap akan dianggap toxic)
+            hello
+
+        Console yang diharapkan saat toxic terdeteksi:
+
+            [TOXIC] DETECTED | user=... | word='goblok' | channel=#...
+
+        Kalau tidak ada log tersebut, periksa console saat startup dan pastikan
+        cog autoreply berhasil diload.
+        =========================================================
+        """
         if message.author.bot:
             return
 
         content = (message.content or "").strip()
+
+        # DEBUG: bila ingin memastikan message.content masuk ke bot,
+        # sementara uncomment dua baris berikut:
+        # print(f"[TOXIC DEBUG] channel={message.channel.id} content={content!r}")
+
         if not content:
             return
 
         # =============================================
         # FITUR 1: TOXIC MODERATION — PRIORITAS UTAMA
         # =============================================
-        # Toxic harus diperiksa SEBELUM command/auto-reply supaya pesan seperti
-        # "!command goblok" tidak lolos hanya karena dianggap command valid.
         detected_badword = self._find_badword(content)
+
         if detected_badword:
             print(
                 f"[TOXIC] DETECTED | user={message.author} "
@@ -773,7 +886,12 @@ class AutoReply(commands.Cog):
                 f"channel=#{getattr(message.channel, 'name', message.channel.id)} | "
                 f"content={content[:200]!r}"
             )
-            await self._moderate_toxic_message(message)
+
+            try:
+                await self._moderate_toxic_message(message)
+            except Exception as exc:
+                # Jangan biarkan error moderation menghentikan listener.
+                print(f"[TOXIC] ERROR saat moderation: {type(exc).__name__}: {exc}")
             return
 
         # =============================================
@@ -784,13 +902,11 @@ class AutoReply(commands.Cog):
             return
 
         # =============================================
-        # FITUR 3: AUTO REPLY RESPONSES
-        # Cek keyword dulu — kalau cocok, balas teks seperti biasa.
-        # Kalau ini adalah reply ke bot tapi tidak ada keyword → kirim stiker.
+        # FITUR 3: AUTO REPLY
         # =============================================
         words = content.split()
 
-        # FIX: fetch manual kalau resolved belum ke-cache Discord
+        # FIX: fetch manual kalau resolved belum di-cache Discord.
         is_reply_to_bot = False
         if message.reference and message.reference.message_id:
             try:
@@ -806,12 +922,9 @@ class AutoReply(commands.Cog):
         keyword_matched = False
 
         for trigger, replies in self.responses.items():
-
-            if (
-                trigger == content
-                or content.startswith(trigger + " ")
-            ):
+            if trigger == content or content.startswith(trigger + " "):
                 keyword_matched = True
+
                 async with message.channel.typing():
                     await asyncio.sleep(random.uniform(1, 2))
 
@@ -820,12 +933,16 @@ class AutoReply(commands.Cog):
                     color=discord.Color.random()
                 )
 
-                await message.reply(
-                    embed=embed,
-                    mention_author=False
-                )
+                try:
+                    await message.reply(
+                        embed=embed,
+                        mention_author=False
+                    )
+                except discord.HTTPException as exc:
+                    print(f"[AUTOREPLY] Gagal mengirim reply: {exc}")
 
                 break
+
 
 
 class ToxicMemberModal(discord.ui.Modal):
