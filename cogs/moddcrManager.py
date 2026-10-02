@@ -30,7 +30,11 @@ class ModDCRoleManager(commands.Cog):
     @commands.command(name="moddc")
     @commands.guild_only()
     @commands.has_permissions(administrator=True)
-    async def moddc(self, ctx, target: discord.Member = None):
+    async def moddc(
+        self,
+        ctx,
+        target: discord.Member = None
+    ):
 
         guild = ctx.guild
 
@@ -42,6 +46,16 @@ class ModDCRoleManager(commands.Cog):
             return await ctx.send(
                 "❌ Gunakan command:\n"
                 "`!moddc @target`"
+            )
+
+        # ====================================================
+        # CEK TARGET BOT
+        # ====================================================
+
+        if target.bot:
+            return await ctx.send(
+                "❌ Role **Mod DC** tidak dapat "
+                "diberikan kepada bot."
             )
 
         # ====================================================
@@ -67,8 +81,8 @@ class ModDCRoleManager(commands.Cog):
 
         if old_role.id == new_role.id:
             return await ctx.send(
-                "❌ Role **Mod DC lama** dan **Mod DC baru** "
-                "tidak boleh sama."
+                "❌ Role **Mod DC lama** dan "
+                "**Mod DC baru** tidak boleh sama."
             )
 
         # ====================================================
@@ -88,80 +102,72 @@ class ModDCRoleManager(commands.Cog):
 
         if old_role >= bot_member.top_role:
             return await ctx.send(
-                "❌ Bot tidak dapat mencabut role **Mod DC lama** "
-                "karena role tersebut berada di atas atau sejajar "
-                "dengan role tertinggi bot."
+                "❌ Bot tidak dapat mengelola "
+                f"{old_role.mention} karena role tersebut "
+                "berada di atas atau sejajar dengan "
+                "role tertinggi bot."
             )
 
         if new_role >= bot_member.top_role:
             return await ctx.send(
-                "❌ Bot tidak dapat memberikan role **Mod DC baru** "
-                "karena role tersebut berada di atas atau sejajar "
-                "dengan role tertinggi bot."
+                "❌ Bot tidak dapat mengelola "
+                f"{new_role.mention} karena role tersebut "
+                "berada di atas atau sejajar dengan "
+                "role tertinggi bot."
             )
 
         # ====================================================
-        # CEK TARGET ADALAH BOT
-        # ====================================================
-
-        if target.bot:
-            return await ctx.send(
-                "❌ Role **Mod DC** tidak dapat diberikan kepada bot."
-            )
-
-        # ====================================================
-        # CEK TARGET SUDAH MEMILIKI ROLE BARU
-        # ====================================================
-
-        if new_role in target.roles:
-
-            # Jika target masih punya role lama juga,
-            # bot hanya mencabut role lama.
-            if old_role in target.roles:
-
-                try:
-                    await target.remove_roles(
-                        old_role,
-                        reason=f"Mod DC Role Manager oleh {ctx.author}"
-                    )
-
-                except discord.Forbidden:
-                    return await ctx.send(
-                        "❌ Bot tidak memiliki izin untuk "
-                        "mencabut **Mod DC lama** dari target."
-                    )
-
-                except discord.HTTPException:
-                    return await ctx.send(
-                        "❌ Terjadi kesalahan Discord saat "
-                        "mencabut **Mod DC lama**."
-                    )
-
-                return await ctx.send(
-                    f"✅ **{target.display_name}** sudah memiliki "
-                    f"{new_role.mention}.\n"
-                    f"Role lama {old_role.mention} berhasil dicabut."
-                )
-
-            return await ctx.send(
-                f"ℹ️ **{target.display_name}** sudah memiliki "
-                f"{new_role.mention}."
-            )
-
-        # ====================================================
-        # CEK TARGET TIDAK PUNYA ROLE LAMA
+        # CEK ROLE TARGET
         # ====================================================
 
         has_old_role = old_role in target.roles
+        has_new_role = new_role in target.roles
 
         # ====================================================
-        # CONFIRMATION
+        # TARGET TIDAK PUNYA ROLE MOD DC
+        # ====================================================
+
+        if not has_old_role and not has_new_role:
+            return await ctx.send(
+                f"❌ **{target.display_name}** tidak memiliki "
+                "role **Mod DC lama maupun Mod DC baru**.\n\n"
+                "Tidak ada role yang dapat ditransfer."
+            )
+
+        # ====================================================
+        # TARGET MEMILIKI KEDUA ROLE
+        # ====================================================
+
+        if has_old_role and has_new_role:
+            return await ctx.send(
+                f"⚠️ **{target.display_name}** sudah memiliki "
+                "**Mod DC lama dan Mod DC baru**.\n\n"
+                "Silakan rapikan role target terlebih dahulu "
+                "sebelum melakukan transfer."
+            )
+
+        # ====================================================
+        # TENTUKAN ARAH TRANSFER
+        # ====================================================
+
+        if has_old_role:
+
+            source_role = old_role
+            destination_role = new_role
+
+        else:
+
+            source_role = new_role
+            destination_role = old_role
+
+        # ====================================================
+        # CONFIRMATION EMBED
         # ====================================================
 
         embed = discord.Embed(
             title="🛡️ MOD DC ROLE MANAGER",
             description=(
-                "Administrator akan melakukan perubahan "
+                "Administrator akan melakukan transfer "
                 "role **Mod DC** pada target berikut."
             ),
             color=discord.Color.blurple()
@@ -174,26 +180,23 @@ class ModDCRoleManager(commands.Cog):
         )
 
         embed.add_field(
-            name="Role Lama",
-            value=(
-                f"{old_role.mention}"
-                if has_old_role
-                else "Tidak dimiliki"
-            ),
+            name="Role Saat Ini",
+            value=f"{source_role.mention}",
             inline=True
         )
 
         embed.add_field(
-            name="Role Baru",
-            value=new_role.mention,
+            name="Role Tujuan",
+            value=f"{destination_role.mention}",
             inline=True
         )
 
         embed.add_field(
             name="Tindakan",
             value=(
-                "1. Memberikan **Mod DC baru**\n"
-                "2. Setelah berhasil, mencabut **Mod DC lama**"
+                f"1. Memberikan {destination_role.mention}\n"
+                f"2. Setelah berhasil, mencabut "
+                f"{source_role.mention}"
             ),
             inline=False
         )
@@ -205,9 +208,8 @@ class ModDCRoleManager(commands.Cog):
         view = ModDCConfirmView(
             author_id=ctx.author.id,
             target=target,
-            old_role=old_role,
-            new_role=new_role,
-            has_old_role=has_old_role
+            source_role=source_role,
+            destination_role=destination_role
         )
 
         await ctx.send(
@@ -234,6 +236,12 @@ class ModDCRoleManager(commands.Cog):
                 "Gunakan: `!moddc @target`"
             )
 
+        if isinstance(error, commands.BadArgument):
+            return await ctx.send(
+                "❌ Target member tidak valid.\n"
+                "Gunakan: `!moddc @target`"
+            )
+
 
 # ============================================================
 # CONFIRMATION VIEW
@@ -245,18 +253,16 @@ class ModDCConfirmView(discord.ui.View):
         self,
         author_id,
         target,
-        old_role,
-        new_role,
-        has_old_role
+        source_role,
+        destination_role
     ):
 
         super().__init__(timeout=60)
 
         self.author_id = author_id
         self.target = target
-        self.old_role = old_role
-        self.new_role = new_role
-        self.has_old_role = has_old_role
+        self.source_role = source_role
+        self.destination_role = destination_role
 
     # ========================================================
     # INTERACTION CHECK
@@ -267,7 +273,10 @@ class ModDCConfirmView(discord.ui.View):
         interaction: discord.Interaction
     ):
 
-        # Hanya executor command
+        # ----------------------------------------------------
+        # HANYA EXECUTOR COMMAND
+        # ----------------------------------------------------
+
         if interaction.user.id != self.author_id:
 
             await interaction.response.send_message(
@@ -278,7 +287,10 @@ class ModDCConfirmView(discord.ui.View):
 
             return False
 
-        # Tetap cek Administrator
+        # ----------------------------------------------------
+        # CEK ADMINISTRATOR
+        # ----------------------------------------------------
+
         if not interaction.user.guild_permissions.administrator:
 
             await interaction.response.send_message(
@@ -309,46 +321,162 @@ class ModDCConfirmView(discord.ui.View):
         await interaction.response.defer()
 
         guild = interaction.guild
+
+        if guild is None:
+            return await interaction.edit_original_response(
+                content="❌ Server tidak ditemukan.",
+                embed=None,
+                view=None
+            )
+
+        # ====================================================
+        # CEK BOT
+        # ====================================================
+
         bot_member = guild.me
 
+        if bot_member is None:
+            return await interaction.edit_original_response(
+                content="❌ Data bot tidak ditemukan.",
+                embed=None,
+                view=None
+            )
+
         # ====================================================
-        # CEK ULANG HIERARKI
+        # CEK TARGET MASIH ADA
         # ====================================================
 
-        if self.new_role >= bot_member.top_role:
+        try:
+            target = guild.get_member(self.target.id)
+
+            if target is None:
+                target = await guild.fetch_member(
+                    self.target.id
+                )
+
+        except discord.NotFound:
 
             return await interaction.edit_original_response(
                 content=(
-                    "❌ Migrasi dibatalkan.\n\n"
+                    "❌ **Migrasi dibatalkan.**\n\n"
+                    "Target member tidak ditemukan di server."
+                ),
+                embed=None,
+                view=None
+            )
+
+        except discord.HTTPException:
+
+            return await interaction.edit_original_response(
+                content=(
+                    "❌ **Migrasi dibatalkan.**\n\n"
+                    "Gagal mengambil data target dari Discord."
+                ),
+                embed=None,
+                view=None
+            )
+
+        # ====================================================
+        # CEK TARGET BOT
+        # ====================================================
+
+        if target.bot:
+
+            return await interaction.edit_original_response(
+                content=(
+                    "❌ **Migrasi dibatalkan.**\n\n"
+                    "Role **Mod DC** tidak dapat diberikan "
+                    "kepada bot."
+                ),
+                embed=None,
+                view=None
+            )
+
+        # ====================================================
+        # CEK HIERARKI ULANG
+        # ====================================================
+
+        if self.destination_role >= bot_member.top_role:
+
+            return await interaction.edit_original_response(
+                content=(
+                    "❌ **Migrasi dibatalkan.**\n\n"
                     "Bot tidak dapat memberikan "
-                    f"{self.new_role.mention} karena hierarki role."
+                    f"{self.destination_role.mention} karena "
+                    "hierarki role."
                 ),
                 embed=None,
                 view=None
             )
 
-        if self.has_old_role and self.old_role >= bot_member.top_role:
+        if self.source_role >= bot_member.top_role:
 
             return await interaction.edit_original_response(
                 content=(
-                    "❌ Migrasi dibatalkan.\n\n"
+                    "❌ **Migrasi dibatalkan.**\n\n"
                     "Bot tidak dapat mencabut "
-                    f"{self.old_role.mention} karena hierarki role."
+                    f"{self.source_role.mention} karena "
+                    "hierarki role."
                 ),
                 embed=None,
                 view=None
             )
 
         # ====================================================
-        # BERIKAN ROLE BARU TERLEBIH DAHULU
+        # CEK KONDISI ROLE TERKINI
+        # ====================================================
+
+        has_source_role = self.source_role in target.roles
+        has_destination_role = (
+            self.destination_role in target.roles
+        )
+
+        # ----------------------------------------------------
+        # SUDAH MEMILIKI ROLE TUJUAN
+        # ----------------------------------------------------
+
+        if has_destination_role:
+
+            return await interaction.edit_original_response(
+                content=(
+                    "ℹ️ **Migrasi dibatalkan.**\n\n"
+                    f"{target.mention} sudah memiliki "
+                    f"{self.destination_role.mention}."
+                ),
+                embed=None,
+                view=None
+            )
+
+        # ----------------------------------------------------
+        # ROLE SUMBER SUDAH HILANG
+        # ----------------------------------------------------
+
+        if not has_source_role:
+
+            return await interaction.edit_original_response(
+                content=(
+                    "❌ **Migrasi dibatalkan.**\n\n"
+                    f"{target.mention} sudah tidak memiliki "
+                    f"{self.source_role.mention}.\n\n"
+                    "Kondisi role target mungkin telah berubah "
+                    "sejak command dijalankan."
+                ),
+                embed=None,
+                view=None
+            )
+
+        # ====================================================
+        # BERIKAN ROLE TUJUAN TERLEBIH DAHULU
         # ====================================================
 
         try:
 
-            await self.target.add_roles(
-                self.new_role,
+            await target.add_roles(
+                self.destination_role,
                 reason=(
                     f"Mod DC Role Manager | "
+                    f"Transfer: {self.source_role.name} -> "
+                    f"{self.destination_role.name} | "
                     f"Executor: {interaction.user}"
                 )
             )
@@ -357,10 +485,12 @@ class ModDCConfirmView(discord.ui.View):
 
             return await interaction.edit_original_response(
                 content=(
-                    "❌ **Gagal memberikan role baru.**\n\n"
-                    f"Target: {self.target.mention}\n"
-                    f"Role: {self.new_role.mention}\n\n"
-                    "Role lama **tidak dicabut**."
+                    "❌ **Gagal memberikan role tujuan.**\n\n"
+                    f"Target: {target.mention}\n"
+                    f"Role Tujuan: "
+                    f"{self.destination_role.mention}\n\n"
+                    f"{self.source_role.mention} "
+                    "**tidak dicabut**."
                 ),
                 embed=None,
                 view=None
@@ -371,59 +501,61 @@ class ModDCConfirmView(discord.ui.View):
             return await interaction.edit_original_response(
                 content=(
                     "❌ Terjadi kesalahan Discord saat "
-                    "memberikan role baru.\n\n"
-                    "Role lama **tidak dicabut**."
+                    "memberikan role tujuan.\n\n"
+                    f"{self.source_role.mention} "
+                    "**tidak dicabut**."
                 ),
                 embed=None,
                 view=None
             )
 
         # ====================================================
-        # CABUT ROLE LAMA
+        # CABUT ROLE SUMBER
         # ====================================================
 
-        if self.has_old_role:
+        try:
 
-            try:
-
-                await self.target.remove_roles(
-                    self.old_role,
-                    reason=(
-                        f"Mod DC Role Manager | "
-                        f"Executor: {interaction.user}"
-                    )
+            await target.remove_roles(
+                self.source_role,
+                reason=(
+                    f"Mod DC Role Manager | "
+                    f"Transfer: {self.source_role.name} -> "
+                    f"{self.destination_role.name} | "
+                    f"Executor: {interaction.user}"
                 )
+            )
 
-            except discord.Forbidden:
+        except discord.Forbidden:
 
-                # Role baru sudah berhasil diberikan.
-                # Jangan mengembalikan role baru secara otomatis.
-                return await interaction.edit_original_response(
-                    content=(
-                        "⚠️ **Role baru berhasil diberikan, "
-                        "tetapi role lama gagal dicabut.**\n\n"
-                        f"Target: {self.target.mention}\n"
-                        f"Role Baru: {self.new_role.mention}\n"
-                        f"Role Lama: {self.old_role.mention}\n\n"
-                        "Silakan cabut role lama secara manual."
-                    ),
-                    embed=None,
-                    view=None
-                )
+            return await interaction.edit_original_response(
+                content=(
+                    "⚠️ **Role tujuan berhasil diberikan, "
+                    "tetapi role sumber gagal dicabut.**\n\n"
+                    f"Target: {target.mention}\n"
+                    f"Role Tujuan: "
+                    f"{self.destination_role.mention}\n"
+                    f"Role Sumber: "
+                    f"{self.source_role.mention}\n\n"
+                    "Silakan cabut role sumber secara manual."
+                ),
+                embed=None,
+                view=None
+            )
 
-            except discord.HTTPException:
+        except discord.HTTPException:
 
-                return await interaction.edit_original_response(
-                    content=(
-                        "⚠️ **Role baru berhasil diberikan, "
-                        "tetapi terjadi error saat mencabut "
-                        "role lama.**\n\n"
-                        f"Target: {self.target.mention}\n"
-                        f"Role Lama: {self.old_role.mention}"
-                    ),
-                    embed=None,
-                    view=None
-                )
+            return await interaction.edit_original_response(
+                content=(
+                    "⚠️ **Role tujuan berhasil diberikan, "
+                    "tetapi terjadi error saat mencabut "
+                    "role sumber.**\n\n"
+                    f"Target: {target.mention}\n"
+                    f"Role Sumber: "
+                    f"{self.source_role.mention}"
+                ),
+                embed=None,
+                view=None
+            )
 
         # ====================================================
         # SUCCESS
@@ -432,31 +564,27 @@ class ModDCConfirmView(discord.ui.View):
         embed = discord.Embed(
             title="✅ Mod DC Berhasil Diperbarui",
             description=(
-                f"Role **Mod DC** untuk {self.target.mention} "
-                "berhasil diperbarui."
+                f"Role **Mod DC** untuk {target.mention} "
+                "berhasil ditransfer."
             ),
             color=discord.Color.green()
         )
 
         embed.add_field(
             name="Target",
-            value=self.target.mention,
+            value=target.mention,
             inline=False
         )
 
         embed.add_field(
-            name="Role Lama",
-            value=(
-                f"❌ {self.old_role.mention}"
-                if self.has_old_role
-                else "Tidak ada"
-            ),
+            name="Role Sebelumnya",
+            value=f"❌ {self.source_role.mention}",
             inline=True
         )
 
         embed.add_field(
-            name="Role Baru",
-            value=f"✅ {self.new_role.mention}",
+            name="Role Sekarang",
+            value=f"✅ {self.destination_role.mention}",
             inline=True
         )
 
@@ -472,6 +600,7 @@ class ModDCConfirmView(discord.ui.View):
 
         await interaction.edit_original_response(
             embed=embed,
+            content=None,
             view=None
         )
 
