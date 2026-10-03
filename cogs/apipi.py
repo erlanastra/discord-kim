@@ -58,32 +58,41 @@ WIB = timezone(timedelta(hours=7))
 # CUSTOM EMOJI
 # ============================================================
 # Semua emoji di bawah adalah custom emoji Discord.
+#
+# animated=True digunakan agar emoji dikirim sebagai
+# custom animated emoji Discord, bukan Unicode emoji biasa.
+#
 # Button TIDAK menggunakan emoji.
 # Emoji hanya digunakan pada embed/message.
 
 EMOJI_ARROW_BLUE = discord.PartialEmoji(
     name="arrow_blue",
-    id=1512787254312042496
+    id=1512787254312042496,
+    animated=True
 )
 
 EMOJI_ARROW_PURPLE = discord.PartialEmoji(
     name="arrow_purple",
-    id=1512787191234035803
+    id=1512787191234035803,
+    animated=True
 )
 
 EMOJI_APIPI = discord.PartialEmoji(
     name="apipi",
-    id=1512888691369050243
+    id=1512888691369050243,
+    animated=True
 )
 
 EMOJI_LOVE = discord.PartialEmoji(
     name="rainbow_love",
-    id=1493106010389483661
+    id=1493106010389483661,
+    animated=True
 )
 
 EMOJI_WAITING = discord.PartialEmoji(
     name="waiting",
-    id=1544744564336758905
+    id=1544744564336758905,
+    animated=True
 )
 
 
