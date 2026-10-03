@@ -57,10 +57,6 @@ WIB = timezone(timedelta(hours=7))
 # ============================================================
 # CUSTOM EMOJI
 # ============================================================
-# Semua emoji adalah custom emoji Discord.
-# Button TIDAK menggunakan emoji.
-# animated=True digunakan agar emoji ditampilkan sebagai
-# custom animated emoji Discord.
 
 EMOJI_ARROW_BLUE = discord.PartialEmoji(
     name="arrow_blue",
@@ -162,7 +158,7 @@ def parse_user_id(value):
     if not value:
         return None
 
-    value = value.strip()
+    value = str(value).strip()
 
     match = re.search(r"\d{15,25}", value)
 
@@ -171,7 +167,18 @@ def parse_user_id(value):
 
     try:
         return int(match.group())
-    except ValueError:
+    except (TypeError, ValueError):
+        return None
+
+
+def safe_int(value):
+    """
+    Memastikan value menjadi integer.
+    """
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
         return None
 
 
@@ -180,6 +187,8 @@ def format_hours(seconds):
     Contoh:
     7200 -> 2.00 jam
     """
+
+    seconds = int(seconds or 0)
 
     hours = seconds / 3600
 
@@ -192,7 +201,10 @@ def format_duration(seconds):
     7260 -> 2 jam 1 menit
     """
 
-    seconds = int(seconds)
+    seconds = int(seconds or 0)
+
+    if seconds <= 0:
+        return "0 menit"
 
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
@@ -210,10 +222,6 @@ def format_duration(seconds):
 async def create_tables():
     """
     Membuat database/tabel jika belum ada.
-
-    Jika tabel sudah ada:
-    - tidak dibuat ulang
-    - data tetap digunakan
     """
 
     await db.execute("""
@@ -379,12 +387,10 @@ class Apipi(commands.Cog):
 
         self.initialized = True
 
-        # Persistent member panel
         self.bot.add_view(
             ApipiMemberPanel(self)
         )
 
-        # Persistent management panel
         self.bot.add_view(
             ApipiManagementPanel(self)
         )
@@ -417,6 +423,7 @@ class Apipi(commands.Cog):
 
         try:
             await self.ensure_member_panel()
+
         except Exception as e:
             print(
                 f"[APIPI] Gagal memastikan member panel: {e}"
@@ -424,6 +431,7 @@ class Apipi(commands.Cog):
 
         try:
             await self.ensure_management_panel()
+
         except Exception as e:
             print(
                 f"[APIPI] Gagal memastikan management panel: {e}"
@@ -443,7 +451,13 @@ class Apipi(commands.Cog):
             return
 
         try:
-            async for message in channel.history(limit=50):
+
+            async for message in channel.history(
+                limit=50
+            ):
+
+                if not self.bot.user:
+                    continue
 
                 if message.author.id != self.bot.user.id:
                     continue
@@ -454,22 +468,38 @@ class Apipi(commands.Cog):
                 if message.embeds[0].title == "APIPI — PANEL":
 
                     try:
+
                         await message.edit(
                             embed=self.member_panel_embed(),
                             view=ApipiMemberPanel(self)
                         )
-                    except Exception:
-                        pass
+
+                    except Exception as e:
+
+                        print(
+                            f"[APIPI] Gagal update member panel: {e}"
+                        )
 
                     return
 
-        except Exception:
-            pass
+        except Exception as e:
 
-        await channel.send(
-            embed=self.member_panel_embed(),
-            view=ApipiMemberPanel(self)
-        )
+            print(
+                f"[APIPI] Gagal membaca member panel: {e}"
+            )
+
+        try:
+
+            await channel.send(
+                embed=self.member_panel_embed(),
+                view=ApipiMemberPanel(self)
+            )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Gagal membuat member panel: {e}"
+            )
 
     # ========================================================
     # ENSURE MANAGEMENT PANEL
@@ -485,7 +515,13 @@ class Apipi(commands.Cog):
             return
 
         try:
-            async for message in channel.history(limit=50):
+
+            async for message in channel.history(
+                limit=50
+            ):
+
+                if not self.bot.user:
+                    continue
 
                 if message.author.id != self.bot.user.id:
                     continue
@@ -499,25 +535,41 @@ class Apipi(commands.Cog):
                 ):
 
                     try:
+
                         await message.edit(
                             embed=self.management_panel_embed(),
                             view=ApipiManagementPanel(self)
                         )
-                    except Exception:
-                        pass
+
+                    except Exception as e:
+
+                        print(
+                            f"[APIPI] Gagal update management panel: {e}"
+                        )
 
                     return
 
-        except Exception:
-            pass
+        except Exception as e:
 
-        await channel.send(
-            embed=self.management_panel_embed(),
-            view=ApipiManagementPanel(self)
-        )
+            print(
+                f"[APIPI] Gagal membaca management panel: {e}"
+            )
+
+        try:
+
+            await channel.send(
+                embed=self.management_panel_embed(),
+                view=ApipiManagementPanel(self)
+            )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Gagal membuat management panel: {e}"
+            )
 
     # ========================================================
-    # EMBED MEMBER PANEL
+    # MEMBER PANEL EMBED
     # ========================================================
 
     def member_panel_embed(self):
@@ -553,7 +605,7 @@ class Apipi(commands.Cog):
         return embed
 
     # ========================================================
-    # EMBED MANAGEMENT PANEL
+    # MANAGEMENT PANEL EMBED
     # ========================================================
 
     def management_panel_embed(self):
@@ -592,6 +644,11 @@ class Apipi(commands.Cog):
 
     def find_member(self, user_id):
 
+        user_id = safe_int(user_id)
+
+        if user_id is None:
+            return None
+
         for guild in self.bot.guilds:
 
             member = guild.get_member(user_id)
@@ -611,41 +668,53 @@ class Apipi(commands.Cog):
         user_id,
         include_removed=False
     ):
+        """
+        Versi aman untuk wrapper database.py nanZ.
+
+        Database wrapper menggunakan aiomysql dan melakukan
+        Python-style % formatting pada query.
+
+        Karena itu query di sini menggunakan integer yang
+        sudah divalidasi dan dikirim tanpa args tambahan.
+        """
+
+        guild_id = safe_int(guild_id)
+        user_id = safe_int(user_id)
+
+        if guild_id is None or user_id is None:
+            return None
 
         if include_removed:
 
-            # Dibuat dengan 2 placeholder parameter.
-            # Ini menghindari format query yang bermasalah
-            # pada aiomysql/database wrapper.
-            return await db.fetchone(
-                """
+            query = f"""
                 SELECT *
                 FROM nanz_apipi_pairs
-                WHERE guild_id = %s
-                AND %s IN (siswa_id, siswi_id)
+                WHERE guild_id = {guild_id}
+                AND (
+                    siswa_id = {user_id}
+                    OR siswi_id = {user_id}
+                )
                 ORDER BY id DESC
                 LIMIT 1
-                """,
-                (
-                    guild_id,
-                    user_id
+            """
+
+        else:
+
+            query = f"""
+                SELECT *
+                FROM nanz_apipi_pairs
+                WHERE guild_id = {guild_id}
+                AND (
+                    siswa_id = {user_id}
+                    OR siswi_id = {user_id}
                 )
-            )
+                AND status != 'removed'
+                ORDER BY id DESC
+                LIMIT 1
+            """
 
         return await db.fetchone(
-            """
-            SELECT *
-            FROM nanz_apipi_pairs
-            WHERE guild_id = %s
-            AND %s IN (siswa_id, siswi_id)
-            AND status != 'removed'
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (
-                guild_id,
-                user_id
-            )
+            query
         )
 
     # ========================================================
@@ -653,6 +722,11 @@ class Apipi(commands.Cog):
     # ========================================================
 
     async def get_pair(self, pair_id):
+
+        pair_id = safe_int(pair_id)
+
+        if pair_id is None:
+            return None
 
         return await db.fetchone(
             """
@@ -674,6 +748,17 @@ class Apipi(commands.Cog):
         siswa_id,
         siswi_id
     ):
+
+        guild_id = safe_int(guild_id)
+        siswa_id = safe_int(siswa_id)
+        siswi_id = safe_int(siswi_id)
+
+        if (
+            guild_id is None
+            or siswa_id is None
+            or siswi_id is None
+        ):
+            return None
 
         return await db.fetchone(
             """
@@ -720,7 +805,9 @@ class Apipi(commands.Cog):
         if existing_siswi:
             return None, "siswi_busy"
 
-        now = db_datetime(utc_now())
+        now = db_datetime(
+            utc_now()
+        )
 
         await db.execute(
             """
@@ -820,7 +907,9 @@ class Apipi(commands.Cog):
 
     def get_shared_channel(self, pair):
 
-        siswa, siswi = self.get_pair_members(pair)
+        siswa, siswi = self.get_pair_members(
+            pair
+        )
 
         if not siswa or not siswi:
             return None
@@ -869,7 +958,9 @@ class Apipi(commands.Cog):
                 utc_now()
             )
 
-        now = db_datetime(utc_now())
+        now = db_datetime(
+            utc_now()
+        )
 
         await db.execute(
             """
@@ -960,11 +1051,19 @@ class Apipi(commands.Cog):
         end_time
     ):
 
+        if not start_time or not end_time:
+            return
+
+        if end_time <= start_time:
+            return
+
         cursor = start_time
 
         while cursor < end_time:
 
-            current_week = get_week_start(cursor)
+            current_week = get_week_start(
+                cursor
+            )
 
             next_boundary = current_week + timedelta(
                 days=7
@@ -976,8 +1075,8 @@ class Apipi(commands.Cog):
                     tzinfo=WIB
                 )
 
-            next_boundary_utc = next_boundary.astimezone(
-                UTC
+            next_boundary_utc = (
+                next_boundary.astimezone(UTC)
             )
 
             segment_end = min(
@@ -986,7 +1085,9 @@ class Apipi(commands.Cog):
             )
 
             duration = int(
-                (segment_end - cursor).total_seconds()
+                (
+                    segment_end - cursor
+                ).total_seconds()
             )
 
             if duration > 0:
@@ -1028,7 +1129,10 @@ class Apipi(commands.Cog):
     # TOTAL PROGRESS
     # ========================================================
 
-    async def get_total_seconds(self, pair_id):
+    async def get_total_seconds(
+        self,
+        pair_id
+    ):
 
         result = await db.fetchone(
             """
@@ -1044,7 +1148,10 @@ class Apipi(commands.Cog):
         )
 
         total = int(
-            result["total_seconds"] or 0
+            (result or {}).get(
+                "total_seconds",
+                0
+            ) or 0
         )
 
         live = await db.fetchone(
@@ -1066,7 +1173,9 @@ class Apipi(commands.Cog):
             total += max(
                 0,
                 int(
-                    (utc_now() - start).total_seconds()
+                    (
+                        utc_now() - start
+                    ).total_seconds()
                 )
             )
 
@@ -1100,7 +1209,10 @@ class Apipi(commands.Cog):
         )
 
         total = int(
-            result["seconds"] or 0
+            (result or {}).get(
+                "seconds",
+                0
+            ) or 0
         )
 
         live = await db.fetchone(
@@ -1128,8 +1240,8 @@ class Apipi(commands.Cog):
                 tzinfo=WIB
             )
 
-            week_start_utc = week_start_local.astimezone(
-                UTC
+            week_start_utc = (
+                week_start_local.astimezone(UTC)
             )
 
             week_end_utc = (
@@ -1162,7 +1274,10 @@ class Apipi(commands.Cog):
     # CHECK ELIGIBILITY
     # ========================================================
 
-    async def check_eligibility(self, pair):
+    async def check_eligibility(
+        self,
+        pair
+    ):
 
         if pair["status"] not in (
             "tracking",
@@ -1181,7 +1296,9 @@ class Apipi(commands.Cog):
 
         if pair["status"] == "tracking":
 
-            now = db_datetime(utc_now())
+            now = db_datetime(
+                utc_now()
+            )
 
             await db.execute(
                 """
@@ -1321,7 +1438,16 @@ class Apipi(commands.Cog):
             == pair["siswi_id"]
         )
 
-        now = db_datetime(utc_now())
+        if not is_siswa and not is_siswi:
+
+            return await interaction.response.send_message(
+                "Kamu bukan bagian dari pasangan ini.",
+                ephemeral=True
+            )
+
+        now = db_datetime(
+            utc_now()
+        )
 
         if is_siswa:
 
@@ -1369,16 +1495,16 @@ class Apipi(commands.Cog):
                 "Siswi menyetujui pengambilan role."
             )
 
-        else:
-
-            return await interaction.response.send_message(
-                "Kamu bukan bagian dari pasangan ini.",
-                ephemeral=True
-            )
-
         updated = await self.get_pair(
             pair["id"]
         )
+
+        if not updated:
+
+            return await interaction.response.send_message(
+                "Data pasangan tidak dapat diperbarui.",
+                ephemeral=True
+            )
 
         if (
             updated["take_siswa"]
@@ -1401,6 +1527,12 @@ class Apipi(commands.Cog):
                 )
 
                 return
+
+            return await interaction.response.send_message(
+                "Persetujuan sudah lengkap, tetapi role gagal diberikan. "
+                "Cek posisi role Apipi dan permission bot.",
+                ephemeral=True
+            )
 
         await interaction.response.send_message(
             (
@@ -1450,7 +1582,7 @@ class Apipi(commands.Cog):
                 pair["id"],
                 None,
                 "ROLE_ERROR",
-                "Role Apipi berada di atas role bot."
+                "Role Apipi berada di atas atau sama dengan role tertinggi bot."
             )
 
             return False
@@ -1482,7 +1614,20 @@ class Apipi(commands.Cog):
 
             return False
 
-        now = db_datetime(utc_now())
+        except discord.HTTPException as e:
+
+            await self.log(
+                pair["id"],
+                None,
+                "ROLE_ERROR",
+                f"Discord API error saat memberikan role: {e}"
+            )
+
+            return False
+
+        now = db_datetime(
+            utc_now()
+        )
 
         await db.execute(
             """
@@ -1517,13 +1662,18 @@ class Apipi(commands.Cog):
 
         if channel:
 
-            await channel.send(
-                (
-                    f"{EMOJI_APIPI} **APIPI ROLE GRANTED**\n\n"
-                    f"{siswa.mention} + {siswi.mention}\n"
-                    f"Role: {role.mention}"
+            try:
+
+                await channel.send(
+                    (
+                        f"{EMOJI_APIPI} **APIPI ROLE GRANTED**\n\n"
+                        f"{siswa.mention} + {siswi.mention}\n"
+                        f"Role: {role.mention}"
+                    )
                 )
-            )
+
+            except Exception:
+                pass
 
         return True
 
@@ -1574,7 +1724,16 @@ class Apipi(commands.Cog):
             == pair["siswi_id"]
         )
 
-        now = db_datetime(utc_now())
+        if not is_siswa and not is_siswi:
+
+            return await interaction.response.send_message(
+                "Kamu bukan bagian dari pasangan ini.",
+                ephemeral=True
+            )
+
+        now = db_datetime(
+            utc_now()
+        )
 
         if is_siswa:
 
@@ -1608,13 +1767,6 @@ class Apipi(commands.Cog):
                 )
             )
 
-        else:
-
-            return await interaction.response.send_message(
-                "Kamu bukan bagian dari pasangan ini.",
-                ephemeral=True
-            )
-
         await self.log(
             pair["id"],
             interaction.user.id,
@@ -1625,6 +1777,13 @@ class Apipi(commands.Cog):
         updated = await self.get_pair(
             pair["id"]
         )
+
+        if not updated:
+
+            return await interaction.response.send_message(
+                "Data pasangan tidak ditemukan.",
+                ephemeral=True
+            )
 
         if (
             updated["remove_siswa"]
@@ -1649,6 +1808,11 @@ class Apipi(commands.Cog):
                 )
 
                 return
+
+            return await interaction.response.send_message(
+                "Persetujuan sudah lengkap, tetapi role gagal dicabut.",
+                ephemeral=True
+            )
 
         await interaction.response.send_message(
             (
@@ -1711,7 +1875,20 @@ class Apipi(commands.Cog):
 
                 return False
 
-        now = db_datetime(utc_now())
+            except discord.HTTPException as e:
+
+                await self.log(
+                    pair["id"],
+                    None,
+                    "ROLE_ERROR",
+                    f"Discord API error saat mencabut role: {e}"
+                )
+
+                return False
+
+        now = db_datetime(
+            utc_now()
+        )
 
         await db.execute(
             """
@@ -1734,7 +1911,6 @@ class Apipi(commands.Cog):
             )
         )
 
-        # Reset progress 20 jam
         await db.execute(
             """
             DELETE FROM nanz_apipi_sessions
@@ -1778,15 +1954,18 @@ class Apipi(commands.Cog):
         guild = member.guild
 
         try:
+
             pair = await self.get_pair_by_member(
                 guild.id,
                 member.id
             )
+
         except Exception as e:
+
             print(
-                f"[APIPI] Error get_pair_by_member "
-                f"pada voice state: {e}"
+                f"[APIPI] Error mencari pair pada voice update: {e}"
             )
+
             return
 
         if not pair:
@@ -1795,19 +1974,26 @@ class Apipi(commands.Cog):
         async with self.session_lock:
 
             try:
+
                 await self.sync_pair_voice(
                     pair
                 )
+
             except Exception as e:
+
                 print(
-                    f"[APIPI] Error sync_pair_voice: {e}"
+                    f"[APIPI] Error sync voice pair "
+                    f"{pair.get('id')}: {e}"
                 )
 
     # ========================================================
     # SYNC PAIR VOICE
     # ========================================================
 
-    async def sync_pair_voice(self, pair):
+    async def sync_pair_voice(
+        self,
+        pair
+    ):
 
         channel = self.get_shared_channel(
             pair
@@ -1865,64 +2051,83 @@ class Apipi(commands.Cog):
 
         async with self.session_lock:
 
-            live_sessions = await db.fetchall(
-                """
-                SELECT *
-                FROM nanz_apipi_live_sessions
-                """
-            )
+            try:
+
+                live_sessions = await db.fetchall(
+                    """
+                    SELECT *
+                    FROM nanz_apipi_live_sessions
+                    """
+                )
+
+            except Exception as e:
+
+                print(
+                    f"[APIPI] Heartbeat database error: {e}"
+                )
+
+                return
 
             for live in live_sessions:
 
-                pair = await self.get_pair(
-                    live["pair_id"]
-                )
+                try:
 
-                if not pair:
-                    continue
-
-                channel = self.get_shared_channel(
-                    pair
-                )
-
-                if not channel:
-
-                    await self.close_session(
-                        pair["id"],
-                        utc_now()
+                    pair = await self.get_pair(
+                        live["pair_id"]
                     )
 
-                    continue
+                    if not pair:
+                        continue
 
-                if channel.id != live["channel_id"]:
-
-                    await self.close_session(
-                        pair["id"],
-                        utc_now()
+                    channel = self.get_shared_channel(
+                        pair
                     )
 
-                    await self.start_session(
-                        pair,
-                        channel.id
+                    if not channel:
+
+                        await self.close_session(
+                            pair["id"],
+                            utc_now()
+                        )
+
+                        continue
+
+                    if channel.id != live["channel_id"]:
+
+                        await self.close_session(
+                            pair["id"],
+                            utc_now()
+                        )
+
+                        await self.start_session(
+                            pair,
+                            channel.id
+                        )
+
+                        continue
+
+                    await db.execute(
+                        """
+                        UPDATE nanz_apipi_live_sessions
+                        SET last_seen_at = %s
+                        WHERE pair_id = %s
+                        """,
+                        (
+                            db_datetime(utc_now()),
+                            pair["id"]
+                        )
                     )
 
-                    continue
-
-                await db.execute(
-                    """
-                    UPDATE nanz_apipi_live_sessions
-                    SET last_seen_at = %s
-                    WHERE pair_id = %s
-                    """,
-                    (
-                        db_datetime(utc_now()),
-                        pair["id"]
+                    await self.check_eligibility(
+                        pair
                     )
-                )
 
-                await self.check_eligibility(
-                    pair
-                )
+                except Exception as e:
+
+                    print(
+                        f"[APIPI] Heartbeat error "
+                        f"pair={live.get('pair_id')}: {e}"
+                    )
 
     # ========================================================
     # RECONCILE AFTER RESTART
@@ -1936,53 +2141,72 @@ class Apipi(commands.Cog):
 
         async with self.session_lock:
 
-            live_sessions = await db.fetchall(
-                """
-                SELECT *
-                FROM nanz_apipi_live_sessions
-                """
-            )
+            try:
+
+                live_sessions = await db.fetchall(
+                    """
+                    SELECT *
+                    FROM nanz_apipi_live_sessions
+                    """
+                )
+
+            except Exception as e:
+
+                print(
+                    f"[APIPI] Reconcile database error: {e}"
+                )
+
+                return
 
             for live in live_sessions:
 
-                pair = await self.get_pair(
-                    live["pair_id"]
-                )
+                try:
 
-                if not pair:
-                    continue
-
-                last_seen = from_db_datetime(
-                    live["last_seen_at"]
-                )
-
-                current_shared = self.get_shared_channel(
-                    pair
-                )
-
-                if last_seen:
-
-                    await self.save_split_sessions(
-                        pair["id"],
-                        from_db_datetime(
-                            live["started_at"]
-                        ),
-                        last_seen
+                    pair = await self.get_pair(
+                        live["pair_id"]
                     )
 
-                await db.execute(
-                    """
-                    DELETE FROM nanz_apipi_live_sessions
-                    WHERE pair_id = %s
-                    """,
-                    (pair["id"],)
-                )
+                    if not pair:
+                        continue
 
-                if current_shared:
+                    last_seen = from_db_datetime(
+                        live["last_seen_at"]
+                    )
 
-                    await self.start_session(
-                        pair,
-                        current_shared.id
+                    current_shared = self.get_shared_channel(
+                        pair
+                    )
+
+                    if last_seen:
+
+                        await self.save_split_sessions(
+                            pair["id"],
+                            from_db_datetime(
+                                live["started_at"]
+                            ),
+                            last_seen
+                        )
+
+                    await db.execute(
+                        """
+                        DELETE FROM nanz_apipi_live_sessions
+                        WHERE pair_id = %s
+                        """,
+                        (pair["id"],)
+                    )
+
+                    if current_shared:
+
+                        await self.start_session(
+                            pair,
+                            current_shared.id
+                        )
+
+                except Exception as e:
+
+                    print(
+                        f"[APIPI] Reconcile pair error "
+                        f"{live.get('pair_id')}: {e}"
                     )
 
     # ========================================================
@@ -2005,163 +2229,182 @@ class Apipi(commands.Cog):
             days=7
         )
 
-        pairs = await db.fetchall(
-            """
-            SELECT *
-            FROM nanz_apipi_pairs
-            WHERE status = 'active'
-            """
-        )
+        try:
+
+            pairs = await db.fetchall(
+                """
+                SELECT *
+                FROM nanz_apipi_pairs
+                WHERE status = 'active'
+                """
+            )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Weekly checker database error: {e}"
+            )
+
+            return
 
         for pair in pairs:
 
-            active_since = pair["active_since"]
+            try:
 
-            if active_since:
+                active_since = pair["active_since"]
 
-                active_since_aware = from_db_datetime(
-                    active_since
+                if active_since:
+
+                    active_since_aware = from_db_datetime(
+                        active_since
+                    )
+
+                    activation_week = get_week_start(
+                        active_since_aware
+                    ).date()
+
+                    if previous_week.date() <= activation_week:
+                        continue
+
+                already_checked = await db.fetchone(
+                    """
+                    SELECT id
+                    FROM nanz_apipi_weekly
+                    WHERE pair_id = %s
+                    AND week_start = %s
+                    LIMIT 1
+                    """,
+                    (
+                        pair["id"],
+                        previous_week.date()
+                    )
                 )
 
-                activation_week = get_week_start(
-                    active_since_aware
-                ).date()
-
-                if previous_week.date() <= activation_week:
+                if already_checked:
                     continue
 
-            already_checked = await db.fetchone(
-                """
-                SELECT id
-                FROM nanz_apipi_weekly
-                WHERE pair_id = %s
-                AND week_start = %s
-                LIMIT 1
-                """,
-                (
+                seconds = await self.get_week_seconds(
                     pair["id"],
                     previous_week.date()
                 )
-            )
 
-            if already_checked:
-                continue
+                target_seconds = WEEKLY_HOURS * 3600
 
-            seconds = await self.get_week_seconds(
-                pair["id"],
-                previous_week.date()
-            )
+                met = seconds >= target_seconds
 
-            target_seconds = WEEKLY_HOURS * 3600
-
-            met = seconds >= target_seconds
-
-            new_strike = int(
-                pair["strike"]
-            )
-
-            if not met:
-
-                new_strike += 1
-
-            await db.execute(
-                """
-                INSERT INTO nanz_apipi_weekly
-                (
-                    pair_id,
-                    week_start,
-                    seconds,
-                    target_seconds,
-                    met,
-                    strike_after,
-                    checked_at
-                )
-                VALUES
-                (
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s
-                )
-                """,
-                (
-                    pair["id"],
-                    previous_week.date(),
-                    seconds,
-                    target_seconds,
-                    1 if met else 0,
-                    new_strike,
-                    db_datetime(now)
-                )
-            )
-
-            if met:
-
-                await self.log(
-                    pair["id"],
-                    None,
-                    "WEEK_MET",
-                    (
-                        f"Minggu {previous_week.date()} "
-                        f"memenuhi target: "
-                        f"{format_hours(seconds)}"
-                    )
+                new_strike = int(
+                    pair["strike"] or 0
                 )
 
-            else:
+                if not met:
+
+                    new_strike += 1
 
                 await db.execute(
                     """
-                    UPDATE nanz_apipi_pairs
-                    SET
-                        strike = %s,
-                        updated_at = %s
-                    WHERE id = %s
+                    INSERT INTO nanz_apipi_weekly
+                    (
+                        pair_id,
+                        week_start,
+                        seconds,
+                        target_seconds,
+                        met,
+                        strike_after,
+                        checked_at
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s
+                    )
                     """,
                     (
+                        pair["id"],
+                        previous_week.date(),
+                        seconds,
+                        target_seconds,
+                        1 if met else 0,
                         new_strike,
-                        db_datetime(now),
-                        pair["id"]
+                        db_datetime(now)
                     )
                 )
 
-                await self.log(
-                    pair["id"],
-                    None,
-                    "WEEK_MISSED",
-                    (
-                        f"Minggu {previous_week.date()} "
-                        f"hanya {format_hours(seconds)}. "
-                        f"Strike: {new_strike}/{MAX_STRIKE}"
-                    )
-                )
+                if met:
 
-                await self.send_strike_notice(
-                    pair,
-                    seconds,
-                    new_strike
-                )
-
-                if new_strike >= MAX_STRIKE:
-
-                    guild = self.bot.get_guild(
-                        pair["guild_id"]
+                    await self.log(
+                        pair["id"],
+                        None,
+                        "WEEK_MET",
+                        (
+                            f"Minggu {previous_week.date()} "
+                            f"memenuhi target: "
+                            f"{format_hours(seconds)}"
+                        )
                     )
 
-                    if guild:
+                else:
 
-                        await self.remove_apipi_role(
-                            pair,
-                            guild,
-                            "Auto removal: 3 weekly strikes"
+                    await db.execute(
+                        """
+                        UPDATE nanz_apipi_pairs
+                        SET
+                            strike = %s,
+                            updated_at = %s
+                        WHERE id = %s
+                        """,
+                        (
+                            new_strike,
+                            db_datetime(now),
+                            pair["id"]
+                        )
+                    )
+
+                    await self.log(
+                        pair["id"],
+                        None,
+                        "WEEK_MISSED",
+                        (
+                            f"Minggu {previous_week.date()} "
+                            f"hanya {format_hours(seconds)}. "
+                            f"Strike: {new_strike}/{MAX_STRIKE}"
+                        )
+                    )
+
+                    await self.send_strike_notice(
+                        pair,
+                        seconds,
+                        new_strike
+                    )
+
+                    if new_strike >= MAX_STRIKE:
+
+                        guild = self.bot.get_guild(
+                            pair["guild_id"]
                         )
 
-                        await self.send_auto_remove_notice(
-                            pair
-                        )
+                        if guild:
+
+                            await self.remove_apipi_role(
+                                pair,
+                                guild,
+                                "Auto removal: 3 weekly strikes"
+                            )
+
+                            await self.send_auto_remove_notice(
+                                pair
+                            )
+
+            except Exception as e:
+
+                print(
+                    f"[APIPI] Weekly checker error "
+                    f"pair={pair.get('id')}: {e}"
+                )
 
     # ========================================================
     # STRIKE NOTICE
@@ -2332,33 +2575,41 @@ class Apipi(commands.Cog):
         details
     ):
 
-        await db.execute(
-            """
-            INSERT INTO nanz_apipi_logs
-            (
-                pair_id,
-                actor_id,
-                action,
-                details,
-                created_at
+        try:
+
+            await db.execute(
+                """
+                INSERT INTO nanz_apipi_logs
+                (
+                    pair_id,
+                    actor_id,
+                    action,
+                    details,
+                    created_at
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    pair_id,
+                    actor_id,
+                    action,
+                    details,
+                    db_datetime(utc_now())
+                )
             )
-            VALUES
-            (
-                %s,
-                %s,
-                %s,
-                %s,
-                %s
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Gagal menyimpan database log: {e}"
             )
-            """,
-            (
-                pair_id,
-                actor_id,
-                action,
-                details,
-                db_datetime(utc_now())
-            )
-        )
 
         channel = self.bot.get_channel(
             APIPI_LOG_CHANNEL_ID
@@ -2391,19 +2642,44 @@ class Apipi(commands.Cog):
                 embed=embed
             )
 
-        except Exception:
-            pass
+        except Exception as e:
+
+            print(
+                f"[APIPI] Gagal mengirim log Discord: {e}"
+            )
 
     # ========================================================
     # ADMIN CHECK
     # ========================================================
 
-    def is_admin(self, interaction):
+    def is_admin(
+        self,
+        interaction
+    ):
 
-        if not interaction.guild:
+        if not interaction:
             return False
 
-        return interaction.user.guild_permissions.administrator
+        guild = interaction.guild
+
+        if not guild:
+            return False
+
+        user = interaction.user
+
+        if not user:
+            return False
+
+        permissions = getattr(
+            user,
+            "guild_permissions",
+            None
+        )
+
+        if not permissions:
+            return False
+
+        return permissions.administrator
 
     # ========================================================
     # ADMIN STATUS
@@ -2568,7 +2844,9 @@ class Apipi(commands.Cog):
             (pair["id"],)
         )
 
-        now = db_datetime(utc_now())
+        now = db_datetime(
+            utc_now()
+        )
 
         await db.execute(
             """
@@ -2624,7 +2902,9 @@ class Apipi(commands.Cog):
                 ephemeral=True
             )
 
-        now = db_datetime(utc_now())
+        now = db_datetime(
+            utc_now()
+        )
 
         await db.execute(
             """
@@ -2661,7 +2941,10 @@ class RegisterPairModal(
     discord.ui.Modal
 ):
 
-    def __init__(self, cog):
+    def __init__(
+        self,
+        cog
+    ):
 
         self.cog = cog
 
@@ -2669,7 +2952,7 @@ class RegisterPairModal(
             title="Daftarkan Pasangan Apipi"
         )
 
-        self.partner = discord.ui.InputText(
+        self.partner = discord.ui.TextInput(
             label="User ID / Mention Pasangan",
             placeholder="Contoh: 123456789 atau @username",
             required=True,
@@ -2680,10 +2963,17 @@ class RegisterPairModal(
             self.partner
         )
 
-    async def callback(
+    async def on_submit(
         self,
         interaction
     ):
+
+        if not interaction.guild:
+
+            return await interaction.response.send_message(
+                "Fitur ini hanya dapat digunakan di server.",
+                ephemeral=True
+            )
 
         partner_id = parse_user_id(
             self.partner.value
@@ -2710,6 +3000,13 @@ class RegisterPairModal(
         partner = interaction.guild.get_member(
             partner_id
         )
+
+        if not user:
+
+            return await interaction.response.send_message(
+                "Data akunmu tidak ditemukan di server.",
+                ephemeral=True
+            )
 
         if not partner:
 
@@ -2819,7 +3116,7 @@ class AdminTargetModal(
             title=action_name
         )
 
-        self.target = discord.ui.InputText(
+        self.target = discord.ui.TextInput(
             label="User ID / Mention salah satu pasangan",
             placeholder="123456789",
             required=True,
@@ -2830,12 +3127,14 @@ class AdminTargetModal(
             self.target
         )
 
-    async def callback(
+    async def on_submit(
         self,
         interaction
     ):
 
-        if not self.cog.is_admin(interaction):
+        if not self.cog.is_admin(
+            interaction
+        ):
 
             return await interaction.response.send_message(
                 "Akses ditolak. Hanya Administrator.",
@@ -2888,6 +3187,11 @@ class AdminTargetModal(
                 user_id
             )
 
+        return await interaction.response.send_message(
+            "Action management tidak dikenali.",
+            ephemeral=True
+        )
+
 
 # ============================================================
 # MEMBER PANEL
@@ -2897,7 +3201,10 @@ class ApipiMemberPanel(
     discord.ui.View
 ):
 
-    def __init__(self, cog):
+    def __init__(
+        self,
+        cog
+    ):
 
         super().__init__(
             timeout=None
@@ -2920,11 +3227,26 @@ class ApipiMemberPanel(
         button
     ):
 
-        await interaction.response.send_modal(
-            RegisterPairModal(
-                self.cog
+        try:
+
+            await interaction.response.send_modal(
+                RegisterPairModal(
+                    self.cog
+                )
             )
-        )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Register button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Gagal membuka form pendaftaran.",
+                    ephemeral=True
+                )
 
     # ========================================================
     # AMBIL ROLE
@@ -2941,9 +3263,24 @@ class ApipiMemberPanel(
         button
     ):
 
-        await self.cog.approve_take(
-            interaction
-        )
+        try:
+
+            await self.cog.approve_take(
+                interaction
+            )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Take button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Terjadi kesalahan saat memproses Ambil Role.",
+                    ephemeral=True
+                )
 
     # ========================================================
     # CABUT ROLE
@@ -2960,9 +3297,24 @@ class ApipiMemberPanel(
         button
     ):
 
-        await self.cog.approve_remove(
-            interaction
-        )
+        try:
+
+            await self.cog.approve_remove(
+                interaction
+            )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Remove button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Terjadi kesalahan saat memproses Cabut Role.",
+                    ephemeral=True
+                )
 
     # ========================================================
     # STATUS
@@ -2979,26 +3331,48 @@ class ApipiMemberPanel(
         button
     ):
 
-        pair = await self.cog.get_pair_by_member(
-            interaction.guild.id,
-            interaction.user.id
-        )
+        try:
 
-        if not pair:
+            if not interaction.guild:
 
-            return await interaction.response.send_message(
-                "Kamu belum memiliki pasangan Apipi.",
+                return await interaction.response.send_message(
+                    "Fitur ini hanya dapat digunakan di server.",
+                    ephemeral=True
+                )
+
+            pair = await self.cog.get_pair_by_member(
+                interaction.guild.id,
+                interaction.user.id
+            )
+
+            if not pair:
+
+                return await interaction.response.send_message(
+                    "Kamu belum memiliki pasangan Apipi.",
+                    ephemeral=True
+                )
+
+            text = await self.cog.get_status_text(
+                pair
+            )
+
+            await interaction.response.send_message(
+                text,
                 ephemeral=True
             )
 
-        text = await self.cog.get_status_text(
-            pair
-        )
+        except Exception as e:
 
-        await interaction.response.send_message(
-            text,
-            ephemeral=True
-        )
+            print(
+                f"[APIPI] Status button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Terjadi kesalahan saat mengambil status.",
+                    ephemeral=True
+                )
 
     # ========================================================
     # KETENTUAN
@@ -3015,41 +3389,91 @@ class ApipiMemberPanel(
         button
     ):
 
-        embed = discord.Embed(
-            title="APIPI — KETENTUAN",
-            description=(
-                f"{EMOJI_APIPI} **Syarat Awal**\n"
-                "• 1 Siswa + 1 Siswi.\n"
-                "• Terdaftar sebagai satu pasangan.\n"
-                f"• Shared voice minimal **{UNLOCK_HOURS} jam**.\n\n"
+        try:
 
-                f"{EMOJI_LOVE} **Pengambilan Role**\n"
-                "• Tidak otomatis diberikan.\n"
-                "• Kedua pihak wajib menyetujui.\n\n"
+            embed = discord.Embed(
+                title="APIPI — KETENTUAN",
+                description=(
+                    f"{EMOJI_APIPI} **Syarat Awal**\n"
+                    "• 1 Siswa + 1 Siswi.\n"
+                    "• Terdaftar sebagai satu pasangan.\n"
+                    f"• Shared voice minimal **{UNLOCK_HOURS} jam**.\n\n"
 
-                f"{EMOJI_ARROW_BLUE} **Setelah Aktif**\n"
-                f"• Minimal **{WEEKLY_HOURS} jam / minggu**.\n"
-                "• Perhitungan berdasarkan waktu keduanya "
-                "berada di VC yang sama.\n"
-                "• AFK tetap dihitung.\n\n"
+                    f"{EMOJI_LOVE} **Pengambilan Role**\n"
+                    "• Tidak otomatis diberikan.\n"
+                    "• Kedua pihak wajib menyetujui.\n\n"
 
-                f"{EMOJI_WAITING} **Strike**\n"
-                f"• Target mingguan tidak terpenuhi = 1 strike.\n"
-                f"• Maksimal {MAX_STRIKE} strike.\n"
-                "• Strike ke-3 = role dicabut otomatis.\n"
-                "• Strike tidak otomatis kembali ke 0.\n\n"
+                    f"{EMOJI_ARROW_BLUE} **Setelah Aktif**\n"
+                    f"• Minimal **{WEEKLY_HOURS} jam / minggu**.\n"
+                    "• Perhitungan berdasarkan waktu keduanya "
+                    "berada di VC yang sama.\n"
+                    "• AFK tetap dihitung.\n\n"
 
-                f"{EMOJI_LOVE} **Cabut Role**\n"
-                "• Kedua pihak harus menyetujui.\n"
-                "• Setelah dicabut, progress 20 jam kembali ke 0."
-            ),
-            color=discord.Color.blurple()
+                    f"{EMOJI_WAITING} **Strike**\n"
+                    "• Target mingguan tidak terpenuhi = 1 strike.\n"
+                    f"• Maksimal {MAX_STRIKE} strike.\n"
+                    "• Strike ke-3 = role dicabut otomatis.\n"
+                    "• Strike tidak otomatis kembali ke 0.\n\n"
+
+                    f"{EMOJI_LOVE} **Cabut Role**\n"
+                    "• Kedua pihak harus menyetujui.\n"
+                    "• Setelah dicabut, progress 20 jam kembali ke 0."
+                ),
+                color=discord.Color.blurple()
+            )
+
+            await interaction.response.send_message(
+                embed=embed,
+                ephemeral=True
+            )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Rules button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Terjadi kesalahan saat membuka ketentuan.",
+                    ephemeral=True
+                )
+
+    # ========================================================
+    # VIEW ERROR HANDLER
+    # ========================================================
+
+    async def on_error(
+        self,
+        interaction,
+        error,
+        item
+    ):
+
+        print(
+            "[APIPI MEMBER PANEL] "
+            f"Error pada "
+            f"{getattr(item, 'custom_id', 'unknown')}: "
+            f"{error}"
         )
 
-        await interaction.response.send_message(
-            embed=embed,
-            ephemeral=True
-        )
+        try:
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Terjadi kesalahan pada sistem Apipi. "
+                    "Silakan coba lagi.",
+                    ephemeral=True
+                )
+
+        except Exception as e:
+
+            print(
+                "[APIPI MEMBER PANEL] "
+                f"Gagal mengirim error response: {e}"
+            )
 
 
 # ============================================================
@@ -3060,7 +3484,10 @@ class ApipiManagementPanel(
     discord.ui.View
 ):
 
-    def __init__(self, cog):
+    def __init__(
+        self,
+        cog
+    ):
 
         super().__init__(
             timeout=None
@@ -3077,7 +3504,9 @@ class ApipiManagementPanel(
         interaction
     ):
 
-        if not self.cog.is_admin(interaction):
+        if not self.cog.is_admin(
+            interaction
+        ):
 
             await interaction.response.send_message(
                 "Akses ditolak. Hanya Administrator.",
@@ -3103,15 +3532,32 @@ class ApipiManagementPanel(
         button
     ):
 
-        if not await self.check_admin(interaction):
-            return
+        try:
 
-        await interaction.response.send_modal(
-            AdminTargetModal(
-                self.cog,
-                "Cek Status"
+            if not await self.check_admin(
+                interaction
+            ):
+                return
+
+            await interaction.response.send_modal(
+                AdminTargetModal(
+                    self.cog,
+                    "Cek Status"
+                )
             )
-        )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Admin status button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Gagal membuka form Cek Status.",
+                    ephemeral=True
+                )
 
     # ========================================================
     # SET ROLE
@@ -3128,15 +3574,32 @@ class ApipiManagementPanel(
         button
     ):
 
-        if not await self.check_admin(interaction):
-            return
+        try:
 
-        await interaction.response.send_modal(
-            AdminTargetModal(
-                self.cog,
-                "Set Role"
+            if not await self.check_admin(
+                interaction
+            ):
+                return
+
+            await interaction.response.send_modal(
+                AdminTargetModal(
+                    self.cog,
+                    "Set Role"
+                )
             )
-        )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Admin set role button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Gagal membuka form Set Role.",
+                    ephemeral=True
+                )
 
     # ========================================================
     # CABUT ROLE
@@ -3153,15 +3616,32 @@ class ApipiManagementPanel(
         button
     ):
 
-        if not await self.check_admin(interaction):
-            return
+        try:
 
-        await interaction.response.send_modal(
-            AdminTargetModal(
-                self.cog,
-                "Cabut Role"
+            if not await self.check_admin(
+                interaction
+            ):
+                return
+
+            await interaction.response.send_modal(
+                AdminTargetModal(
+                    self.cog,
+                    "Cabut Role"
+                )
             )
-        )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Admin remove role button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Gagal membuka form Cabut Role.",
+                    ephemeral=True
+                )
 
     # ========================================================
     # RESET PROGRESS
@@ -3178,15 +3658,32 @@ class ApipiManagementPanel(
         button
     ):
 
-        if not await self.check_admin(interaction):
-            return
+        try:
 
-        await interaction.response.send_modal(
-            AdminTargetModal(
-                self.cog,
-                "Reset Progress"
+            if not await self.check_admin(
+                interaction
+            ):
+                return
+
+            await interaction.response.send_modal(
+                AdminTargetModal(
+                    self.cog,
+                    "Reset Progress"
+                )
             )
-        )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Admin reset progress button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Gagal membuka form Reset Progress.",
+                    ephemeral=True
+                )
 
     # ========================================================
     # RESET STRIKE
@@ -3203,15 +3700,66 @@ class ApipiManagementPanel(
         button
     ):
 
-        if not await self.check_admin(interaction):
-            return
+        try:
 
-        await interaction.response.send_modal(
-            AdminTargetModal(
-                self.cog,
-                "Reset Strike"
+            if not await self.check_admin(
+                interaction
+            ):
+                return
+
+            await interaction.response.send_modal(
+                AdminTargetModal(
+                    self.cog,
+                    "Reset Strike"
+                )
             )
+
+        except Exception as e:
+
+            print(
+                f"[APIPI] Admin reset strike button error: {e}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Gagal membuka form Reset Strike.",
+                    ephemeral=True
+                )
+
+    # ========================================================
+    # VIEW ERROR HANDLER
+    # ========================================================
+
+    async def on_error(
+        self,
+        interaction,
+        error,
+        item
+    ):
+
+        print(
+            "[APIPI MANAGEMENT PANEL] "
+            f"Error pada "
+            f"{getattr(item, 'custom_id', 'unknown')}: "
+            f"{error}"
         )
+
+        try:
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "Terjadi kesalahan pada sistem management Apipi.",
+                    ephemeral=True
+                )
+
+        except Exception as e:
+
+            print(
+                "[APIPI MANAGEMENT PANEL] "
+                f"Gagal mengirim error response: {e}"
+            )
 
 
 # ============================================================
