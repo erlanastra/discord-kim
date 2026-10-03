@@ -12,117 +12,189 @@ from database import db
 # CONFIG
 # ============================================================
 
+# CHANNEL PANEL MEMBER
+APIPI_PANEL_CHANNEL_ID = 1555862444054814740
+
+# CHANNEL LOG APIPI
+APIPI_LOG_CHANNEL_ID = 1555862510765215765
+
+# ROLE APIPI
+APIPI_ROLE_ID = 1555862680605167646
+
+# ROLE SISWA / SISWI
 SISWA_ROLE_ID = 1453246082405503036
 SISWI_ROLE_ID = 1453246187636396032
 
-APIPI_ROLE_ID = 1555862680605167646
+# CHANNEL PANEL MANAGEMENT
+APIPI_MANAGEMENT_PANEL_ID = 1555863036810494084
 
-MEMBER_PANEL_CHANNEL_ID = 1555862444054814740
-LOG_CHANNEL_ID = 1555862510765215765
-MANAGEMENT_PANEL_CHANNEL_ID = 1555863036810494084
 
-MINIMUM_HOURS = 20
-WEEKLY_TARGET_HOURS = 5
+# ============================================================
+# RULE
+# ============================================================
+
+# Waktu unlock sebelum bisa mengambil role
+UNLOCK_HOURS = 20
+
+# Kewajiban setelah mendapatkan role
+WEEKLY_HOURS = 5
+
+# Maksimal strike
 MAX_STRIKE = 3
 
-HEARTBEAT_SECONDS = 60
-WEEKLY_CHECK_SECONDS = 1800
+# Heartbeat tracking
+HEARTBEAT_SECONDS = 30
 
+
+# ============================================================
+# TIMEZONE
+# ============================================================
+
+UTC = timezone.utc
 WIB = timezone(timedelta(hours=7))
 
 
 # ============================================================
-# ANIMATED CUSTOM EMOJIS
+# CUSTOM EMOJI
 # ============================================================
-#
-# Pastikan emoji Discord tersebut memang bertipe ANIMATED.
-# Format animated custom emoji Discord:
-#
-# <a:nama:ID>
-#
-# Button sengaja TIDAK memakai emoji sama sekali.
-#
+# Semua emoji di bawah adalah custom emoji Discord.
+# Button TIDAK menggunakan emoji.
+# Emoji hanya digunakan pada embed/message.
 
-EMOJI = {
-    "blue": "<a:arrow_blue:1512787254312042496>",
-    "purple": "<a:arrow_purple:1512787191234035803>",
-    "apipi": "<a:apipi:1512888691369050243>",
-    "love": "<a:rainbow_love:1493106010389483661>",
-}
+EMOJI_ARROW_BLUE = discord.PartialEmoji(
+    name="arrow_blue",
+    id=1512787254312042496
+)
+
+EMOJI_ARROW_PURPLE = discord.PartialEmoji(
+    name="arrow_purple",
+    id=1512787191234035803
+)
+
+EMOJI_APIPI = discord.PartialEmoji(
+    name="apipi",
+    id=1512888691369050243
+)
+
+EMOJI_LOVE = discord.PartialEmoji(
+    name="rainbow_love",
+    id=1493106010389483661
+)
+
+EMOJI_WAITING = discord.PartialEmoji(
+    name="waiting",
+    id=1544744564336758905
+)
 
 
 # ============================================================
-# TIME HELPERS
+# HELPERS
 # ============================================================
 
-def now_utc():
-    return datetime.now(timezone.utc)
-
-
-def now_wib():
-    return datetime.now(WIB)
-
-
-def to_db(dt: datetime):
+def utc_now():
     """
-    MariaDB DATETIME tidak menyimpan timezone.
-    Semua waktu DB disimpan sebagai UTC.
+    Waktu sekarang dalam UTC.
     """
-    if dt is None:
+    return datetime.now(UTC)
+
+
+def db_datetime(dt):
+    """
+    Convert aware datetime -> naive UTC
+    untuk MariaDB DATETIME.
+    """
+    return dt.astimezone(UTC).replace(tzinfo=None)
+
+
+def from_db_datetime(value):
+    """
+    Convert MariaDB DATETIME -> aware UTC.
+    """
+    if value is None:
         return None
 
-    if dt.tzinfo is None:
-        return dt
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
 
-    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(UTC)
 
 
-def from_db(dt):
+def get_week_start(dt):
     """
-    Ambil DATETIME dari database dan anggap sebagai UTC.
+    Mengambil Senin 00:00 WIB sebagai awal minggu.
     """
-    if dt is None:
-        return None
+    local = dt.astimezone(WIB)
 
-    if dt.tzinfo is not None:
-        return dt.astimezone(timezone.utc)
+    monday = local - timedelta(days=local.weekday())
 
-    return dt.replace(tzinfo=timezone.utc)
-
-
-def week_start(dt=None):
-    """
-    Senin 00:00 WIB.
-    """
-    if dt is None:
-        dt = now_wib()
-
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=WIB)
-    else:
-        dt = dt.astimezone(WIB)
-
-    monday = dt - timedelta(days=dt.weekday())
-
-    return monday.replace(
+    monday = monday.replace(
         hour=0,
         minute=0,
         second=0,
         microsecond=0
     )
 
+    return monday
+
+
+def get_week_start_date(dt):
+    return get_week_start(dt).date()
+
+
+def get_next_week_start(dt):
+    return get_week_start(dt) + timedelta(days=7)
+
+
+def parse_user_id(value):
+    """
+    Mendukung:
+    123456789
+    <@123456789>
+    <@!123456789>
+    """
+
+    if not value:
+        return None
+
+    value = value.strip()
+
+    match = re.search(r"\d{15,25}", value)
+
+    if not match:
+        return None
+
+    try:
+        return int(match.group())
+    except ValueError:
+        return None
+
+
+def format_hours(seconds):
+    """
+    Contoh:
+    7200 -> 2.00 jam
+    """
+
+    hours = seconds / 3600
+
+    return f"{hours:.2f} jam"
+
 
 def format_duration(seconds):
-    seconds = max(0, int(seconds))
+    """
+    Contoh:
+    7260 -> 2 jam 1 menit
+    """
+
+    seconds = int(seconds)
 
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
 
-    return f"{hours}j {minutes}m"
+    if hours > 0:
+        return f"{hours} jam {minutes} menit"
 
-
-def progress_hours(seconds):
-    return round(seconds / 3600, 2)
+    return f"{minutes} menit"
 
 
 # ============================================================
@@ -130,36 +202,51 @@ def progress_hours(seconds):
 # ============================================================
 
 async def create_tables():
+    """
+    Membuat database/tabel jika belum ada.
+
+    Jika tabel sudah ada:
+    - tidak dibuat ulang
+    - data tetap digunakan
+    """
+
     await db.execute("""
         CREATE TABLE IF NOT EXISTS nanz_apipi_pairs (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            id BIGINT NOT NULL AUTO_INCREMENT,
+            guild_id BIGINT NOT NULL,
+
             siswa_id BIGINT NOT NULL,
             siswi_id BIGINT NOT NULL,
 
-            status VARCHAR(30) NOT NULL DEFAULT 'tracking',
+            status VARCHAR(20) NOT NULL DEFAULT 'tracking',
 
-            total_seconds BIGINT NOT NULL DEFAULT 0,
+            take_siswa TINYINT(1) NOT NULL DEFAULT 0,
+            take_siswi TINYINT(1) NOT NULL DEFAULT 0,
 
-            eligible TINYINT(1) NOT NULL DEFAULT 0,
+            remove_siswa TINYINT(1) NOT NULL DEFAULT 0,
+            remove_siswi TINYINT(1) NOT NULL DEFAULT 0,
 
-            siswa_approved TINYINT(1) NOT NULL DEFAULT 0,
-            siswi_approved TINYINT(1) NOT NULL DEFAULT 0,
+            eligible_notified TINYINT(1) NOT NULL DEFAULT 0,
 
-            siswa_remove_approved TINYINT(1) NOT NULL DEFAULT 0,
-            siswi_remove_approved TINYINT(1) NOT NULL DEFAULT 0,
+            strike INT NOT NULL DEFAULT 0,
 
-            role_activated_at DATETIME NULL,
+            active_since DATETIME NULL,
 
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
 
-            UNIQUE KEY unique_pair (siswa_id, siswi_id)
-        )
+            PRIMARY KEY (id),
+
+            INDEX idx_apipi_guild (guild_id),
+            INDEX idx_apipi_siswa (siswa_id),
+            INDEX idx_apipi_siswi (siswi_id),
+            INDEX idx_apipi_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS nanz_apipi_sessions (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            id BIGINT NOT NULL AUTO_INCREMENT,
 
             pair_id BIGINT NOT NULL,
 
@@ -168,58 +255,94 @@ async def create_tables():
 
             duration_seconds BIGINT NOT NULL DEFAULT 0,
 
-            INDEX idx_pair (pair_id),
-            INDEX idx_started (started_at),
-            INDEX idx_ended (ended_at)
-        )
+            week_start DATE NOT NULL,
+
+            created_at DATETIME NOT NULL,
+
+            PRIMARY KEY (id),
+
+            INDEX idx_apipi_session_pair (pair_id),
+            INDEX idx_apipi_session_week (pair_id, week_start),
+
+            CONSTRAINT fk_apipi_session_pair
+                FOREIGN KEY (pair_id)
+                REFERENCES nanz_apipi_pairs(id)
+                ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS nanz_apipi_live_sessions (
-            pair_id BIGINT PRIMARY KEY,
+            pair_id BIGINT NOT NULL,
 
             channel_id BIGINT NOT NULL,
 
             started_at DATETIME NOT NULL,
             last_seen_at DATETIME NOT NULL,
 
-            INDEX idx_channel (channel_id)
-        )
+            PRIMARY KEY (pair_id),
+
+            CONSTRAINT fk_apipi_live_pair
+                FOREIGN KEY (pair_id)
+                REFERENCES nanz_apipi_pairs(id)
+                ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS nanz_apipi_weekly (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            id BIGINT NOT NULL AUTO_INCREMENT,
 
             pair_id BIGINT NOT NULL,
-            week_start DATETIME NOT NULL,
+
+            week_start DATE NOT NULL,
 
             seconds BIGINT NOT NULL DEFAULT 0,
 
-            strike_added TINYINT(1) NOT NULL DEFAULT 0,
+            target_seconds BIGINT NOT NULL,
 
-            UNIQUE KEY unique_pair_week (pair_id, week_start),
-            INDEX idx_pair (pair_id)
-        )
+            met TINYINT(1) NOT NULL DEFAULT 0,
+
+            strike_after INT NOT NULL DEFAULT 0,
+
+            checked_at DATETIME NOT NULL,
+
+            PRIMARY KEY (id),
+
+            UNIQUE KEY unique_apipi_week (
+                pair_id,
+                week_start
+            ),
+
+            INDEX idx_apipi_week_pair (pair_id),
+
+            CONSTRAINT fk_apipi_week_pair
+                FOREIGN KEY (pair_id)
+                REFERENCES nanz_apipi_pairs(id)
+                ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS nanz_apipi_logs (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            id BIGINT NOT NULL AUTO_INCREMENT,
 
             pair_id BIGINT NULL,
 
+            actor_id BIGINT NULL,
+
             action VARCHAR(50) NOT NULL,
 
-            user_id BIGINT NULL,
-
-            detail TEXT NULL,
+            details TEXT NULL,
 
             created_at DATETIME NOT NULL,
 
-            INDEX idx_pair (pair_id),
-            INDEX idx_created (created_at)
-        )
+            PRIMARY KEY (id),
+
+            INDEX idx_apipi_log_pair (pair_id),
+            INDEX idx_apipi_log_actor (actor_id),
+            INDEX idx_apipi_log_action (action)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
 
 
@@ -230,206 +353,376 @@ async def create_tables():
 class Apipi(commands.Cog):
 
     def __init__(self, bot):
+
         self.bot = bot
 
-        self.initialized = False
-        self._panel_lock = asyncio.Lock()
+        self.session_lock = asyncio.Lock()
 
-        self.heartbeat_loop.start()
+        self.initialized = False
+
+        self.heartbeat.start()
         self.weekly_checker.start()
 
     # ========================================================
-    # LIFECYCLE
+    # COG LOAD
     # ========================================================
 
     async def cog_load(self):
-        await create_tables()
 
-        self.bot.add_view(ApipiMemberPanel(self))
-        self.bot.add_view(ApipiManagementPanel(self))
+        await create_tables()
 
         self.initialized = True
 
-        await self.reconcile_after_restart()
+        # Persistent member panel
+        self.bot.add_view(
+            ApipiMemberPanel(self)
+        )
 
-        await self.ensure_member_panel()
-        await self.ensure_management_panel()
+        # Persistent management panel
+        self.bot.add_view(
+            ApipiManagementPanel(self)
+        )
+
+        self.bot.loop.create_task(
+            self.initialize_panels()
+        )
+
+        self.bot.loop.create_task(
+            self.reconcile_after_restart()
+        )
+
+    # ========================================================
+    # COG UNLOAD
+    # ========================================================
 
     def cog_unload(self):
-        self.heartbeat_loop.cancel()
+
+        self.heartbeat.cancel()
+
         self.weekly_checker.cancel()
 
     # ========================================================
-    # DATABASE HELPERS
+    # PANEL INITIALIZATION
     # ========================================================
 
-    async def log_action(
-        self,
-        action,
-        pair_id=None,
-        user_id=None,
-        detail=None
-    ):
-        await db.execute("""
-            INSERT INTO nanz_apipi_logs
-            (
-                pair_id,
-                action,
-                user_id,
-                detail,
-                created_at
-            )
-            VALUES (%s, %s, %s, %s, %s)
-        """, (
-            pair_id,
-            action,
-            user_id,
-            detail,
-            to_db(now_utc())
-        ))
+    async def initialize_panels(self):
 
-    async def get_pair_by_id(self, pair_id):
-        return await db.fetchone("""
+        await self.bot.wait_until_ready()
+
+        try:
+            await self.ensure_member_panel()
+        except Exception as e:
+            print(
+                f"[APIPI] Gagal memastikan member panel: {e}"
+            )
+
+        try:
+            await self.ensure_management_panel()
+        except Exception as e:
+            print(
+                f"[APIPI] Gagal memastikan management panel: {e}"
+            )
+
+    # ========================================================
+    # ENSURE MEMBER PANEL
+    # ========================================================
+
+    async def ensure_member_panel(self):
+
+        channel = self.bot.get_channel(
+            APIPI_PANEL_CHANNEL_ID
+        )
+
+        if not channel:
+            return
+
+        try:
+            async for message in channel.history(limit=50):
+
+                if message.author.id != self.bot.user.id:
+                    continue
+
+                if not message.embeds:
+                    continue
+
+                if message.embeds[0].title == "APIPI — PANEL":
+
+                    try:
+                        await message.edit(
+                            embed=self.member_panel_embed(),
+                            view=ApipiMemberPanel(self)
+                        )
+                    except Exception:
+                        pass
+
+                    return
+
+        except Exception:
+            pass
+
+        await channel.send(
+            embed=self.member_panel_embed(),
+            view=ApipiMemberPanel(self)
+        )
+
+    # ========================================================
+    # ENSURE MANAGEMENT PANEL
+    # ========================================================
+
+    async def ensure_management_panel(self):
+
+        channel = self.bot.get_channel(
+            APIPI_MANAGEMENT_PANEL_ID
+        )
+
+        if not channel:
+            return
+
+        try:
+            async for message in channel.history(limit=50):
+
+                if message.author.id != self.bot.user.id:
+                    continue
+
+                if not message.embeds:
+                    continue
+
+                if (
+                    message.embeds[0].title
+                    == "APIPI — MANAGEMENT"
+                ):
+
+                    try:
+                        await message.edit(
+                            embed=self.management_panel_embed(),
+                            view=ApipiManagementPanel(self)
+                        )
+                    except Exception:
+                        pass
+
+                    return
+
+        except Exception:
+            pass
+
+        await channel.send(
+            embed=self.management_panel_embed(),
+            view=ApipiManagementPanel(self)
+        )
+
+    # ========================================================
+    # EMBED MEMBER PANEL
+    # ========================================================
+
+    def member_panel_embed(self):
+
+        embed = discord.Embed(
+            title="APIPI — PANEL",
+            description=(
+                f"{EMOJI_APIPI} **Apipi** adalah pasangan "
+                "Siswa + Siswi yang memenuhi persyaratan "
+                "voice bersama.\n\n"
+
+                f"{EMOJI_ARROW_PURPLE} **Cara mendapatkan role**\n"
+                "1. Daftarkan pasangan.\n"
+                "2. Keduanya berada di voice channel yang sama.\n"
+                f"3. Kumpulkan **{UNLOCK_HOURS} jam** shared voice.\n"
+                "4. Setelah 20 jam tercapai, keduanya mendapat "
+                "notifikasi.\n"
+                "5. Role hanya diberikan jika **keduanya menyetujui**.\n\n"
+
+                f"{EMOJI_ARROW_BLUE} **Setelah mendapatkan role**\n"
+                f"• Minimal **{WEEKLY_HOURS} jam / minggu**.\n"
+                "• AFK tetap dihitung selama tetap berada di VC yang sama.\n"
+                f"• Maksimal **{MAX_STRIKE} strike**.\n"
+                "• Strike bersifat kumulatif.\n"
+                "• Strike ke-3 menyebabkan role dicabut otomatis.\n\n"
+
+                f"{EMOJI_LOVE} Gunakan tombol di bawah untuk "
+                "mengatur status Apipi."
+            ),
+            color=discord.Color.blurple()
+        )
+
+        return embed
+
+    # ========================================================
+    # EMBED MANAGEMENT PANEL
+    # ========================================================
+
+    def management_panel_embed(self):
+
+        embed = discord.Embed(
+            title="APIPI — MANAGEMENT",
+            description=(
+                f"{EMOJI_APIPI} Panel khusus **Administrator**.\n\n"
+
+                f"{EMOJI_ARROW_PURPLE} **Cek Status**\n"
+                "Melihat data dan progress pasangan.\n\n"
+
+                f"{EMOJI_ARROW_PURPLE} **Set Role**\n"
+                "Memberikan role Apipi secara manual.\n\n"
+
+                f"{EMOJI_ARROW_PURPLE} **Cabut Role**\n"
+                "Mencabut role Apipi secara manual.\n\n"
+
+                f"{EMOJI_ARROW_PURPLE} **Reset Progress**\n"
+                "Menghapus progress 20 jam pasangan.\n\n"
+
+                f"{EMOJI_ARROW_PURPLE} **Reset Strike**\n"
+                "Mengembalikan strike pasangan menjadi 0.\n\n"
+
+                f"{EMOJI_WAITING} Semua tindakan management "
+                "akan dicatat ke log."
+            ),
+            color=discord.Color.dark_purple()
+        )
+
+        return embed
+
+    # ========================================================
+    # FIND MEMBER
+    # ========================================================
+
+    def find_member(self, user_id):
+
+        for guild in self.bot.guilds:
+
+            member = guild.get_member(user_id)
+
+            if member:
+                return member
+
+        return None
+
+    # ========================================================
+    # GET PAIR BY MEMBER
+    # ========================================================
+
+    async def get_pair_by_member(
+        self,
+        guild_id,
+        user_id,
+        include_removed=False
+    ):
+
+        if include_removed:
+
+            return await db.fetchone(
+                """
+                SELECT *
+                FROM nanz_apipi_pairs
+                WHERE guild_id = %s
+                AND (siswa_id = %s OR siswi_id = %s)
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (
+                    guild_id,
+                    user_id,
+                    user_id
+                )
+            )
+
+        return await db.fetchone(
+            """
+            SELECT *
+            FROM nanz_apipi_pairs
+            WHERE guild_id = %s
+            AND (siswa_id = %s OR siswi_id = %s)
+            AND status != 'removed'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (
+                guild_id,
+                user_id,
+                user_id
+            )
+        )
+
+    # ========================================================
+    # GET PAIR BY ID
+    # ========================================================
+
+    async def get_pair(self, pair_id):
+
+        return await db.fetchone(
+            """
             SELECT *
             FROM nanz_apipi_pairs
             WHERE id = %s
             LIMIT 1
-        """, (pair_id,))
+            """,
+            (pair_id,)
+        )
 
-    async def get_pair_by_member(
+    # ========================================================
+    # FIND PAIR BY TWO MEMBERS
+    # ========================================================
+
+    async def get_exact_pair(
         self,
-        user_id,
-        include_removed=False
+        guild_id,
+        siswa_id,
+        siswi_id
     ):
-        if include_removed:
-            return await db.fetchone("""
-                SELECT *
-                FROM nanz_apipi_pairs
-                WHERE siswa_id = %s
-                   OR siswi_id = %s
-                ORDER BY id DESC
-                LIMIT 1
-            """, (user_id, user_id))
 
-        return await db.fetchone("""
+        return await db.fetchone(
+            """
             SELECT *
             FROM nanz_apipi_pairs
-            WHERE
-                (siswa_id = %s OR siswi_id = %s)
-                AND status != 'removed'
+            WHERE guild_id = %s
+            AND siswa_id = %s
+            AND siswi_id = %s
             ORDER BY id DESC
             LIMIT 1
-        """, (user_id, user_id))
-
-    async def get_active_pairs(self):
-        return await db.fetchall("""
-            SELECT *
-            FROM nanz_apipi_pairs
-            WHERE status != 'removed'
-        """)
-
-    # ========================================================
-    # PAIR HELPERS
-    # ========================================================
-
-    def is_valid_pair(self, member1, member2):
-        m1_siswa = any(
-            role.id == SISWA_ROLE_ID
-            for role in member1.roles
-        )
-
-        m1_siswi = any(
-            role.id == SISWI_ROLE_ID
-            for role in member1.roles
-        )
-
-        m2_siswa = any(
-            role.id == SISWA_ROLE_ID
-            for role in member2.roles
-        )
-
-        m2_siswi = any(
-            role.id == SISWI_ROLE_ID
-            for role in member2.roles
-        )
-
-        return (
-            (m1_siswa and m2_siswi)
-            or
-            (m1_siswi and m2_siswa)
-        )
-
-    def get_pair_members(self, pair, guild):
-        siswa = guild.get_member(int(pair["siswa_id"]))
-        siswi = guild.get_member(int(pair["siswi_id"]))
-
-        return siswa, siswi
-
-    # ========================================================
-    # REGISTER PAIR
-    # ========================================================
-
-    async def register_pair(
-        self,
-        guild,
-        user_id,
-        partner_id
-    ):
-        member = guild.get_member(user_id)
-        partner = guild.get_member(partner_id)
-
-        if not member:
-            return False, "Akun kamu tidak ditemukan."
-
-        if not partner:
-            return False, "Pasangan tidak ditemukan."
-
-        if member.id == partner.id:
-            return False, "Kamu tidak bisa mendaftarkan diri sendiri."
-
-        existing = await self.get_pair_by_member(
-            member.id,
-            include_removed=False
-        )
-
-        if existing:
-            return False, "Kamu sudah memiliki pasangan Apipi."
-
-        existing_partner = await self.get_pair_by_member(
-            partner.id,
-            include_removed=False
-        )
-
-        if existing_partner:
-            return False, "Pasangan tersebut sudah memiliki pasangan Apipi."
-
-        if not self.is_valid_pair(member, partner):
-            return False, (
-                "Pasangan harus terdiri dari 1 Siswa dan 1 Siswi."
+            """,
+            (
+                guild_id,
+                siswa_id,
+                siswi_id
             )
+        )
 
-        if any(role.id == SISWA_ROLE_ID for role in member.roles):
-            siswa_id = member.id
-            siswi_id = partner.id
-        else:
-            siswa_id = partner.id
-            siswi_id = member.id
+    # ========================================================
+    # CREATE PAIR
+    # ========================================================
 
-        current = now_utc()
+    async def create_pair(
+        self,
+        guild_id,
+        siswa_id,
+        siswi_id,
+        actor_id
+    ):
 
-        await db.execute("""
+        existing_siswa = await self.get_pair_by_member(
+            guild_id,
+            siswa_id
+        )
+
+        if existing_siswa:
+            return None, "siswa_busy"
+
+        existing_siswi = await self.get_pair_by_member(
+            guild_id,
+            siswi_id
+        )
+
+        if existing_siswi:
+            return None, "siswi_busy"
+
+        now = db_datetime(utc_now())
+
+        await db.execute(
+            """
             INSERT INTO nanz_apipi_pairs
             (
+                guild_id,
                 siswa_id,
                 siswi_id,
                 status,
-                total_seconds,
-                eligible,
-                siswa_approved,
-                siswi_approved,
-                siswa_remove_approved,
-                siswi_remove_approved,
-                role_activated_at,
                 created_at,
                 updated_at
             )
@@ -437,81 +730,142 @@ class Apipi(commands.Cog):
             (
                 %s,
                 %s,
+                %s,
                 'tracking',
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                NULL,
                 %s,
                 %s
             )
-        """, (
-            siswa_id,
-            siswi_id,
-            to_db(current),
-            to_db(current)
-        ))
+            """,
+            (
+                guild_id,
+                siswa_id,
+                siswi_id,
+                now,
+                now
+            )
+        )
 
-        pair = await db.fetchone("""
-            SELECT *
-            FROM nanz_apipi_pairs
-            WHERE siswa_id = %s
-              AND siswi_id = %s
-            ORDER BY id DESC
-            LIMIT 1
-        """, (siswa_id, siswi_id))
+        pair = await self.get_exact_pair(
+            guild_id,
+            siswa_id,
+            siswi_id
+        )
 
         if pair:
-            await self.log_action(
-                "pair_registered",
+
+            await self.log(
                 pair["id"],
-                user_id,
-                f"Pair registered: {siswa_id} + {siswi_id}"
+                actor_id,
+                "PAIR_REGISTER",
+                (
+                    f"Pair dibuat: "
+                    f"Siswa={siswa_id}, "
+                    f"Siswi={siswi_id}"
+                )
             )
 
-        return True, "Pasangan Apipi berhasil didaftarkan."
+        return pair, "success"
 
     # ========================================================
-    # VOICE CHECK
+    # CHECK ROLES
     # ========================================================
 
-    def same_voice_channel(self, siswa, siswi):
+    def validate_pair_roles(
+        self,
+        siswa,
+        siswi
+    ):
+
         if not siswa or not siswi:
             return False
 
+        siswa_ok = any(
+            role.id == SISWA_ROLE_ID
+            for role in siswa.roles
+        )
+
+        siswi_ok = any(
+            role.id == SISWI_ROLE_ID
+            for role in siswi.roles
+        )
+
+        return siswa_ok and siswi_ok
+
+    # ========================================================
+    # GET PAIR MEMBERS
+    # ========================================================
+
+    def get_pair_members(self, pair):
+
+        siswa = self.find_member(
+            pair["siswa_id"]
+        )
+
+        siswi = self.find_member(
+            pair["siswi_id"]
+        )
+
+        return siswa, siswi
+
+    # ========================================================
+    # SHARED VOICE CHECK
+    # ========================================================
+
+    def get_shared_channel(self, pair):
+
+        siswa, siswi = self.get_pair_members(pair)
+
+        if not siswa or not siswi:
+            return None
+
         if not siswa.voice or not siswi.voice:
-            return False
+            return None
 
-        if not siswa.voice.channel or not siswi.voice.channel:
-            return False
+        if not siswa.voice.channel:
+            return None
 
-        return siswa.voice.channel.id == siswi.voice.channel.id
+        if not siswi.voice.channel:
+            return None
+
+        if siswa.voice.channel.id != siswi.voice.channel.id:
+            return None
+
+        return siswa.voice.channel
 
     # ========================================================
-    # LIVE SESSION
+    # START SESSION
     # ========================================================
 
-    async def start_live_session(
+    async def start_session(
         self,
-        pair_id,
+        pair,
         channel_id
     ):
-        current = now_utc()
 
-        existing = await db.fetchone("""
+        existing = await db.fetchone(
+            """
             SELECT *
             FROM nanz_apipi_live_sessions
             WHERE pair_id = %s
             LIMIT 1
-        """, (pair_id,))
+            """,
+            (pair["id"],)
+        )
 
         if existing:
-            return
 
-        await db.execute("""
+            if existing["channel_id"] == channel_id:
+                return
+
+            await self.close_session(
+                pair["id"],
+                utc_now()
+            )
+
+        now = db_datetime(utc_now())
+
+        await db.execute(
+            """
             INSERT INTO nanz_apipi_live_sessions
             (
                 pair_id,
@@ -519,302 +873,340 @@ class Apipi(commands.Cog):
                 started_at,
                 last_seen_at
             )
-            VALUES (%s, %s, %s, %s)
-        """, (
-            pair_id,
-            channel_id,
-            to_db(current),
-            to_db(current)
-        ))
+            VALUES
+            (
+                %s,
+                %s,
+                %s,
+                %s
+            )
+            """,
+            (
+                pair["id"],
+                channel_id,
+                now,
+                now
+            )
+        )
 
-    async def heartbeat_live_session(
+    # ========================================================
+    # CLOSE SESSION
+    # ========================================================
+
+    async def close_session(
         self,
         pair_id,
-        channel_id
+        end_time
     ):
-        current = now_utc()
 
-        await db.execute("""
-            UPDATE nanz_apipi_live_sessions
-            SET
-                channel_id = %s,
-                last_seen_at = %s
-            WHERE pair_id = %s
-        """, (
-            channel_id,
-            to_db(current),
-            pair_id
-        ))
-
-    async def close_live_session(self, pair_id):
-        live = await db.fetchone("""
+        live = await db.fetchone(
+            """
             SELECT *
             FROM nanz_apipi_live_sessions
             WHERE pair_id = %s
             LIMIT 1
-        """, (pair_id,))
+            """,
+            (pair_id,)
+        )
 
         if not live:
-            return 0
+            return
 
-        started_at = from_db(live["started_at"])
-        last_seen_at = from_db(live["last_seen_at"])
+        start_time = from_db_datetime(
+            live["started_at"]
+        )
 
-        if not started_at or not last_seen_at:
-            await db.execute("""
+        if end_time <= start_time:
+
+            await db.execute(
+                """
                 DELETE FROM nanz_apipi_live_sessions
                 WHERE pair_id = %s
-            """, (pair_id,))
-            return 0
-
-        duration = max(
-            0,
-            int((last_seen_at - started_at).total_seconds())
-        )
-
-        if duration > 0:
-            await self.save_session(
-                pair_id,
-                started_at,
-                last_seen_at,
-                duration
+                """,
+                (pair_id,)
             )
 
-        await db.execute("""
+            return
+
+        await self.save_split_sessions(
+            pair_id,
+            start_time,
+            end_time
+        )
+
+        await db.execute(
+            """
             DELETE FROM nanz_apipi_live_sessions
             WHERE pair_id = %s
-        """, (pair_id,))
-
-        return duration
-
-    # ========================================================
-    # SESSION SAVE
-    # ========================================================
-
-    async def save_session(
-        self,
-        pair_id,
-        started_at,
-        ended_at,
-        duration
-    ):
-        if duration <= 0:
-            return
-
-        await db.execute("""
-            INSERT INTO nanz_apipi_sessions
-            (
-                pair_id,
-                started_at,
-                ended_at,
-                duration_seconds
-            )
-            VALUES (%s, %s, %s, %s)
-        """, (
-            pair_id,
-            to_db(started_at),
-            to_db(ended_at),
-            duration
-        ))
-
-        await db.execute("""
-            UPDATE nanz_apipi_pairs
-            SET
-                total_seconds = total_seconds + %s,
-                updated_at = %s
-            WHERE id = %s
-        """, (
-            duration,
-            to_db(now_utc()),
-            pair_id
-        ))
-
-        await self.add_weekly_seconds(
-            pair_id,
-            started_at,
-            ended_at
+            """,
+            (pair_id,)
         )
 
     # ========================================================
-    # WEEKLY TIME
+    # SAVE SPLIT SESSIONS
     # ========================================================
 
-    async def add_weekly_seconds(
+    async def save_split_sessions(
         self,
         pair_id,
-        started_at,
-        ended_at
+        start_time,
+        end_time
     ):
-        """
-        Membagi session berdasarkan batas minggu:
-        Senin 00:00 WIB.
-        """
 
-        if ended_at <= started_at:
-            return
+        cursor = start_time
 
-        cursor = started_at
+        while cursor < end_time:
 
-        while cursor < ended_at:
-            cursor_wib = cursor.astimezone(WIB)
+            current_week = get_week_start(cursor)
 
-            current_week = week_start(cursor_wib)
-
-            next_week = current_week + timedelta(days=7)
-
-            segment_end_wib = min(
-                ended_at.astimezone(WIB),
-                next_week
+            next_boundary = current_week + timedelta(
+                days=7
             )
 
-            segment_end = segment_end_wib.astimezone(timezone.utc)
+            if next_boundary.tzinfo is None:
+
+                next_boundary = next_boundary.replace(
+                    tzinfo=WIB
+                )
+
+            next_boundary_utc = next_boundary.astimezone(
+                UTC
+            )
+
+            segment_end = min(
+                end_time,
+                next_boundary_utc
+            )
 
             duration = int(
                 (segment_end - cursor).total_seconds()
             )
 
             if duration > 0:
-                week_db = to_db(current_week.astimezone(timezone.utc))
 
-                await db.execute("""
-                    INSERT INTO nanz_apipi_weekly
+                await db.execute(
+                    """
+                    INSERT INTO nanz_apipi_sessions
                     (
                         pair_id,
+                        started_at,
+                        ended_at,
+                        duration_seconds,
                         week_start,
-                        seconds,
-                        strike_added
+                        created_at
                     )
-                    VALUES (%s, %s, %s, 0)
-                    ON DUPLICATE KEY UPDATE
-                        seconds = seconds + VALUES(seconds)
-                """, (
-                    pair_id,
-                    week_db,
-                    duration
-                ))
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        %s
+                    )
+                    """,
+                    (
+                        pair_id,
+                        db_datetime(cursor),
+                        db_datetime(segment_end),
+                        duration,
+                        current_week.date(),
+                        db_datetime(utc_now())
+                    )
+                )
 
             cursor = segment_end
 
-    async def get_week_seconds(
-        self,
-        pair_id,
-        target_week
-    ):
-        week_utc = target_week.astimezone(timezone.utc)
+    # ========================================================
+    # TOTAL PROGRESS
+    # ========================================================
 
-        row = await db.fetchone("""
-            SELECT seconds
-            FROM nanz_apipi_weekly
+    async def get_total_seconds(self, pair_id):
+
+        result = await db.fetchone(
+            """
+            SELECT
+                COALESCE(
+                    SUM(duration_seconds),
+                    0
+                ) AS total_seconds
+            FROM nanz_apipi_sessions
             WHERE pair_id = %s
-              AND week_start = %s
-            LIMIT 1
-        """, (
-            pair_id,
-            to_db(week_utc)
-        ))
+            """,
+            (pair_id,)
+        )
 
-        saved = int(row["seconds"]) if row else 0
+        total = int(
+            result["total_seconds"] or 0
+        )
 
-        # Tambahkan live session yang sedang berjalan,
-        # tetapi hanya bagian yang berada dalam minggu tersebut.
-        live = await db.fetchone("""
+        # Tambahkan live session
+        live = await db.fetchone(
+            """
             SELECT *
             FROM nanz_apipi_live_sessions
             WHERE pair_id = %s
             LIMIT 1
-        """, (pair_id,))
-
-        if not live:
-            return saved
-
-        started = from_db(live["started_at"])
-        current = now_utc()
-
-        week_start_utc = target_week.astimezone(timezone.utc)
-        week_end_utc = (
-            target_week + timedelta(days=7)
-        ).astimezone(timezone.utc)
-
-        overlap_start = max(
-            started,
-            week_start_utc
+            """,
+            (pair_id,)
         )
 
-        overlap_end = min(
-            current,
-            week_end_utc
-        )
+        if live:
 
-        if overlap_end > overlap_start:
-            live_seconds = int(
-                (overlap_end - overlap_start).total_seconds()
+            start = from_db_datetime(
+                live["started_at"]
             )
-        else:
-            live_seconds = 0
 
-        return saved + live_seconds
+            total += max(
+                0,
+                int(
+                    (utc_now() - start).total_seconds()
+                )
+            )
+
+        return total
 
     # ========================================================
-    # ELIGIBILITY
+    # WEEKLY PROGRESS
     # ========================================================
 
-    async def check_eligibility(
+    async def get_week_seconds(
         self,
-        pair_id
+        pair_id,
+        week_start_date
     ):
-        pair = await self.get_pair_by_id(pair_id)
 
-        if not pair:
-            return
-
-        if pair["status"] == "removed":
-            return
-
-        if int(pair["eligible"]):
-            return
-
-        if int(pair["total_seconds"]) < MINIMUM_HOURS * 3600:
-            return
-
-        await db.execute("""
-            UPDATE nanz_apipi_pairs
-            SET
-                eligible = 1,
-                status = 'eligible',
-                updated_at = %s
-            WHERE id = %s
-        """, (
-            to_db(now_utc()),
-            pair_id
-        ))
-
-        await self.log_action(
-            "eligible",
-            pair_id,
-            None,
-            "Pair reached minimum 20 hours."
+        result = await db.fetchone(
+            """
+            SELECT
+                COALESCE(
+                    SUM(duration_seconds),
+                    0
+                ) AS seconds
+            FROM nanz_apipi_sessions
+            WHERE pair_id = %s
+            AND week_start = %s
+            """,
+            (
+                pair_id,
+                week_start_date
+            )
         )
 
-        guild = self.bot.get_guild(
-            pair.get("guild_id", 0)
+        total = int(
+            result["seconds"] or 0
         )
 
-        if not guild:
-            guild = self.find_guild_for_pair(pair)
+        # Tambahkan bagian live session
+        # yang masuk minggu ini
+        live = await db.fetchone(
+            """
+            SELECT *
+            FROM nanz_apipi_live_sessions
+            WHERE pair_id = %s
+            LIMIT 1
+            """,
+            (pair_id,)
+        )
 
-        if guild:
-            await self.send_eligibility_notice(
-                guild,
-                pair_id
+        if live:
+
+            start = from_db_datetime(
+                live["started_at"]
             )
 
-    def find_guild_for_pair(self, pair):
-        for guild in self.bot.guilds:
-            if guild.get_member(int(pair["siswa_id"])):
-                if guild.get_member(int(pair["siswi_id"])):
-                    return guild
+            now = utc_now()
 
-        return None
+            week_start_local = datetime.combine(
+                week_start_date,
+                datetime.min.time()
+            ).replace(
+                tzinfo=WIB
+            )
+
+            week_start_utc = week_start_local.astimezone(
+                UTC
+            )
+
+            week_end_utc = (
+                week_start_local
+                + timedelta(days=7)
+            ).astimezone(UTC)
+
+            overlap_start = max(
+                start,
+                week_start_utc
+            )
+
+            overlap_end = min(
+                now,
+                week_end_utc
+            )
+
+            if overlap_end > overlap_start:
+
+                total += int(
+                    (
+                        overlap_end
+                        - overlap_start
+                    ).total_seconds()
+                )
+
+        return total
+
+    # ========================================================
+    # CHECK ELIGIBILITY
+    # ========================================================
+
+    async def check_eligibility(self, pair):
+
+        if pair["status"] not in (
+            "tracking",
+            "eligible"
+        ):
+            return
+
+        total_seconds = await self.get_total_seconds(
+            pair["id"]
+        )
+
+        target_seconds = UNLOCK_HOURS * 3600
+
+        if total_seconds < target_seconds:
+            return
+
+        if pair["status"] == "tracking":
+
+            now = db_datetime(utc_now())
+
+            await db.execute(
+                """
+                UPDATE nanz_apipi_pairs
+                SET
+                    status = 'eligible',
+                    eligible_notified = 1,
+                    updated_at = %s
+                WHERE id = %s
+                """,
+                (
+                    now,
+                    pair["id"]
+                )
+            )
+
+            await self.log(
+                pair["id"],
+                None,
+                "ELIGIBLE",
+                (
+                    f"Progress mencapai "
+                    f"{format_hours(total_seconds)}"
+                )
+            )
+
+            await self.send_eligibility_notice(
+                pair
+            )
 
     # ========================================================
     # ELIGIBILITY NOTICE
@@ -822,508 +1214,627 @@ class Apipi(commands.Cog):
 
     async def send_eligibility_notice(
         self,
-        guild,
-        pair_id
+        pair
     ):
-        pair = await self.get_pair_by_id(pair_id)
 
-        if not pair:
-            return
-
-        siswa = guild.get_member(int(pair["siswa_id"]))
-        siswi = guild.get_member(int(pair["siswi_id"]))
-
-        if not siswa or not siswi:
-            return
-
-        channel = guild.get_channel(
-            MEMBER_PANEL_CHANNEL_ID
+        channel = self.bot.get_channel(
+            APIPI_PANEL_CHANNEL_ID
         )
 
         if not channel:
             return
 
-        embed = discord.Embed(
-            title=f"{EMOJI['apipi']} Apipi Siap Diambil",
-            description=(
-                f"{siswa.mention} dan {siswi.mention}\n\n"
-                f"Pasangan kalian telah mencapai **20 jam** "
-                f"voice bersama.\n\n"
-                f"Untuk mendapatkan role Apipi, **keduanya "
-                f"harus menekan tombol `Ambil Role`**."
-            ),
-            color=discord.Color.blurple()
+        siswa = self.find_member(
+            pair["siswa_id"]
         )
 
-        embed.set_footer(
-            text="nanZ Server • Apipi"
+        siswi = self.find_member(
+            pair["siswi_id"]
         )
+
+        if not siswa or not siswi:
+            return
 
         await channel.send(
-            content=f"{siswa.mention} {siswi.mention}",
-            embed=embed
+            (
+                f"{EMOJI_APIPI} **APIPI SIAP DIAMBIL**\n\n"
+                f"{siswa.mention} & {siswi.mention}\n\n"
+                f"Kalian telah mencapai **{UNLOCK_HOURS} jam** "
+                "shared voice.\n\n"
+                "Jika ingin mengambil role Apipi, "
+                "**keduanya wajib menekan tombol "
+                "`Ambil Role`** pada panel.\n\n"
+                f"{EMOJI_WAITING} Role tidak akan diberikan "
+                "secara otomatis."
+            )
         )
 
     # ========================================================
-    # ROLE
+    # TAKE APPROVAL
+    # ========================================================
+
+    async def approve_take(
+        self,
+        interaction
+    ):
+
+        guild = interaction.guild
+
+        if not guild:
+
+            return await interaction.response.send_message(
+                "Fitur ini hanya dapat digunakan di server.",
+                ephemeral=True
+            )
+
+        pair = await self.get_pair_by_member(
+            guild.id,
+            interaction.user.id
+        )
+
+        if not pair:
+
+            return await interaction.response.send_message(
+                "Kamu belum terdaftar sebagai pasangan Apipi.",
+                ephemeral=True
+            )
+
+        if pair["status"] == "active":
+
+            return await interaction.response.send_message(
+                "Role Apipi sudah aktif.",
+                ephemeral=True
+            )
+
+        if pair["status"] != "eligible":
+
+            total = await self.get_total_seconds(
+                pair["id"]
+            )
+
+            remaining = max(
+                0,
+                (UNLOCK_HOURS * 3600) - total
+            )
+
+            return await interaction.response.send_message(
+                (
+                    f"Progress saat ini: "
+                    f"**{format_hours(total)}**.\n"
+                    f"Masih kurang **{format_duration(remaining)}** "
+                    f"untuk mencapai {UNLOCK_HOURS} jam."
+                ),
+                ephemeral=True
+            )
+
+        is_siswa = (
+            interaction.user.id
+            == pair["siswa_id"]
+        )
+
+        is_siswi = (
+            interaction.user.id
+            == pair["siswi_id"]
+        )
+
+        now = db_datetime(utc_now())
+
+        if is_siswa:
+
+            await db.execute(
+                """
+                UPDATE nanz_apipi_pairs
+                SET
+                    take_siswa = 1,
+                    updated_at = %s
+                WHERE id = %s
+                """,
+                (
+                    now,
+                    pair["id"]
+                )
+            )
+
+            await self.log(
+                pair["id"],
+                interaction.user.id,
+                "TAKE_APPROVED",
+                "Siswa menyetujui pengambilan role."
+            )
+
+        elif is_siswi:
+
+            await db.execute(
+                """
+                UPDATE nanz_apipi_pairs
+                SET
+                    take_siswi = 1,
+                    updated_at = %s
+                WHERE id = %s
+                """,
+                (
+                    now,
+                    pair["id"]
+                )
+            )
+
+            await self.log(
+                pair["id"],
+                interaction.user.id,
+                "TAKE_APPROVED",
+                "Siswi menyetujui pengambilan role."
+            )
+
+        else:
+
+            return await interaction.response.send_message(
+                "Kamu bukan bagian dari pasangan ini.",
+                ephemeral=True
+            )
+
+        updated = await self.get_pair(
+            pair["id"]
+        )
+
+        if (
+            updated["take_siswa"]
+            and updated["take_siswi"]
+        ):
+
+            success = await self.grant_apipi_role(
+                updated,
+                interaction.guild
+            )
+
+            if success:
+
+                await interaction.response.send_message(
+                    (
+                        f"{EMOJI_LOVE} Persetujuan kedua pihak "
+                        "telah diterima. Role Apipi berhasil diberikan."
+                    ),
+                    ephemeral=True
+                )
+
+                return
+
+        await interaction.response.send_message(
+            (
+                f"{EMOJI_WAITING} Persetujuanmu sudah dicatat.\n"
+                "Role akan diberikan setelah pasanganmu "
+                "juga menyetujui."
+            ),
+            ephemeral=True
+        )
+
+    # ========================================================
+    # GRANT ROLE
     # ========================================================
 
     async def grant_apipi_role(
         self,
-        guild,
-        pair_id
+        pair,
+        guild
     ):
-        pair = await self.get_pair_by_id(pair_id)
 
-        if not pair:
-            return False, "Data pasangan tidak ditemukan."
+        siswa = guild.get_member(
+            pair["siswa_id"]
+        )
 
-        siswa = guild.get_member(int(pair["siswa_id"]))
-        siswi = guild.get_member(int(pair["siswi_id"]))
+        siswi = guild.get_member(
+            pair["siswi_id"]
+        )
 
         if not siswa or not siswi:
-            return False, "Salah satu anggota pasangan tidak ditemukan."
+            return False
 
-        role = guild.get_role(APIPI_ROLE_ID)
+        role = guild.get_role(
+            APIPI_ROLE_ID
+        )
 
         if not role:
-            return False, "Role Apipi tidak ditemukan."
+            return False
+
+        me = guild.me
+
+        if not me:
+            return False
+
+        if role >= me.top_role:
+
+            await self.log(
+                pair["id"],
+                None,
+                "ROLE_ERROR",
+                "Role Apipi berada di atas role bot."
+            )
+
+            return False
 
         try:
+
             if role not in siswa.roles:
+
                 await siswa.add_roles(
                     role,
-                    reason="Apipi role activation"
+                    reason="Apipi role approved by both parties"
                 )
 
             if role not in siswi.roles:
+
                 await siswi.add_roles(
                     role,
-                    reason="Apipi role activation"
+                    reason="Apipi role approved by both parties"
                 )
 
         except discord.Forbidden:
-            return False, "Bot tidak memiliki izin untuk memberikan role Apipi."
 
-        activated = now_utc()
+            await self.log(
+                pair["id"],
+                None,
+                "ROLE_ERROR",
+                "Bot tidak memiliki permission untuk memberikan role."
+            )
 
-        await db.execute("""
+            return False
+
+        now = db_datetime(utc_now())
+
+        await db.execute(
+            """
             UPDATE nanz_apipi_pairs
             SET
                 status = 'active',
-                eligible = 1,
-                role_activated_at = %s,
-                siswa_approved = 0,
-                siswi_approved = 0,
-                siswa_remove_approved = 0,
-                siswi_remove_approved = 0,
+                take_siswa = 0,
+                take_siswi = 0,
+                remove_siswa = 0,
+                remove_siswi = 0,
+                active_since = %s,
                 updated_at = %s
             WHERE id = %s
-        """, (
-            to_db(activated),
-            to_db(activated),
-            pair_id
-        ))
-
-        await self.log_action(
-            "role_granted",
-            pair_id,
-            None,
-            "Both members approved Apipi role."
+            """,
+            (
+                now,
+                now,
+                pair["id"]
+            )
         )
 
-        return True, "Role Apipi berhasil diberikan."
+        await self.log(
+            pair["id"],
+            None,
+            "ROLE_GRANTED",
+            "Role Apipi diberikan kepada kedua pihak."
+        )
+
+        channel = self.bot.get_channel(
+            APIPI_LOG_CHANNEL_ID
+        )
+
+        if channel:
+
+            await channel.send(
+                (
+                    f"{EMOJI_APIPI} **APIPI ROLE GRANTED**\n\n"
+                    f"{siswa.mention} + {siswi.mention}\n"
+                    f"Role: {role.mention}"
+                )
+            )
+
+        return True
+
+    # ========================================================
+    # REMOVE APPROVAL
+    # ========================================================
+
+    async def approve_remove(
+        self,
+        interaction
+    ):
+
+        guild = interaction.guild
+
+        if not guild:
+
+            return await interaction.response.send_message(
+                "Fitur ini hanya dapat digunakan di server.",
+                ephemeral=True
+            )
+
+        pair = await self.get_pair_by_member(
+            guild.id,
+            interaction.user.id
+        )
+
+        if not pair:
+
+            return await interaction.response.send_message(
+                "Kamu belum terdaftar sebagai pasangan Apipi.",
+                ephemeral=True
+            )
+
+        if pair["status"] != "active":
+
+            return await interaction.response.send_message(
+                "Role Apipi pasangan ini sedang tidak aktif.",
+                ephemeral=True
+            )
+
+        is_siswa = (
+            interaction.user.id
+            == pair["siswa_id"]
+        )
+
+        is_siswi = (
+            interaction.user.id
+            == pair["siswi_id"]
+        )
+
+        now = db_datetime(utc_now())
+
+        if is_siswa:
+
+            await db.execute(
+                """
+                UPDATE nanz_apipi_pairs
+                SET
+                    remove_siswa = 1,
+                    updated_at = %s
+                WHERE id = %s
+                """,
+                (
+                    now,
+                    pair["id"]
+                )
+            )
+
+        elif is_siswi:
+
+            await db.execute(
+                """
+                UPDATE nanz_apipi_pairs
+                SET
+                    remove_siswi = 1,
+                    updated_at = %s
+                WHERE id = %s
+                """,
+                (
+                    now,
+                    pair["id"]
+                )
+            )
+
+        else:
+
+            return await interaction.response.send_message(
+                "Kamu bukan bagian dari pasangan ini.",
+                ephemeral=True
+            )
+
+        await self.log(
+            pair["id"],
+            interaction.user.id,
+            "REMOVE_APPROVED",
+            "Salah satu pihak menyetujui pencabutan role."
+        )
+
+        updated = await self.get_pair(
+            pair["id"]
+        )
+
+        if (
+            updated["remove_siswa"]
+            and updated["remove_siswi"]
+        ):
+
+            success = await self.remove_apipi_role(
+                updated,
+                guild,
+                "Mutual approval"
+            )
+
+            if success:
+
+                await interaction.response.send_message(
+                    (
+                        f"{EMOJI_LOVE} Kedua pihak menyetujui "
+                        "pencabutan role. Role Apipi telah dicabut "
+                        "dan progress di-reset."
+                    ),
+                    ephemeral=True
+                )
+
+                return
+
+        await interaction.response.send_message(
+            (
+                f"{EMOJI_WAITING} Persetujuanmu sudah dicatat.\n"
+                "Role akan dicabut setelah pasanganmu "
+                "juga menyetujui."
+            ),
+            ephemeral=True
+        )
+
+    # ========================================================
+    # REMOVE ROLE
+    # ========================================================
 
     async def remove_apipi_role(
         self,
+        pair,
         guild,
-        pair_id,
-        reason="manual"
+        reason
     ):
-        pair = await self.get_pair_by_id(pair_id)
 
-        if not pair:
-            return False, "Data pasangan tidak ditemukan."
+        role = guild.get_role(
+            APIPI_ROLE_ID
+        )
 
-        siswa = guild.get_member(int(pair["siswa_id"]))
-        siswi = guild.get_member(int(pair["siswi_id"]))
+        siswa = guild.get_member(
+            pair["siswa_id"]
+        )
 
-        role = guild.get_role(APIPI_ROLE_ID)
+        siswi = guild.get_member(
+            pair["siswi_id"]
+        )
 
         if role:
+
             try:
+
                 if siswa and role in siswa.roles:
+
                     await siswa.remove_roles(
                         role,
-                        reason=f"Apipi role removal: {reason}"
+                        reason=reason
                     )
 
                 if siswi and role in siswi.roles:
+
                     await siswi.remove_roles(
                         role,
-                        reason=f"Apipi role removal: {reason}"
+                        reason=reason
                     )
 
             except discord.Forbidden:
-                return False, (
-                    "Bot tidak memiliki izin untuk mencabut role Apipi."
+
+                await self.log(
+                    pair["id"],
+                    None,
+                    "ROLE_ERROR",
+                    "Bot tidak dapat mencabut role Apipi."
                 )
 
-        await db.execute("""
+                return False
+
+        now = db_datetime(utc_now())
+
+        await db.execute(
+            """
             UPDATE nanz_apipi_pairs
             SET
                 status = 'tracking',
-                eligible = 0,
-                siswa_approved = 0,
-                siswi_approved = 0,
-                siswa_remove_approved = 0,
-                siswi_remove_approved = 0,
-                role_activated_at = NULL,
+                take_siswa = 0,
+                take_siswi = 0,
+                remove_siswa = 0,
+                remove_siswi = 0,
+                eligible_notified = 0,
+                strike = 0,
+                active_since = NULL,
                 updated_at = %s
             WHERE id = %s
-        """, (
-            to_db(now_utc()),
-            pair_id
-        ))
+            """,
+            (
+                now,
+                pair["id"]
+            )
+        )
 
-        await self.log_action(
-            "role_removed",
-            pair_id,
+        # Reset progress 20 jam
+        await db.execute(
+            """
+            DELETE FROM nanz_apipi_sessions
+            WHERE pair_id = %s
+            """,
+            (pair["id"],)
+        )
+
+        await db.execute(
+            """
+            DELETE FROM nanz_apipi_weekly
+            WHERE pair_id = %s
+            """,
+            (pair["id"],)
+        )
+
+        await self.log(
+            pair["id"],
             None,
+            "ROLE_REMOVED",
             reason
         )
 
-        return True, "Role Apipi berhasil dicabut."
+        return True
 
     # ========================================================
-    # APPROVAL
+    # VOICE STATE UPDATE
     # ========================================================
 
-    async def approve_take_role(
+    @commands.Cog.listener()
+    async def on_voice_state_update(
         self,
-        pair_id,
-        user_id
+        member,
+        before,
+        after
     ):
-        pair = await self.get_pair_by_id(pair_id)
+
+        if not self.initialized:
+            return
+
+        guild = member.guild
+
+        pair = await self.get_pair_by_member(
+            guild.id,
+            member.id
+        )
 
         if not pair:
-            return False, "Pasangan tidak ditemukan."
+            return
 
-        if pair["status"] != "eligible":
-            return False, "Pasangan belum memenuhi syarat."
+        async with self.session_lock:
 
-        if int(user_id) == int(pair["siswa_id"]):
-            await db.execute("""
-                UPDATE nanz_apipi_pairs
-                SET siswa_approved = 1
-                WHERE id = %s
-            """, (pair_id,))
+            await self.sync_pair_voice(
+                pair
+            )
 
-        elif int(user_id) == int(pair["siswi_id"]):
-            await db.execute("""
-                UPDATE nanz_apipi_pairs
-                SET siswi_approved = 1
-                WHERE id = %s
-            """, (pair_id,))
+    # ========================================================
+    # SYNC PAIR VOICE
+    # ========================================================
 
-        else:
-            return False, "Kamu bukan bagian dari pasangan ini."
+    async def sync_pair_voice(self, pair):
 
-        pair = await self.get_pair_by_id(pair_id)
-
-        both_approved = (
-            int(pair["siswa_approved"]) == 1
-            and int(pair["siswi_approved"]) == 1
+        channel = self.get_shared_channel(
+            pair
         )
 
-        if both_approved:
-            return True, "BOTH_APPROVED"
-
-        return True, "Persetujuan kamu sudah dicatat."
-
-    async def approve_remove_role(
-        self,
-        pair_id,
-        user_id
-    ):
-        pair = await self.get_pair_by_id(pair_id)
-
-        if not pair:
-            return False, "Pasangan tidak ditemukan."
-
-        if pair["status"] != "active":
-            return False, "Role Apipi pasangan ini sedang tidak aktif."
-
-        if int(user_id) == int(pair["siswa_id"]):
-            await db.execute("""
-                UPDATE nanz_apipi_pairs
-                SET siswa_remove_approved = 1
-                WHERE id = %s
-            """, (pair_id,))
-
-        elif int(user_id) == int(pair["siswi_id"]):
-            await db.execute("""
-                UPDATE nanz_apipi_pairs
-                SET siswi_remove_approved = 1
-                WHERE id = %s
-            """, (pair_id,))
-
-        else:
-            return False, "Kamu bukan bagian dari pasangan ini."
-
-        pair = await self.get_pair_by_id(pair_id)
-
-        both_approved = (
-            int(pair["siswa_remove_approved"]) == 1
-            and int(pair["siswi_remove_approved"]) == 1
-        )
-
-        if both_approved:
-            return True, "BOTH_APPROVED"
-
-        return True, "Persetujuan pencabutan kamu sudah dicatat."
-
-    # ========================================================
-    # STATUS
-    # ========================================================
-
-    async def get_status_text(
-        self,
-        guild,
-        pair
-    ):
-        siswa = guild.get_member(int(pair["siswa_id"]))
-        siswi = guild.get_member(int(pair["siswi_id"]))
-
-        total = int(pair["total_seconds"])
-
-        status = pair["status"]
-
-        if status == "active":
-            status_text = "Aktif"
-
-        elif status == "eligible":
-            status_text = "Siap Diambil"
-
-        else:
-            status_text = "Tracking"
-
-        return (
-            f"{EMOJI['purple']} **Status:** {status_text}\n"
-            f"{EMOJI['blue']} **Progress:** "
-            f"{progress_hours(total)} / {MINIMUM_HOURS} jam\n"
-            f"{EMOJI['love']} **Pasangan:** "
-            f"{siswa.mention if siswa else pair['siswa_id']} × "
-            f"{siswi.mention if siswi else pair['siswi_id']}"
-        )
-
-    # ========================================================
-    # PANEL MEMBER
-    # ========================================================
-
-    async def ensure_member_panel(self):
-        async with self._panel_lock:
-            channel = None
-
-            for guild in self.bot.guilds:
-                channel = guild.get_channel(
-                    MEMBER_PANEL_CHANNEL_ID
-                )
-
-                if channel:
-                    break
-
-            if not channel:
-                return
-
-            async for message in channel.history(limit=30):
-                if (
-                    message.author.id == self.bot.user.id
-                    and message.embeds
-                ):
-                    if (
-                        message.embeds[0].title
-                        and "Apipi" in message.embeds[0].title
-                    ):
-                        try:
-                            await message.edit(
-                                embed=self.member_panel_embed(),
-                                view=ApipiMemberPanel(self)
-                            )
-                            return
-                        except discord.HTTPException:
-                            pass
-
-            try:
-                await channel.send(
-                    embed=self.member_panel_embed(),
-                    view=ApipiMemberPanel(self)
-                )
-            except discord.HTTPException:
-                pass
-
-    def member_panel_embed(self):
-        return discord.Embed(
-            title=f"{EMOJI['apipi']} APIPI",
-            description=(
-                "Sistem pasangan **Siswa × Siswi** nanZ.\n\n"
-                f"{EMOJI['blue']} **20 Jam**\n"
-                "Capai minimal 20 jam voice bersama untuk membuka "
-                "akses pengambilan role.\n\n"
-                f"{EMOJI['purple']} **Persetujuan Bersama**\n"
-                "Role hanya diberikan setelah kedua pihak menyetujui.\n\n"
-                f"{EMOJI['love']} **Maintenance**\n"
-                "Setelah aktif, pasangan wajib mencapai 5 jam "
-                "voice bersama setiap minggu.\n\n"
-                "Gunakan tombol di bawah untuk mengelola pasangan."
-            ),
-            color=discord.Color.blurple()
-        )
-
-    # ========================================================
-    # PANEL MANAGEMENT
-    # ========================================================
-
-    async def ensure_management_panel(self):
-        async with self._panel_lock:
-            channel = None
-
-            for guild in self.bot.guilds:
-                channel = guild.get_channel(
-                    MANAGEMENT_PANEL_CHANNEL_ID
-                )
-
-                if channel:
-                    break
-
-            if not channel:
-                return
-
-            async for message in channel.history(limit=30):
-                if (
-                    message.author.id == self.bot.user.id
-                    and message.embeds
-                ):
-                    if (
-                        message.embeds[0].title
-                        and "Management" in message.embeds[0].title
-                    ):
-                        try:
-                            await message.edit(
-                                embed=self.management_panel_embed(),
-                                view=ApipiManagementPanel(self)
-                            )
-                            return
-                        except discord.HTTPException:
-                            pass
-
-            try:
-                await channel.send(
-                    embed=self.management_panel_embed(),
-                    view=ApipiManagementPanel(self)
-                )
-            except discord.HTTPException:
-                pass
-
-    def management_panel_embed(self):
-        return discord.Embed(
-            title=f"{EMOJI['apipi']} Apipi Management",
-            description=(
-                f"{EMOJI['blue']} **Cek Status**\n"
-                "Melihat data pasangan dan progress.\n\n"
-                f"{EMOJI['purple']} **Set Role**\n"
-                "Memberikan role Apipi secara manual.\n\n"
-                f"{EMOJI['love']} **Cabut Role**\n"
-                "Mencabut role Apipi secara manual.\n\n"
-                f"{EMOJI['blue']} **Reset Progress**\n"
-                "Mengembalikan progress pasangan menjadi 0.\n\n"
-                f"{EMOJI['purple']} **Reset Strike**\n"
-                "Mengembalikan strike pasangan menjadi 0.\n\n"
-                "Panel ini hanya dapat digunakan Administrator."
-            ),
-            color=discord.Color.blurple()
-        )
-
-    # ========================================================
-    # RESTART RECONCILIATION
-    # ========================================================
-
-    async def reconcile_after_restart(self):
-        """
-        Saat bot restart:
-        - ambil waktu terakhir yang benar-benar diketahui bot
-        - simpan sampai last_seen_at
-        - jangan menghitung downtime
-        - jika pasangan masih satu VC, mulai session baru
-        """
-
-        rows = await db.fetchall("""
+        live = await db.fetchone(
+            """
             SELECT *
             FROM nanz_apipi_live_sessions
-        """)
+            WHERE pair_id = %s
+            LIMIT 1
+            """,
+            (pair["id"],)
+        )
 
-        for live in rows:
-            pair = await self.get_pair_by_id(
-                live["pair_id"]
-            )
+        if channel:
 
-            if not pair:
-                await db.execute("""
-                    DELETE FROM nanz_apipi_live_sessions
-                    WHERE pair_id = %s
-                """, (live["pair_id"],))
-                continue
+            if not live:
 
-            guild = self.find_guild_for_pair(pair)
-
-            if not guild:
-                await self.close_live_session(
-                    live["pair_id"]
-                )
-                continue
-
-            siswa, siswi = self.get_pair_members(
-                pair,
-                guild
-            )
-
-            last_seen = from_db(
-                live["last_seen_at"]
-            )
-
-            started = from_db(
-                live["started_at"]
-            )
-
-            if last_seen and started:
-                duration = max(
-                    0,
-                    int(
-                        (last_seen - started)
-                        .total_seconds()
-                    )
+                await self.start_session(
+                    pair,
+                    channel.id
                 )
 
-                if duration > 0:
-                    await self.save_session(
-                        live["pair_id"],
-                        started,
-                        last_seen,
-                        duration
-                    )
+            elif live["channel_id"] != channel.id:
 
-            await db.execute("""
-                DELETE FROM nanz_apipi_live_sessions
-                WHERE pair_id = %s
-            """, (live["pair_id"],))
+                await self.close_session(
+                    pair["id"],
+                    utc_now()
+                )
 
-            if self.same_voice_channel(
-                siswa,
-                siswi
-            ):
-                await self.start_live_session(
-                    live["pair_id"],
-                    siswa.voice.channel.id
+                await self.start_session(
+                    pair,
+                    channel.id
+                )
+
+        else:
+
+            if live:
+
+                await self.close_session(
+                    pair["id"],
+                    utc_now()
                 )
 
     # ========================================================
@@ -1331,362 +1842,1046 @@ class Apipi(commands.Cog):
     # ========================================================
 
     @tasks.loop(seconds=HEARTBEAT_SECONDS)
-    async def heartbeat_loop(self):
+    async def heartbeat(self):
+
         if not self.initialized:
             return
 
-        pairs = await self.get_active_pairs()
+        async with self.session_lock:
 
-        for pair in pairs:
-            guild = self.find_guild_for_pair(pair)
-
-            if not guild:
-                continue
-
-            siswa, siswi = self.get_pair_members(
-                pair,
-                guild
-            )
-
-            together = self.same_voice_channel(
-                siswa,
-                siswi
-            )
-
-            live = await db.fetchone("""
+            live_sessions = await db.fetchall(
+                """
                 SELECT *
                 FROM nanz_apipi_live_sessions
-                WHERE pair_id = %s
-                LIMIT 1
-            """, (pair["id"],))
-
-            if together:
-                channel_id = siswa.voice.channel.id
-
-                if not live:
-                    await self.start_live_session(
-                        pair["id"],
-                        channel_id
-                    )
-
-                else:
-                    if int(live["channel_id"]) != channel_id:
-                        await self.close_live_session(
-                            pair["id"]
-                        )
-
-                        await self.start_live_session(
-                            pair["id"],
-                            channel_id
-                        )
-
-                    else:
-                        await self.heartbeat_live_session(
-                            pair["id"],
-                            channel_id
-                        )
-
-            else:
-                if live:
-                    await self.close_live_session(
-                        pair["id"]
-                    )
-
-            # Update total progress from saved DB value.
-            refreshed = await self.get_pair_by_id(
-                pair["id"]
+                """
             )
 
-            if refreshed:
-                await self.check_eligibility(
-                    pair["id"]
+            for live in live_sessions:
+
+                pair = await self.get_pair(
+                    live["pair_id"]
                 )
 
-    @heartbeat_loop.before_loop
-    async def before_heartbeat(self):
+                if not pair:
+                    continue
+
+                channel = self.get_shared_channel(
+                    pair
+                )
+
+                if not channel:
+
+                    await self.close_session(
+                        pair["id"],
+                        utc_now()
+                    )
+
+                    continue
+
+                if channel.id != live["channel_id"]:
+
+                    await self.close_session(
+                        pair["id"],
+                        utc_now()
+                    )
+
+                    await self.start_session(
+                        pair,
+                        channel.id
+                    )
+
+                    continue
+
+                await db.execute(
+                    """
+                    UPDATE nanz_apipi_live_sessions
+                    SET last_seen_at = %s
+                    WHERE pair_id = %s
+                    """,
+                    (
+                        db_datetime(utc_now()),
+                        pair["id"]
+                    )
+                )
+
+                await self.check_eligibility(
+                    pair
+                )
+
+    # ========================================================
+    # RECONCILE AFTER RESTART
+    # ========================================================
+
+    async def reconcile_after_restart(self):
+
         await self.bot.wait_until_ready()
+
+        await asyncio.sleep(5)
+
+        async with self.session_lock:
+
+            live_sessions = await db.fetchall(
+                """
+                SELECT *
+                FROM nanz_apipi_live_sessions
+                """
+            )
+
+            for live in live_sessions:
+
+                pair = await self.get_pair(
+                    live["pair_id"]
+                )
+
+                if not pair:
+                    continue
+
+                last_seen = from_db_datetime(
+                    live["last_seen_at"]
+                )
+
+                current_shared = self.get_shared_channel(
+                    pair
+                )
+
+                # Simpan waktu terakhir yang benar-benar
+                # diketahui sebelum bot mati.
+                if last_seen:
+
+                    await self.save_split_sessions(
+                        pair["id"],
+                        from_db_datetime(
+                            live["started_at"]
+                        ),
+                        last_seen
+                    )
+
+                await db.execute(
+                    """
+                    DELETE FROM nanz_apipi_live_sessions
+                    WHERE pair_id = %s
+                    """,
+                    (pair["id"],)
+                )
+
+                # Kalau ketika bot hidup kembali mereka
+                # masih berada di VC yang sama,
+                # mulai sesi baru dari waktu sekarang.
+                if current_shared:
+
+                    await self.start_session(
+                        pair,
+                        current_shared.id
+                    )
 
     # ========================================================
     # WEEKLY CHECKER
     # ========================================================
 
-    @tasks.loop(seconds=WEEKLY_CHECK_SECONDS)
+    @tasks.loop(minutes=30)
     async def weekly_checker(self):
+
         if not self.initialized:
             return
 
-        current_week = week_start(
-            now_wib()
+        now = utc_now()
+
+        # Minggu yang sudah selesai
+        current_week = get_week_start(
+            now
         )
 
         previous_week = current_week - timedelta(
             days=7
         )
 
-        pairs = await db.fetchall("""
+        pairs = await db.fetchall(
+            """
             SELECT *
             FROM nanz_apipi_pairs
             WHERE status = 'active'
-        """)
+            """
+        )
 
         for pair in pairs:
-            activation = pair["role_activated_at"]
 
-            if activation:
-                activation_wib = from_db(
-                    activation
-                ).astimezone(WIB)
+            active_since = pair["active_since"]
 
-                activation_week = week_start(
-                    activation_wib
+            if active_since:
+
+                active_since_aware = from_db_datetime(
+                    active_since
                 )
 
-                # Activation week tidak langsung dihukum.
-                if previous_week.date() <= activation_week.date():
+                # Minggu saat role pertama kali aktif
+                # tidak langsung dihukum.
+                activation_week = get_week_start(
+                    active_since_aware
+                ).date()
+
+                if previous_week.date() <= activation_week:
                     continue
+
+            already_checked = await db.fetchone(
+                """
+                SELECT id
+                FROM nanz_apipi_weekly
+                WHERE pair_id = %s
+                AND week_start = %s
+                LIMIT 1
+                """,
+                (
+                    pair["id"],
+                    previous_week.date()
+                )
+            )
+
+            if already_checked:
+                continue
 
             seconds = await self.get_week_seconds(
                 pair["id"],
-                previous_week
+                previous_week.date()
             )
 
-            if seconds >= WEEKLY_TARGET_HOURS * 3600:
-                continue
+            target_seconds = WEEKLY_HOURS * 3600
 
-            weekly = await db.fetchone("""
-                SELECT *
-                FROM nanz_apipi_weekly
-                WHERE pair_id = %s
-                  AND week_start = %s
-                LIMIT 1
-            """, (
-                pair["id"],
-                to_db(
-                    previous_week.astimezone(timezone.utc)
-                )
-            ))
+            met = seconds >= target_seconds
 
-            if weekly and int(weekly["strike_added"]):
-                continue
+            new_strike = int(
+                pair["strike"]
+            )
 
-            await db.execute("""
+            if not met:
+
+                new_strike += 1
+
+            await db.execute(
+                """
                 INSERT INTO nanz_apipi_weekly
                 (
                     pair_id,
                     week_start,
                     seconds,
-                    strike_added
+                    target_seconds,
+                    met,
+                    strike_after,
+                    checked_at
                 )
-                VALUES (%s, %s, %s, 1)
-                ON DUPLICATE KEY UPDATE
-                    strike_added = 1
-            """, (
-                pair["id"],
-                to_db(
-                    previous_week.astimezone(timezone.utc)
-                ),
-                seconds
-            ))
-
-            await self.add_strike(
-                pair["id"],
-                seconds
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    pair["id"],
+                    previous_week.date(),
+                    seconds,
+                    target_seconds,
+                    1 if met else 0,
+                    new_strike,
+                    db_datetime(now)
+                )
             )
 
-    @weekly_checker.before_loop
-    async def before_weekly_checker(self):
-        await self.bot.wait_until_ready()
+            if met:
 
-    # ========================================================
-    # STRIKE
-    # ========================================================
-
-    async def add_strike(
-        self,
-        pair_id,
-        weekly_seconds
-    ):
-        pair = await self.get_pair_by_id(
-            pair_id
-        )
-
-        if not pair:
-            return
-
-        # Strike dihitung berdasarkan jumlah minggu gagal.
-        existing = await db.fetchone("""
-            SELECT COUNT(*) AS total
-            FROM nanz_apipi_weekly
-            WHERE pair_id = %s
-              AND strike_added = 1
-        """, (pair_id,))
-
-        strike = int(
-            existing["total"]
-            if existing
-            else 0
-        )
-
-        await self.log_action(
-            "weekly_strike",
-            pair_id,
-            None,
-            (
-                f"Weekly time: "
-                f"{format_duration(weekly_seconds)}; "
-                f"strike count: {strike}"
-            )
-        )
-
-        guild = self.find_guild_for_pair(
-            pair
-        )
-
-        if not guild:
-            return
-
-        siswa, siswi = self.get_pair_members(
-            pair,
-            guild
-        )
-
-        channel = guild.get_channel(
-            MEMBER_PANEL_CHANNEL_ID
-        )
-
-        if strike >= MAX_STRIKE:
-            await self.remove_apipi_role(
-                guild,
-                pair_id,
-                reason="3 weekly strikes"
-            )
-
-            if channel:
-                embed = discord.Embed(
-                    title=f"{EMOJI['apipi']} Apipi Dinonaktifkan",
-                    description=(
-                        f"{siswa.mention if siswa else pair['siswa_id']} "
-                        f"{siswi.mention if siswi else pair['siswi_id']}\n\n"
-                        "Role Apipi telah dicabut karena mencapai "
-                        f"**{MAX_STRIKE} strike**."
-                    ),
-                    color=discord.Color.red()
+                await self.log(
+                    pair["id"],
+                    None,
+                    "WEEK_MET",
+                    (
+                        f"Minggu {previous_week.date()} "
+                        f"memenuhi target: "
+                        f"{format_hours(seconds)}"
+                    )
                 )
 
-                await channel.send(
-                    embed=embed
+            else:
+
+                await db.execute(
+                    """
+                    UPDATE nanz_apipi_pairs
+                    SET
+                        strike = %s,
+                        updated_at = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        new_strike,
+                        db_datetime(now),
+                        pair["id"]
+                    )
                 )
 
-            return
+                await self.log(
+                    pair["id"],
+                    None,
+                    "WEEK_MISSED",
+                    (
+                        f"Minggu {previous_week.date()} "
+                        f"hanya {format_hours(seconds)}. "
+                        f"Strike: {new_strike}/{MAX_STRIKE}"
+                    )
+                )
 
-        if channel:
-            embed = discord.Embed(
-                title=f"{EMOJI['apipi']} Weekly Maintenance",
-                description=(
-                    f"{siswa.mention if siswa else pair['siswa_id']} "
-                    f"{siswi.mention if siswi else pair['siswi_id']}\n\n"
-                    f"Target minggu sebelumnya: "
-                    f"**{WEEKLY_TARGET_HOURS} jam**\n"
-                    f"Progress: **{format_duration(weekly_seconds)}**\n\n"
-                    f"Strike saat ini: **{strike}/{MAX_STRIKE}**"
-                ),
-                color=discord.Color.orange()
-            )
+                await self.send_strike_notice(
+                    pair,
+                    seconds,
+                    new_strike
+                )
 
-            await channel.send(
-                embed=embed
-            )
+                if new_strike >= MAX_STRIKE:
+
+                    guild = self.bot.get_guild(
+                        pair["guild_id"]
+                    )
+
+                    if guild:
+
+                        await self.remove_apipi_role(
+                            pair,
+                            guild,
+                            "Auto removal: 3 weekly strikes"
+                        )
+
+                        await self.send_auto_remove_notice(
+                            pair
+                        )
 
     # ========================================================
-    # RESET PROGRESS
+    # STRIKE NOTICE
     # ========================================================
 
-    async def reset_progress(
+    async def send_strike_notice(
         self,
-        pair_id,
-        admin_id
+        pair,
+        seconds,
+        strike
     ):
-        await db.execute("""
-            UPDATE nanz_apipi_pairs
-            SET
-                total_seconds = 0,
-                updated_at = %s
-            WHERE id = %s
-        """, (
-            to_db(now_utc()),
-            pair_id
-        ))
 
-        await db.execute("""
-            DELETE FROM nanz_apipi_sessions
-            WHERE pair_id = %s
-        """, (pair_id,))
-
-        await db.execute("""
-            DELETE FROM nanz_apipi_weekly
-            WHERE pair_id = %s
-        """, (pair_id,))
-
-        await self.log_action(
-            "reset_progress",
-            pair_id,
-            admin_id,
-            "Progress reset by administrator."
-        )
-
-    # ========================================================
-    # RESET STRIKE
-    # ========================================================
-
-    async def reset_strike(
-        self,
-        pair_id,
-        admin_id
-    ):
-        await db.execute("""
-            UPDATE nanz_apipi_weekly
-            SET strike_added = 0
-            WHERE pair_id = %s
-        """, (pair_id,))
-
-        await self.log_action(
-            "reset_strike",
-            pair_id,
-            admin_id,
-            "Strike status reset by administrator."
-        )
-
-    # ========================================================
-    # LOG CHANNEL
-    # ========================================================
-
-    async def send_log_embed(
-        self,
-        guild,
-        title,
-        description,
-        color=discord.Color.blurple()
-    ):
-        channel = guild.get_channel(
-            LOG_CHANNEL_ID
+        channel = self.bot.get_channel(
+            APIPI_PANEL_CHANNEL_ID
         )
 
         if not channel:
             return
 
+        siswa = self.find_member(
+            pair["siswa_id"]
+        )
+
+        siswi = self.find_member(
+            pair["siswi_id"]
+        )
+
+        if not siswa or not siswi:
+            return
+
+        await channel.send(
+            (
+                f"{EMOJI_WAITING} **APIPI WEEKLY NOTICE**\n\n"
+                f"{siswa.mention} & {siswi.mention}\n\n"
+                f"Target minggu lalu: **{WEEKLY_HOURS} jam**\n"
+                f"Progress: **{format_hours(seconds)}**\n"
+                f"Strike: **{strike}/{MAX_STRIKE}**\n\n"
+                "Pastikan target mingguan terpenuhi "
+                "agar role tetap aktif."
+            )
+        )
+
+    # ========================================================
+    # AUTO REMOVE NOTICE
+    # ========================================================
+
+    async def send_auto_remove_notice(
+        self,
+        pair
+    ):
+
+        channel = self.bot.get_channel(
+            APIPI_PANEL_CHANNEL_ID
+        )
+
+        if not channel:
+            return
+
+        siswa = self.find_member(
+            pair["siswa_id"]
+        )
+
+        siswi = self.find_member(
+            pair["siswi_id"]
+        )
+
+        if not siswa or not siswi:
+            return
+
+        await channel.send(
+            (
+                f"{EMOJI_APIPI} **APIPI ROLE DICABUT**\n\n"
+                f"{siswa.mention} & {siswi.mention}\n\n"
+                f"Target mingguan tidak terpenuhi "
+                f"sebanyak **{MAX_STRIKE} kali**.\n\n"
+                "Role Apipi telah dicabut dan progress "
+                "dikembalikan ke awal."
+            )
+        )
+
+    # ========================================================
+    # STATUS
+    # ========================================================
+
+    async def get_status_text(
+        self,
+        pair
+    ):
+
+        siswa = self.find_member(
+            pair["siswa_id"]
+        )
+
+        siswi = self.find_member(
+            pair["siswi_id"]
+        )
+
+        total = await self.get_total_seconds(
+            pair["id"]
+        )
+
+        total_target = UNLOCK_HOURS * 3600
+
+        if pair["status"] == "active":
+
+            week_start = get_week_start_date(
+                utc_now()
+            )
+
+            weekly = await self.get_week_seconds(
+                pair["id"],
+                week_start
+            )
+
+            status_text = "Aktif"
+
+            progress = (
+                f"{format_hours(weekly)} / "
+                f"{WEEKLY_HOURS} jam"
+            )
+
+        elif pair["status"] == "eligible":
+
+            status_text = "Menunggu persetujuan"
+
+            progress = (
+                f"{format_hours(total)} / "
+                f"{UNLOCK_HOURS} jam"
+            )
+
+        else:
+
+            status_text = "Tracking"
+
+            progress = (
+                f"{format_hours(total)} / "
+                f"{UNLOCK_HOURS} jam"
+            )
+
+        return (
+            f"{EMOJI_APIPI} **STATUS APIPI**\n\n"
+            f"**Siswa:** "
+            f"{siswa.mention if siswa else pair['siswa_id']}\n"
+            f"**Siswi:** "
+            f"{siswi.mention if siswi else pair['siswi_id']}\n\n"
+            f"**Status:** {status_text}\n"
+            f"**Progress:** {progress}\n"
+            f"**Strike:** {pair['strike']}/{MAX_STRIKE}\n\n"
+            f"Persetujuan Ambil:\n"
+            f"• Siswa: "
+            f"{'✓' if pair['take_siswa'] else '—'}\n"
+            f"• Siswi: "
+            f"{'✓' if pair['take_siswi'] else '—'}\n\n"
+            f"Persetujuan Cabut:\n"
+            f"• Siswa: "
+            f"{'✓' if pair['remove_siswa'] else '—'}\n"
+            f"• Siswi: "
+            f"{'✓' if pair['remove_siswi'] else '—'}"
+        )
+
+    # ========================================================
+    # LOG
+    # ========================================================
+
+    async def log(
+        self,
+        pair_id,
+        actor_id,
+        action,
+        details
+    ):
+
+        await db.execute(
+            """
+            INSERT INTO nanz_apipi_logs
+            (
+                pair_id,
+                actor_id,
+                action,
+                details,
+                created_at
+            )
+            VALUES
+            (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            )
+            """,
+            (
+                pair_id,
+                actor_id,
+                action,
+                details,
+                db_datetime(utc_now())
+            )
+        )
+
+        channel = self.bot.get_channel(
+            APIPI_LOG_CHANNEL_ID
+        )
+
+        if not channel:
+            return
+
+        actor_text = (
+            f"<@{actor_id}>"
+            if actor_id
+            else "nanZ Server - Official Bot"
+        )
+
         embed = discord.Embed(
-            title=title,
-            description=description,
-            color=color,
-            timestamp=now_utc()
+            title="APIPI LOG",
+            description=(
+                f"**Action:** `{action}`\n"
+                f"**Actor:** {actor_text}\n"
+                f"**Pair ID:** `{pair_id}`\n\n"
+                f"{details}"
+            ),
+            color=discord.Color.blurple(),
+            timestamp=utc_now()
         )
 
         try:
+
             await channel.send(
                 embed=embed
             )
-        except discord.HTTPException:
+
+        except Exception:
             pass
+
+    # ========================================================
+    # ADMIN CHECK
+    # ========================================================
+
+    def is_admin(self, interaction):
+
+        if not interaction.guild:
+            return False
+
+        return interaction.user.guild_permissions.administrator
+
+    # ========================================================
+    # ADMIN STATUS
+    # ========================================================
+
+    async def admin_status(
+        self,
+        interaction,
+        user_id
+    ):
+
+        pair = await self.get_pair_by_member(
+            interaction.guild.id,
+            user_id,
+            include_removed=True
+        )
+
+        if not pair:
+
+            return await interaction.response.send_message(
+                "Pasangan tidak ditemukan.",
+                ephemeral=True
+            )
+
+        text = await self.get_status_text(
+            pair
+        )
+
+        await interaction.response.send_message(
+            text,
+            ephemeral=True
+        )
+
+    # ========================================================
+    # ADMIN SET ROLE
+    # ========================================================
+
+    async def admin_set_role(
+        self,
+        interaction,
+        user_id
+    ):
+
+        pair = await self.get_pair_by_member(
+            interaction.guild.id,
+            user_id
+        )
+
+        if not pair:
+
+            return await interaction.response.send_message(
+                "Pasangan aktif tidak ditemukan.",
+                ephemeral=True
+            )
+
+        success = await self.grant_apipi_role(
+            pair,
+            interaction.guild
+        )
+
+        if not success:
+
+            return await interaction.response.send_message(
+                "Role gagal diberikan. Cek posisi role dan permission bot.",
+                ephemeral=True
+            )
+
+        await self.log(
+            pair["id"],
+            interaction.user.id,
+            "ADMIN_SET_ROLE",
+            "Administrator memberikan role Apipi secara manual."
+        )
+
+        await interaction.response.send_message(
+            "Role Apipi berhasil diberikan secara manual.",
+            ephemeral=True
+        )
+
+    # ========================================================
+    # ADMIN REMOVE ROLE
+    # ========================================================
+
+    async def admin_remove_role(
+        self,
+        interaction,
+        user_id
+    ):
+
+        pair = await self.get_pair_by_member(
+            interaction.guild.id,
+            user_id
+        )
+
+        if not pair:
+
+            return await interaction.response.send_message(
+                "Pasangan tidak ditemukan.",
+                ephemeral=True
+            )
+
+        success = await self.remove_apipi_role(
+            pair,
+            interaction.guild,
+            "Administrator manual removal"
+        )
+
+        if not success:
+
+            return await interaction.response.send_message(
+                "Role gagal dicabut.",
+                ephemeral=True
+            )
+
+        await self.log(
+            pair["id"],
+            interaction.user.id,
+            "ADMIN_REMOVE_ROLE",
+            "Administrator mencabut role Apipi."
+        )
+
+        await interaction.response.send_message(
+            "Role Apipi berhasil dicabut dan progress di-reset.",
+            ephemeral=True
+        )
+
+    # ========================================================
+    # ADMIN RESET PROGRESS
+    # ========================================================
+
+    async def admin_reset_progress(
+        self,
+        interaction,
+        user_id
+    ):
+
+        pair = await self.get_pair_by_member(
+            interaction.guild.id,
+            user_id
+        )
+
+        if not pair:
+
+            return await interaction.response.send_message(
+                "Pasangan tidak ditemukan.",
+                ephemeral=True
+            )
+
+        await db.execute(
+            """
+            DELETE FROM nanz_apipi_sessions
+            WHERE pair_id = %s
+            """,
+            (pair["id"],)
+        )
+
+        await db.execute(
+            """
+            DELETE FROM nanz_apipi_weekly
+            WHERE pair_id = %s
+            """,
+            (pair["id"],)
+        )
+
+        now = db_datetime(utc_now())
+
+        await db.execute(
+            """
+            UPDATE nanz_apipi_pairs
+            SET
+                status = 'tracking',
+                eligible_notified = 0,
+                take_siswa = 0,
+                take_siswi = 0,
+                remove_siswa = 0,
+                remove_siswi = 0,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (
+                now,
+                pair["id"]
+            )
+        )
+
+        await self.log(
+            pair["id"],
+            interaction.user.id,
+            "ADMIN_RESET_PROGRESS",
+            "Administrator mereset progress Apipi."
+        )
+
+        await interaction.response.send_message(
+            "Progress Apipi berhasil di-reset.",
+            ephemeral=True
+        )
+
+    # ========================================================
+    # ADMIN RESET STRIKE
+    # ========================================================
+
+    async def admin_reset_strike(
+        self,
+        interaction,
+        user_id
+    ):
+
+        pair = await self.get_pair_by_member(
+            interaction.guild.id,
+            user_id,
+            include_removed=True
+        )
+
+        if not pair:
+
+            return await interaction.response.send_message(
+                "Pasangan tidak ditemukan.",
+                ephemeral=True
+            )
+
+        now = db_datetime(utc_now())
+
+        await db.execute(
+            """
+            UPDATE nanz_apipi_pairs
+            SET
+                strike = 0,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (
+                now,
+                pair["id"]
+            )
+        )
+
+        await self.log(
+            pair["id"],
+            interaction.user.id,
+            "ADMIN_RESET_STRIKE",
+            "Administrator mereset strike menjadi 0."
+        )
+
+        await interaction.response.send_message(
+            "Strike berhasil di-reset menjadi 0.",
+            ephemeral=True
+        )
+
+
+# ============================================================
+# REGISTER PAIR MODAL
+# ============================================================
+
+class RegisterPairModal(
+    discord.ui.Modal
+):
+
+    def __init__(self, cog):
+
+        self.cog = cog
+
+        super().__init__(
+            title="Daftarkan Pasangan Apipi"
+        )
+
+        self.partner = discord.ui.InputText(
+            label="User ID / Mention Pasangan",
+            placeholder="Contoh: 123456789 atau @username",
+            required=True,
+            max_length=30
+        )
+
+        self.add_item(
+            self.partner
+        )
+
+    async def callback(
+        self,
+        interaction
+    ):
+
+        partner_id = parse_user_id(
+            self.partner.value
+        )
+
+        if not partner_id:
+
+            return await interaction.response.send_message(
+                "User ID / mention tidak valid.",
+                ephemeral=True
+            )
+
+        if partner_id == interaction.user.id:
+
+            return await interaction.response.send_message(
+                "Kamu tidak bisa memasangkan dirimu sendiri.",
+                ephemeral=True
+            )
+
+        user = interaction.guild.get_member(
+            interaction.user.id
+        )
+
+        partner = interaction.guild.get_member(
+            partner_id
+        )
+
+        if not partner:
+
+            return await interaction.response.send_message(
+                "Pasangan tidak ditemukan di server.",
+                ephemeral=True
+            )
+
+        user_is_siswa = any(
+            role.id == SISWA_ROLE_ID
+            for role in user.roles
+        )
+
+        user_is_siswi = any(
+            role.id == SISWI_ROLE_ID
+            for role in user.roles
+        )
+
+        partner_is_siswa = any(
+            role.id == SISWA_ROLE_ID
+            for role in partner.roles
+        )
+
+        partner_is_siswi = any(
+            role.id == SISWI_ROLE_ID
+            for role in partner.roles
+        )
+
+        # Harus Siswa + Siswi
+        if user_is_siswa and partner_is_siswi:
+
+            siswa = user
+            siswi = partner
+
+        elif user_is_siswi and partner_is_siswa:
+
+            siswa = partner
+            siswi = user
+
+        else:
+
+            return await interaction.response.send_message(
+                (
+                    "Pasangan tidak valid.\n"
+                    "Apipi wajib terdiri dari **1 Siswa + 1 Siswi**."
+                ),
+                ephemeral=True
+            )
+
+        pair, result = await self.cog.create_pair(
+            interaction.guild.id,
+            siswa.id,
+            siswi.id,
+            interaction.user.id
+        )
+
+        if result == "siswa_busy":
+
+            return await interaction.response.send_message(
+                "Siswa tersebut sudah memiliki pasangan Apipi.",
+                ephemeral=True
+            )
+
+        if result == "siswi_busy":
+
+            return await interaction.response.send_message(
+                "Siswi tersebut sudah memiliki pasangan Apipi.",
+                ephemeral=True
+            )
+
+        if not pair:
+
+            return await interaction.response.send_message(
+                "Gagal membuat pasangan.",
+                ephemeral=True
+            )
+
+        await interaction.response.send_message(
+            (
+                f"{EMOJI_APIPI} Pasangan Apipi berhasil didaftarkan.\n\n"
+                f"**Siswa:** {siswa.mention}\n"
+                f"**Siswi:** {siswi.mention}\n\n"
+                f"Selanjutnya kumpulkan **{UNLOCK_HOURS} jam** "
+                "shared voice."
+            ),
+            ephemeral=True
+        )
+
+
+# ============================================================
+# ADMIN TARGET MODAL
+# ============================================================
+
+class AdminTargetModal(
+    discord.ui.Modal
+):
+
+    def __init__(
+        self,
+        cog,
+        action_name
+    ):
+
+        self.cog = cog
+        self.action_name = action_name
+
+        super().__init__(
+            title=action_name
+        )
+
+        self.target = discord.ui.InputText(
+            label="User ID / Mention salah satu pasangan",
+            placeholder="123456789",
+            required=True,
+            max_length=30
+        )
+
+        self.add_item(
+            self.target
+        )
+
+    async def callback(
+        self,
+        interaction
+    ):
+
+        if not self.cog.is_admin(interaction):
+
+            return await interaction.response.send_message(
+                "Akses ditolak. Hanya Administrator.",
+                ephemeral=True
+            )
+
+        user_id = parse_user_id(
+            self.target.value
+        )
+
+        if not user_id:
+
+            return await interaction.response.send_message(
+                "User ID tidak valid.",
+                ephemeral=True
+            )
+
+        if self.action_name == "Cek Status":
+
+            return await self.cog.admin_status(
+                interaction,
+                user_id
+            )
+
+        if self.action_name == "Set Role":
+
+            return await self.cog.admin_set_role(
+                interaction,
+                user_id
+            )
+
+        if self.action_name == "Cabut Role":
+
+            return await self.cog.admin_remove_role(
+                interaction,
+                user_id
+            )
+
+        if self.action_name == "Reset Progress":
+
+            return await self.cog.admin_reset_progress(
+                interaction,
+                user_id
+            )
+
+        if self.action_name == "Reset Strike":
+
+            return await self.cog.admin_reset_strike(
+                interaction,
+                user_id
+            )
 
 
 # ============================================================
@@ -1696,14 +2891,18 @@ class Apipi(commands.Cog):
 class ApipiMemberPanel(
     discord.ui.View
 ):
+
     def __init__(self, cog):
-        super().__init__(timeout=None)
+
+        super().__init__(
+            timeout=None
+        )
 
         self.cog = cog
 
-    # --------------------------------------------------------
+    # ========================================================
     # DAFTAR PASANGAN
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Daftar Pasangan",
@@ -1713,167 +2912,56 @@ class ApipiMemberPanel(
     async def register(
         self,
         button,
-        interaction: discord.Interaction
+        interaction
     ):
+
         await interaction.response.send_modal(
-            RegisterPairModal(self.cog)
+            RegisterPairModal(
+                self.cog
+            )
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # AMBIL ROLE
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Ambil Role",
         style=discord.ButtonStyle.success,
         custom_id="nanz_apipi_take"
     )
-    async def take_role(
+    async def take(
         self,
         button,
-        interaction: discord.Interaction
+        interaction
     ):
-        pair = await self.cog.get_pair_by_member(
-            interaction.user.id
+
+        await self.cog.approve_take(
+            interaction
         )
 
-        if not pair:
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} Kamu belum memiliki pasangan Apipi.",
-                ephemeral=True
-            )
-            return
-
-        if pair["status"] != "eligible":
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} Pasangan kamu belum mencapai 20 jam.",
-                ephemeral=True
-            )
-            return
-
-        success, result = await self.cog.approve_take_role(
-            pair["id"],
-            interaction.user.id
-        )
-
-        if not success:
-            await interaction.response.send_message(
-                result,
-                ephemeral=True
-            )
-            return
-
-        if result == "BOTH_APPROVED":
-            guild = interaction.guild
-
-            success, message = await self.cog.grant_apipi_role(
-                guild,
-                pair["id"]
-            )
-
-            await interaction.response.send_message(
-                f"{EMOJI['apipi']} {message}",
-                ephemeral=True
-            )
-
-            if success:
-                await self.cog.send_log_embed(
-                    guild,
-                    f"{EMOJI['apipi']} Apipi Role Aktif",
-                    (
-                        f"Pasangan <@{pair['siswa_id']}> × "
-                        f"<@{pair['siswi_id']}>\n\n"
-                        "Kedua pihak telah menyetujui pengambilan "
-                        "role Apipi."
-                    ),
-                    discord.Color.green()
-                )
-
-        else:
-            await interaction.response.send_message(
-                f"{EMOJI['love']} Persetujuan kamu sudah dicatat. "
-                "Menunggu pasangan menyetujui.",
-                ephemeral=True
-            )
-
-    # --------------------------------------------------------
+    # ========================================================
     # CABUT ROLE
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Cabut Role",
         style=discord.ButtonStyle.danger,
         custom_id="nanz_apipi_remove"
     )
-    async def remove_role(
+    async def remove(
         self,
         button,
-        interaction: discord.Interaction
+        interaction
     ):
-        pair = await self.cog.get_pair_by_member(
-            interaction.user.id
+
+        await self.cog.approve_remove(
+            interaction
         )
 
-        if not pair:
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} Data pasangan tidak ditemukan.",
-                ephemeral=True
-            )
-            return
-
-        if pair["status"] != "active":
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} Role Apipi pasangan ini belum aktif.",
-                ephemeral=True
-            )
-            return
-
-        success, result = await self.cog.approve_remove_role(
-            pair["id"],
-            interaction.user.id
-        )
-
-        if not success:
-            await interaction.response.send_message(
-                result,
-                ephemeral=True
-            )
-            return
-
-        if result == "BOTH_APPROVED":
-            success, message = await self.cog.remove_apipi_role(
-                interaction.guild,
-                pair["id"],
-                reason="Both members approved removal."
-            )
-
-            await interaction.response.send_message(
-                f"{EMOJI['apipi']} {message}",
-                ephemeral=True
-            )
-
-            if success:
-                await self.cog.send_log_embed(
-                    interaction.guild,
-                    f"{EMOJI['apipi']} Apipi Role Dicabut",
-                    (
-                        f"Pasangan <@{pair['siswa_id']}> × "
-                        f"<@{pair['siswi_id']}>\n\n"
-                        "Kedua pihak menyetujui pencabutan role."
-                    ),
-                    discord.Color.red()
-                )
-
-        else:
-            await interaction.response.send_message(
-                f"{EMOJI['love']} Persetujuan pencabutan kamu sudah dicatat. "
-                "Menunggu pasangan menyetujui.",
-                ephemeral=True
-            )
-
-    # --------------------------------------------------------
+    # ========================================================
     # STATUS
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Status",
@@ -1883,38 +2971,33 @@ class ApipiMemberPanel(
     async def status(
         self,
         button,
-        interaction: discord.Interaction
+        interaction
     ):
+
         pair = await self.cog.get_pair_by_member(
+            interaction.guild.id,
             interaction.user.id
         )
 
         if not pair:
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} Kamu belum memiliki pasangan Apipi.",
+
+            return await interaction.response.send_message(
+                "Kamu belum memiliki pasangan Apipi.",
                 ephemeral=True
             )
-            return
 
         text = await self.cog.get_status_text(
-            interaction.guild,
             pair
         )
 
-        embed = discord.Embed(
-            title=f"{EMOJI['apipi']} Status Apipi",
-            description=text,
-            color=discord.Color.blurple()
-        )
-
         await interaction.response.send_message(
-            embed=embed,
+            text,
             ephemeral=True
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # KETENTUAN
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Ketentuan",
@@ -1924,93 +3007,42 @@ class ApipiMemberPanel(
     async def rules(
         self,
         button,
-        interaction: discord.Interaction
+        interaction
     ):
+
         embed = discord.Embed(
-            title=f"{EMOJI['apipi']} Ketentuan Apipi",
+            title="APIPI — KETENTUAN",
             description=(
-                f"{EMOJI['blue']} **Pasangan**\n"
-                "1 Siswa + 1 Siswi.\n\n"
+                f"{EMOJI_APIPI} **Syarat Awal**\n"
+                "• 1 Siswa + 1 Siswi.\n"
+                "• Terdaftar sebagai satu pasangan.\n"
+                f"• Shared voice minimal **{UNLOCK_HOURS} jam**.\n\n"
 
-                f"{EMOJI['purple']} **Unlock Role**\n"
-                f"Minimal {MINIMUM_HOURS} jam voice bersama.\n"
-                "Role tidak diberikan otomatis.\n"
-                "Kedua pihak wajib menyetujui.\n\n"
+                f"{EMOJI_LOVE} **Pengambilan Role**\n"
+                "• Tidak otomatis diberikan.\n"
+                "• Kedua pihak wajib menyetujui.\n\n"
 
-                f"{EMOJI['love']} **Maintenance**\n"
-                f"Minimal {WEEKLY_TARGET_HOURS} jam setiap minggu.\n"
-                "AFK tetap dihitung selama keduanya berada "
-                "di voice channel yang sama.\n\n"
+                f"{EMOJI_ARROW_BLUE} **Setelah Aktif**\n"
+                f"• Minimal **{WEEKLY_HOURS} jam / minggu**.\n"
+                "• Perhitungan berdasarkan waktu keduanya "
+                "berada di VC yang sama.\n"
+                "• AFK tetap dihitung.\n\n"
 
-                f"{EMOJI['blue']} **Strike**\n"
-                f"Maksimal {MAX_STRIKE} strike.\n"
-                "Strike ke-3 menyebabkan role dicabut.\n\n"
+                f"{EMOJI_WAITING} **Strike**\n"
+                f"• Target mingguan tidak terpenuhi = 1 strike.\n"
+                f"• Maksimal {MAX_STRIKE} strike.\n"
+                "• Strike ke-3 = role dicabut otomatis.\n"
+                "• Strike tidak otomatis kembali ke 0.\n\n"
 
-                f"{EMOJI['purple']} **Pencabutan**\n"
-                "Role hanya dicabut melalui persetujuan kedua pihak."
+                f"{EMOJI_LOVE} **Cabut Role**\n"
+                "• Kedua pihak harus menyetujui.\n"
+                "• Setelah dicabut, progress 20 jam kembali ke 0."
             ),
             color=discord.Color.blurple()
         )
 
         await interaction.response.send_message(
             embed=embed,
-            ephemeral=True
-        )
-
-
-# ============================================================
-# REGISTER MODAL
-# ============================================================
-
-class RegisterPairModal(
-    discord.ui.Modal
-):
-    def __init__(self, cog):
-        super().__init__(
-            title="Daftar Pasangan Apipi"
-        )
-
-        self.cog = cog
-
-        self.partner = discord.ui.InputText(
-            label="User ID Pasangan",
-            placeholder="Masukkan Discord User ID",
-            required=True,
-            max_length=25
-        )
-
-        self.add_item(self.partner)
-
-    async def callback(
-        self,
-        interaction: discord.Interaction
-    ):
-        raw = self.partner.value.strip()
-
-        match = re.search(
-            r"\d{15,25}",
-            raw
-        )
-
-        if not match:
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} User ID tidak valid.",
-                ephemeral=True
-            )
-            return
-
-        partner_id = int(
-            match.group()
-        )
-
-        success, message = await self.cog.register_pair(
-            interaction.guild,
-            interaction.user.id,
-            partner_id
-        )
-
-        await interaction.response.send_message(
-            f"{EMOJI['apipi']} {message}",
             ephemeral=True
         )
 
@@ -2022,55 +3054,63 @@ class RegisterPairModal(
 class ApipiManagementPanel(
     discord.ui.View
 ):
+
     def __init__(self, cog):
-        super().__init__(timeout=None)
+
+        super().__init__(
+            timeout=None
+        )
 
         self.cog = cog
 
-    # --------------------------------------------------------
-    # ADMIN CHECK
-    # --------------------------------------------------------
+    # ========================================================
+    # CHECK ADMIN
+    # ========================================================
 
-    async def admin_check(
+    async def check_admin(
         self,
         interaction
     ):
-        if not interaction.user.guild_permissions.administrator:
+
+        if not self.cog.is_admin(interaction):
+
             await interaction.response.send_message(
-                "Kamu tidak memiliki akses ke panel management.",
+                "Akses ditolak. Hanya Administrator.",
                 ephemeral=True
             )
+
             return False
 
         return True
 
-    # --------------------------------------------------------
+    # ========================================================
     # CEK STATUS
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Cek Status",
         style=discord.ButtonStyle.secondary,
         custom_id="nanz_apipi_admin_status"
     )
-    async def check_status(
+    async def status(
         self,
         button,
         interaction
     ):
-        if not await self.admin_check(interaction):
+
+        if not await self.check_admin(interaction):
             return
 
         await interaction.response.send_modal(
             AdminTargetModal(
                 self.cog,
-                action="status"
+                "Cek Status"
             )
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # SET ROLE
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Set Role",
@@ -2082,19 +3122,20 @@ class ApipiManagementPanel(
         button,
         interaction
     ):
-        if not await self.admin_check(interaction):
+
+        if not await self.check_admin(interaction):
             return
 
         await interaction.response.send_modal(
             AdminTargetModal(
                 self.cog,
-                action="set"
+                "Set Role"
             )
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # CABUT ROLE
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Cabut Role",
@@ -2106,19 +3147,20 @@ class ApipiManagementPanel(
         button,
         interaction
     ):
-        if not await self.admin_check(interaction):
+
+        if not await self.check_admin(interaction):
             return
 
         await interaction.response.send_modal(
             AdminTargetModal(
                 self.cog,
-                action="remove"
+                "Cabut Role"
             )
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # RESET PROGRESS
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Reset Progress",
@@ -2130,19 +3172,20 @@ class ApipiManagementPanel(
         button,
         interaction
     ):
-        if not await self.admin_check(interaction):
+
+        if not await self.check_admin(interaction):
             return
 
         await interaction.response.send_modal(
             AdminTargetModal(
                 self.cog,
-                action="reset_progress"
+                "Reset Progress"
             )
         )
 
-    # --------------------------------------------------------
+    # ========================================================
     # RESET STRIKE
-    # --------------------------------------------------------
+    # ========================================================
 
     @discord.ui.button(
         label="Reset Strike",
@@ -2154,205 +3197,16 @@ class ApipiManagementPanel(
         button,
         interaction
     ):
-        if not await self.admin_check(interaction):
+
+        if not await self.check_admin(interaction):
             return
 
         await interaction.response.send_modal(
             AdminTargetModal(
                 self.cog,
-                action="reset_strike"
+                "Reset Strike"
             )
         )
-
-
-# ============================================================
-# ADMIN MODAL
-# ============================================================
-
-class AdminTargetModal(
-    discord.ui.Modal
-):
-    def __init__(
-        self,
-        cog,
-        action
-    ):
-        titles = {
-            "status": "Cek Status Apipi",
-            "set": "Set Role Apipi",
-            "remove": "Cabut Role Apipi",
-            "reset_progress": "Reset Progress",
-            "reset_strike": "Reset Strike"
-        }
-
-        super().__init__(
-            title=titles.get(
-                action,
-                "Apipi Management"
-            )
-        )
-
-        self.cog = cog
-        self.action = action
-
-        self.user_id = discord.ui.InputText(
-            label="User ID",
-            placeholder="Masukkan User ID salah satu pasangan",
-            required=True,
-            max_length=25
-        )
-
-        self.add_item(
-            self.user_id
-        )
-
-    async def callback(
-        self,
-        interaction
-    ):
-        raw = self.user_id.value.strip()
-
-        match = re.search(
-            r"\d{15,25}",
-            raw
-        )
-
-        if not match:
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} User ID tidak valid.",
-                ephemeral=True
-            )
-            return
-
-        user_id = int(
-            match.group()
-        )
-
-        pair = await self.cog.get_pair_by_member(
-            user_id,
-            include_removed=True
-        )
-
-        if not pair:
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} Data pasangan tidak ditemukan.",
-                ephemeral=True
-            )
-            return
-
-        # ----------------------------------------------------
-        # STATUS
-        # ----------------------------------------------------
-
-        if self.action == "status":
-            text = await self.cog.get_status_text(
-                interaction.guild,
-                pair
-            )
-
-            weekly = await self.cog.get_week_seconds(
-                pair["id"],
-                week_start(now_wib())
-            )
-
-            embed = discord.Embed(
-                title=f"{EMOJI['apipi']} Apipi Management",
-                description=(
-                    f"{text}\n\n"
-                    f"{EMOJI['blue']} **Minggu ini:** "
-                    f"{format_duration(weekly)}\n"
-                    f"{EMOJI['purple']} **Siswa approve:** "
-                    f"{'Ya' if pair['siswa_approved'] else 'Belum'}\n"
-                    f"{EMOJI['purple']} **Siswi approve:** "
-                    f"{'Ya' if pair['siswi_approved'] else 'Belum'}"
-                ),
-                color=discord.Color.blurple()
-            )
-
-            await interaction.response.send_message(
-                embed=embed,
-                ephemeral=True
-            )
-            return
-
-        # ----------------------------------------------------
-        # SET ROLE
-        # ----------------------------------------------------
-
-        if self.action == "set":
-            success, message = await self.cog.grant_apipi_role(
-                interaction.guild,
-                pair["id"]
-            )
-
-            await interaction.response.send_message(
-                f"{EMOJI['apipi']} {message}",
-                ephemeral=True
-            )
-
-            if success:
-                await self.cog.log_action(
-                    "admin_set_role",
-                    pair["id"],
-                    interaction.user.id,
-                    "Administrator manually set Apipi role."
-                )
-
-            return
-
-        # ----------------------------------------------------
-        # REMOVE ROLE
-        # ----------------------------------------------------
-
-        if self.action == "remove":
-            success, message = await self.cog.remove_apipi_role(
-                interaction.guild,
-                pair["id"],
-                reason=(
-                    f"Administrator {interaction.user.id}"
-                )
-            )
-
-            await interaction.response.send_message(
-                f"{EMOJI['apipi']} {message}",
-                ephemeral=True
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # RESET PROGRESS
-        # ----------------------------------------------------
-
-        if self.action == "reset_progress":
-            await self.cog.reset_progress(
-                pair["id"],
-                interaction.user.id
-            )
-
-            await interaction.response.send_message(
-                f"{EMOJI['blue']} Progress pasangan berhasil di-reset.",
-                ephemeral=True
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # RESET STRIKE
-        # ----------------------------------------------------
-
-        if self.action == "reset_strike":
-            await self.cog.reset_strike(
-                pair["id"],
-                interaction.user.id
-            )
-
-            await interaction.response.send_message(
-                f"{EMOJI['purple']} Strike pasangan berhasil di-reset.",
-                ephemeral=True
-            )
-
-            return
 
 
 # ============================================================
@@ -2360,6 +3214,7 @@ class AdminTargetModal(
 # ============================================================
 
 async def setup(bot):
+
     await bot.add_cog(
         Apipi(bot)
     )
