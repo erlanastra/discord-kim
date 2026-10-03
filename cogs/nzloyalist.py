@@ -11,19 +11,12 @@ from discord.ext import commands, tasks
 
 NZ_GUILD_ID = 1406557880475320340
 
-# Role nZ Loyalist
 NZ_LOYALIST_ROLE_ID = 1555892286704062529
 
-# Server Tag nanZ
 NZ_SERVER_TAG = "nZ"
 
-# Delay antar operasi role agar tidak spam Discord API
 SYNC_DELAY = 0.5
-
-# Jumlah member diproses sebelum jeda tambahan
 SYNC_BATCH_SIZE = 20
-
-# Backup synchronization
 PERIODIC_CHECK_MINUTES = 5
 
 
@@ -39,37 +32,22 @@ logger = logging.getLogger("nanZ.nZLoyalist")
 # ============================================================
 
 class NZLoyalist(commands.Cog):
-    """
-    Sistem otomatis nZ Loyalist.
-
-    Jika member menggunakan Server Tag nanZ:
-        -> diberikan role nZ Loyalist
-
-    Jika member tidak lagi menggunakan Server Tag nanZ:
-        -> role nZ Loyalist dicabut
-
-    Deteksi menggunakan:
-        User.primary_guild
-        Member.primary_guild
-    """
 
     def __init__(self, bot):
         self.bot = bot
 
-        # Lock per user supaya dua event yang datang bersamaan
-        # tidak melakukan add/remove role secara bersamaan.
         self._user_locks = {}
 
         self._startup_task = None
-        self._periodic_task = None
 
         logger.info("[nZ Loyalist] Cog loaded.")
 
     # ========================================================
-    # LOCK
+    # USER LOCK
     # ========================================================
 
     def get_user_lock(self, user_id: int):
+
         lock = self._user_locks.get(user_id)
 
         if lock is None:
@@ -79,10 +57,11 @@ class NZLoyalist(commands.Cog):
         return lock
 
     # ========================================================
-    # GUILD
+    # GET NANZ GUILD
     # ========================================================
 
     def get_nanz_guild(self):
+
         guild = self.bot.get_guild(NZ_GUILD_ID)
 
         if guild is None:
@@ -94,10 +73,11 @@ class NZLoyalist(commands.Cog):
         return guild
 
     # ========================================================
-    # ROLE
+    # GET LOYALIST ROLE
     # ========================================================
 
-    def get_loyalist_role(self, guild: discord.Guild):
+    def get_loyalist_role(self, guild):
+
         role = guild.get_role(NZ_LOYALIST_ROLE_ID)
 
         if role is None:
@@ -109,27 +89,58 @@ class NZLoyalist(commands.Cog):
         return role
 
     # ========================================================
-    # PRIMARY GUILD DATA
+    # GET PRIMARY GUILD
     # ========================================================
 
-    def get_primary_guild_data(self, user):
-        """
-        Mengambil informasi Server Tag dari User.primary_guild.
+    def get_primary_guild(self, user):
 
-        Return:
-            identity_guild_id
-            identity_enabled
-            tag
-        """
+        return getattr(
+            user,
+            "primary_guild",
+            None
+        )
 
-        primary_guild = getattr(user, "primary_guild", None)
+    # ========================================================
+    # GET SERVER TAG
+    # ========================================================
+
+    def get_server_tag(self, user):
+
+        primary_guild = self.get_primary_guild(user)
 
         if primary_guild is None:
-            return None, False, None
+            return None
 
-        identity_guild_id = getattr(
+        tag = getattr(
             primary_guild,
-            "identity_guild_id",
+            "tag",
+            None
+        )
+
+        return tag
+
+    # ========================================================
+    # CHECK NZ TAG
+    # ========================================================
+
+    def has_nz_server_tag(self, user):
+
+        primary_guild = self.get_primary_guild(user)
+
+        if primary_guild is None:
+
+            logger.info(
+                "[nZ Loyalist] DEBUG | %s (%s) | "
+                "primary_guild=None | tag=None",
+                getattr(user, "name", "Unknown"),
+                user.id
+            )
+
+            return False
+
+        tag = getattr(
+            primary_guild,
+            "tag",
             None
         )
 
@@ -139,49 +150,33 @@ class NZLoyalist(commands.Cog):
             False
         )
 
-        tag = getattr(
+        identity_guild_id = getattr(
             primary_guild,
-            "tag",
+            "identity_guild_id",
             None
         )
 
-        return (
+        logger.info(
+            "[nZ Loyalist] DEBUG | %s (%s) | "
+            "identity_guild_id=%r | "
+            "identity_enabled=%r | "
+            "tag=%r",
+            getattr(user, "name", "Unknown"),
+            user.id,
             identity_guild_id,
             identity_enabled,
             tag
         )
 
-    # ========================================================
-    # DEBUG / DETECTION
-    # ========================================================
-
-    def has_nz_server_tag(self, user, log_debug=True):
-        """
-        Mengecek apakah user sedang menggunakan
-        Server Tag nZ milik nanZ.
-        """
-
-        (
-            identity_guild_id,
-            identity_enabled,
-            tag
-        ) = self.get_primary_guild_data(user)
-
-        if log_debug:
-            logger.info(
-                "[nZ Loyalist] DEBUG | %s (%s) | "
-                "identity_guild_id=%r | "
-                "identity_enabled=%r | "
-                "tag=%r",
-                getattr(user, "name", "Unknown"),
-                user.id,
-                identity_guild_id,
-                identity_enabled,
-                tag
-            )
-
-        if identity_guild_id != NZ_GUILD_ID:
-            return False
+        # ====================================================
+        # DETEKSI UTAMA
+        # ====================================================
+        #
+        # Discord.py pada object yang diterima bot kita
+        # tidak selalu menyediakan identity_guild_id.
+        #
+        # Karena itu tag menjadi indikator utama.
+        #
 
         if identity_enabled is not True:
             return False
@@ -192,52 +187,70 @@ class NZLoyalist(commands.Cog):
         return True
 
     # ========================================================
-    # ROLE PERMISSION
+    # CHECK ROLE PERMISSION
     # ========================================================
 
     def can_manage_role(
         self,
-        guild: discord.Guild,
-        role: discord.Role
+        guild,
+        role
     ):
-        """
-        Memastikan bot bisa mengelola role nZ Loyalist.
-        """
 
         me = guild.me
 
         if me is None:
+
             logger.error(
                 "[nZ Loyalist] Bot member tidak ditemukan."
             )
+
             return False
 
         if role.is_default():
+
             logger.error(
                 "[nZ Loyalist] Role target adalah @everyone."
             )
+
             return False
 
         if role.managed:
+
             logger.error(
                 "[nZ Loyalist] Role target adalah managed role."
             )
+
             return False
 
         if not me.guild_permissions.manage_roles:
+
             logger.error(
-                "[nZ Loyalist] Bot tidak memiliki permission Manage Roles."
+                "[nZ Loyalist] Bot tidak memiliki "
+                "permission Manage Roles."
             )
+
             return False
 
         if me.top_role <= role:
+
             logger.error(
-                "[nZ Loyalist] Role nZ Loyalist berada di atas "
-                "atau sama dengan role tertinggi bot. "
-                "Top bot role=%s | Target=%s",
-                me.top_role.name,
-                role.name
+                "[nZ Loyalist] Tidak dapat mengelola role "
+                "nZ Loyalist karena role berada di atas "
+                "atau sama dengan role bot."
             )
+
+            logger.error(
+                "[nZ Loyalist] Bot Top Role: %s (%s)",
+                me.top_role.name,
+                me.top_role.id
+            )
+
+            logger.error(
+                "[nZ Loyalist] Target Role: %s (%s)",
+                role.name,
+                role.id
+            )
+
             return False
 
         return True
@@ -248,28 +261,37 @@ class NZLoyalist(commands.Cog):
 
     async def add_loyalist_role(
         self,
-        member: discord.Member,
-        role: discord.Role
+        member,
+        role
     ):
+
         if role in member.roles:
+
             logger.info(
-                "[nZ Loyalist] %s (%s) sudah memiliki role nZ Loyalist.",
+                "[nZ Loyalist] %s (%s) sudah memiliki "
+                "role nZ Loyalist.",
                 member,
                 member.id
             )
+
             return
 
-        if not self.can_manage_role(member.guild, role):
+        if not self.can_manage_role(
+            member.guild,
+            role
+        ):
             return
 
         try:
+
             await member.add_roles(
                 role,
                 reason="Menggunakan Server Tag nanZ (nZ)"
             )
 
             logger.info(
-                "[nZ Loyalist] ROLE DIBERIKAN | %s (%s) | Role=%s (%s)",
+                "[nZ Loyalist] ROLE DIBERIKAN | "
+                "%s (%s) | %s (%s)",
                 member,
                 member.id,
                 role.name,
@@ -277,18 +299,20 @@ class NZLoyalist(commands.Cog):
             )
 
         except discord.Forbidden:
+
             logger.exception(
-                "[nZ Loyalist] Gagal memberikan role kepada %s: "
-                "Discord menolak permission.",
+                "[nZ Loyalist] Discord menolak pemberian "
+                "role kepada %s.",
                 member
             )
 
-        except discord.HTTPException as e:
+        except discord.HTTPException as error:
+
             logger.exception(
-                "[nZ Loyalist] HTTP error saat memberikan role "
-                "kepada %s: %s",
+                "[nZ Loyalist] HTTP error saat memberikan "
+                "role kepada %s: %s",
                 member,
-                e
+                error
             )
 
     # ========================================================
@@ -297,23 +321,29 @@ class NZLoyalist(commands.Cog):
 
     async def remove_loyalist_role(
         self,
-        member: discord.Member,
-        role: discord.Role
+        member,
+        role
     ):
+
         if role not in member.roles:
             return
 
-        if not self.can_manage_role(member.guild, role):
+        if not self.can_manage_role(
+            member.guild,
+            role
+        ):
             return
 
         try:
+
             await member.remove_roles(
                 role,
                 reason="Tidak lagi menggunakan Server Tag nanZ (nZ)"
             )
 
             logger.info(
-                "[nZ Loyalist] ROLE DICABUT | %s (%s) | Role=%s (%s)",
+                "[nZ Loyalist] ROLE DICABUT | "
+                "%s (%s) | %s (%s)",
                 member,
                 member.id,
                 role.name,
@@ -321,18 +351,20 @@ class NZLoyalist(commands.Cog):
             )
 
         except discord.Forbidden:
+
             logger.exception(
-                "[nZ Loyalist] Gagal mencabut role dari %s: "
-                "Discord menolak permission.",
+                "[nZ Loyalist] Discord menolak pencabutan "
+                "role dari %s.",
                 member
             )
 
-        except discord.HTTPException as e:
+        except discord.HTTPException as error:
+
             logger.exception(
-                "[nZ Loyalist] HTTP error saat mencabut role "
-                "dari %s: %s",
+                "[nZ Loyalist] HTTP error saat mencabut "
+                "role dari %s: %s",
                 member,
-                e
+                error
             )
 
     # ========================================================
@@ -341,18 +373,9 @@ class NZLoyalist(commands.Cog):
 
     async def sync_member(
         self,
-        member: discord.Member,
+        member,
         user_override=None
     ):
-        """
-        Sinkronisasi satu member.
-
-        nZ Tag aktif:
-            role harus ADA
-
-        nZ Tag tidak aktif:
-            role harus TIDAK ADA
-        """
 
         if member.guild.id != NZ_GUILD_ID:
             return
@@ -360,27 +383,38 @@ class NZLoyalist(commands.Cog):
         if member.bot:
             return
 
-        lock = self.get_user_lock(member.id)
+        lock = self.get_user_lock(
+            member.id
+        )
 
         async with lock:
+
             guild = member.guild
-            role = self.get_loyalist_role(guild)
+
+            role = self.get_loyalist_role(
+                guild
+            )
 
             if role is None:
                 return
 
-            user = user_override or member
+            user = (
+                user_override
+                if user_override is not None
+                else member
+            )
 
             has_tag = self.has_nz_server_tag(
-                user,
-                log_debug=True
+                user
             )
 
             has_role = role in member.roles
 
             logger.info(
-                "[nZ Loyalist] SYNC | %s (%s) | "
-                "nZ Tag=%s | Role=%s",
+                "[nZ Loyalist] SYNC | "
+                "%s (%s) | "
+                "nZ Tag=%s | "
+                "Role=%s",
                 member,
                 member.id,
                 has_tag,
@@ -388,22 +422,26 @@ class NZLoyalist(commands.Cog):
             )
 
             # =================================================
-            # TAG AKTIF -> ADD ROLE
+            # NZ TAG AKTIF
             # =================================================
 
             if has_tag:
+
                 if not has_role:
+
                     await self.add_loyalist_role(
                         member,
                         role
                     )
 
             # =================================================
-            # TAG TIDAK AKTIF -> REMOVE ROLE
+            # NZ TAG TIDAK AKTIF
             # =================================================
 
             else:
+
                 if has_role:
+
                     await self.remove_loyalist_role(
                         member,
                         role
@@ -416,13 +454,9 @@ class NZLoyalist(commands.Cog):
     @commands.Cog.listener()
     async def on_user_update(
         self,
-        before: discord.User,
-        after: discord.User
+        before,
+        after
     ):
-        """
-        Dipanggil ketika data user berubah,
-        termasuk perubahan Primary Guild / Server Tag.
-        """
 
         before_primary = getattr(
             before,
@@ -440,18 +474,20 @@ class NZLoyalist(commands.Cog):
             return
 
         logger.info(
-            "[nZ Loyalist] Primary Guild berubah | %s (%s)",
+            "[nZ Loyalist] Primary Guild berubah | "
+            "%s (%s)",
             after.name,
             after.id
         )
 
-        # Pastikan user memang member nanZ
         guild = self.get_nanz_guild()
 
         if guild is None:
             return
 
-        member = guild.get_member(after.id)
+        member = guild.get_member(
+            after.id
+        )
 
         if member is None:
             return
@@ -468,13 +504,9 @@ class NZLoyalist(commands.Cog):
     @commands.Cog.listener()
     async def on_member_update(
         self,
-        before: discord.Member,
-        after: discord.Member
+        before,
+        after
     ):
-        """
-        Backup listener untuk perubahan Primary Guild
-        pada Member.
-        """
 
         if after.guild.id != NZ_GUILD_ID:
             return
@@ -495,7 +527,8 @@ class NZLoyalist(commands.Cog):
             return
 
         logger.info(
-            "[nZ Loyalist] Member primary guild berubah | %s (%s)",
+            "[nZ Loyalist] Member primary guild berubah | "
+            "%s (%s)",
             after.name,
             after.id
         )
@@ -512,8 +545,9 @@ class NZLoyalist(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(
         self,
-        member: discord.Member
+        member
     ):
+
         if member.guild.id != NZ_GUILD_ID:
             return
 
@@ -521,24 +555,23 @@ class NZLoyalist(commands.Cog):
             return
 
         logger.info(
-            "[nZ Loyalist] Member baru masuk | %s (%s)",
+            "[nZ Loyalist] Member baru masuk | "
+            "%s (%s)",
             member,
             member.id
         )
 
-        # Beri sedikit waktu agar data member stabil
         await asyncio.sleep(1)
 
-        await self.sync_member(member)
+        await self.sync_member(
+            member
+        )
 
     # ========================================================
     # STARTUP SYNC
     # ========================================================
 
     async def startup_sync(self):
-        """
-        Sinkronisasi seluruh member setelah bot online.
-        """
 
         await self.bot.wait_until_ready()
 
@@ -549,13 +582,11 @@ class NZLoyalist(commands.Cog):
         guild = self.get_nanz_guild()
 
         if guild is None:
-            logger.error(
-                "[nZ Loyalist] Startup sync gagal: "
-                "guild tidak ditemukan."
-            )
             return
 
-        role = self.get_loyalist_role(guild)
+        role = self.get_loyalist_role(
+            guild
+        )
 
         if role is None:
             return
@@ -566,45 +597,42 @@ class NZLoyalist(commands.Cog):
             guild.id
         )
 
-        # ----------------------------------------------------
-        # Ambil member cache
-        # ----------------------------------------------------
-
-        members = list(guild.members)
+        members = list(
+            guild.members
+        )
 
         logger.info(
             "[nZ Loyalist] Member cache: %s member.",
             len(members)
         )
 
-        # ----------------------------------------------------
-        # Jika cache kosong, coba fetch members
-        # ----------------------------------------------------
-
         if not members:
+
             try:
+
                 members = []
 
                 async for member in guild.fetch_members(
                     limit=None
                 ):
-                    members.append(member)
+
+                    members.append(
+                        member
+                    )
 
                 logger.info(
                     "[nZ Loyalist] Fetch members selesai: %s member.",
                     len(members)
                 )
 
-            except discord.HTTPException as e:
+            except discord.HTTPException as error:
+
                 logger.exception(
                     "[nZ Loyalist] Gagal fetch members: %s",
-                    e
+                    error
                 )
-                return
 
-        # ----------------------------------------------------
-        # Sinkronisasi
-        # ----------------------------------------------------
+                return
 
         processed = 0
 
@@ -614,22 +642,28 @@ class NZLoyalist(commands.Cog):
                 continue
 
             try:
-                await self.sync_member(member)
+
+                await self.sync_member(
+                    member
+                )
 
             except Exception:
+
                 logger.exception(
-                    "[nZ Loyalist] Error sync member %s (%s)",
+                    "[nZ Loyalist] Error sync "
+                    "%s (%s)",
                     member,
                     member.id
                 )
 
             processed += 1
 
-            # Delay kecil untuk menghindari spam API
-            await asyncio.sleep(SYNC_DELAY)
+            await asyncio.sleep(
+                SYNC_DELAY
+            )
 
-            # Jeda tambahan setiap batch
             if processed % SYNC_BATCH_SIZE == 0:
+
                 await asyncio.sleep(2)
 
         logger.info(
@@ -640,22 +674,19 @@ class NZLoyalist(commands.Cog):
     # PERIODIC BACKUP
     # ========================================================
 
-    @tasks.loop(minutes=PERIODIC_CHECK_MINUTES)
+    @tasks.loop(
+        minutes=PERIODIC_CHECK_MINUTES
+    )
     async def periodic_sync(self):
-        """
-        Backup check.
-
-        Hanya memeriksa member yang sudah memiliki
-        nZ Loyalist agar tidak melakukan request
-        besar-besaran setiap 5 menit.
-        """
 
         guild = self.get_nanz_guild()
 
         if guild is None:
             return
 
-        role = self.get_loyalist_role(guild)
+        role = self.get_loyalist_role(
+            guild
+        )
 
         if role is None:
             return
@@ -666,29 +697,42 @@ class NZLoyalist(commands.Cog):
 
         count = 0
 
-        for member in list(guild.members):
+        for member in list(
+            guild.members
+        ):
 
             if member.bot:
                 continue
 
-            # Hanya cek member yang sudah memiliki role.
-            # Tujuannya mendeteksi tag yang sudah dilepas.
+            # Hanya mengecek member yang saat ini
+            # memiliki role.
+            #
+            # Tujuan utamanya:
+            # mendeteksi member yang sudah melepas nZ.
+
             if role not in member.roles:
                 continue
 
             try:
-                await self.sync_member(member)
+
+                await self.sync_member(
+                    member
+                )
 
             except Exception:
+
                 logger.exception(
-                    "[nZ Loyalist] Error backup sync %s (%s)",
+                    "[nZ Loyalist] Error backup sync "
+                    "%s (%s)",
                     member,
                     member.id
                 )
 
             count += 1
 
-            await asyncio.sleep(SYNC_DELAY)
+            await asyncio.sleep(
+                SYNC_DELAY
+            )
 
         logger.info(
             "[nZ Loyalist] Backup synchronization selesai. "
@@ -696,16 +740,25 @@ class NZLoyalist(commands.Cog):
             count
         )
 
+    # ========================================================
+    # PERIODIC BEFORE LOOP
+    # ========================================================
+
     @periodic_sync.before_loop
     async def before_periodic_sync(self):
+
         await self.bot.wait_until_ready()
 
     # ========================================================
-    # LOOP ERROR HANDLER
+    # PERIODIC ERROR
     # ========================================================
 
     @periodic_sync.error
-    async def periodic_sync_error(self, error):
+    async def periodic_sync_error(
+        self,
+        error
+    ):
+
         logger.exception(
             "[nZ Loyalist] Periodic synchronization error: %s",
             error
@@ -716,11 +769,13 @@ class NZLoyalist(commands.Cog):
     # ========================================================
 
     async def cog_load(self):
+
         self._startup_task = asyncio.create_task(
             self.startup_sync()
         )
 
         if not self.periodic_sync.is_running():
+
             self.periodic_sync.start()
 
     # ========================================================
@@ -728,7 +783,9 @@ class NZLoyalist(commands.Cog):
     # ========================================================
 
     async def cog_unload(self):
+
         if self._startup_task is not None:
+
             self._startup_task.cancel()
 
         self.periodic_sync.cancel()
@@ -745,6 +802,7 @@ class NZLoyalist(commands.Cog):
 # ============================================================
 
 async def setup(bot):
+
     await bot.add_cog(
         NZLoyalist(bot)
     )
