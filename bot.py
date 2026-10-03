@@ -65,6 +65,7 @@ async def load_cogs():
 
     cogs = [
         "cogs.system_monitor",
+        "cogs.apipi",
         "cogs.post",
         "cogs.ai",
         "cogs.entrance",
