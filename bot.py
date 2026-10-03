@@ -75,6 +75,7 @@ async def load_cogs():
         "cogs.say",
         "cogs.afk",
         "cogs.autoemoji",
+        "cogs.nzloyalist",
         "cogs.cantikganteng",
         "cogs.setup_game",
         "cogs.nanzteamevent",
