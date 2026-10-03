@@ -57,13 +57,10 @@ WIB = timezone(timedelta(hours=7))
 # ============================================================
 # CUSTOM EMOJI
 # ============================================================
-# Semua emoji di bawah adalah custom emoji Discord.
-#
-# animated=True digunakan agar emoji dikirim sebagai
-# custom animated emoji Discord, bukan Unicode emoji biasa.
-#
+# Semua emoji adalah custom emoji Discord.
 # Button TIDAK menggunakan emoji.
-# Emoji hanya digunakan pada embed/message.
+# animated=True digunakan agar emoji ditampilkan sebagai
+# custom animated emoji Discord.
 
 EMOJI_ARROW_BLUE = discord.PartialEmoji(
     name="arrow_blue",
@@ -617,18 +614,20 @@ class Apipi(commands.Cog):
 
         if include_removed:
 
+            # Dibuat dengan 2 placeholder parameter.
+            # Ini menghindari format query yang bermasalah
+            # pada aiomysql/database wrapper.
             return await db.fetchone(
                 """
                 SELECT *
                 FROM nanz_apipi_pairs
                 WHERE guild_id = %s
-                AND (siswa_id = %s OR siswi_id = %s)
+                AND %s IN (siswa_id, siswi_id)
                 ORDER BY id DESC
                 LIMIT 1
                 """,
                 (
                     guild_id,
-                    user_id,
                     user_id
                 )
             )
@@ -638,14 +637,13 @@ class Apipi(commands.Cog):
             SELECT *
             FROM nanz_apipi_pairs
             WHERE guild_id = %s
-            AND (siswa_id = %s OR siswi_id = %s)
+            AND %s IN (siswa_id, siswi_id)
             AND status != 'removed'
             ORDER BY id DESC
             LIMIT 1
             """,
             (
                 guild_id,
-                user_id,
                 user_id
             )
         )
@@ -1049,7 +1047,6 @@ class Apipi(commands.Cog):
             result["total_seconds"] or 0
         )
 
-        # Tambahkan live session
         live = await db.fetchone(
             """
             SELECT *
@@ -1106,8 +1103,6 @@ class Apipi(commands.Cog):
             result["seconds"] or 0
         )
 
-        # Tambahkan bagian live session
-        # yang masuk minggu ini
         live = await db.fetchone(
             """
             SELECT *
@@ -1782,19 +1777,31 @@ class Apipi(commands.Cog):
 
         guild = member.guild
 
-        pair = await self.get_pair_by_member(
-            guild.id,
-            member.id
-        )
+        try:
+            pair = await self.get_pair_by_member(
+                guild.id,
+                member.id
+            )
+        except Exception as e:
+            print(
+                f"[APIPI] Error get_pair_by_member "
+                f"pada voice state: {e}"
+            )
+            return
 
         if not pair:
             return
 
         async with self.session_lock:
 
-            await self.sync_pair_voice(
-                pair
-            )
+            try:
+                await self.sync_pair_voice(
+                    pair
+                )
+            except Exception as e:
+                print(
+                    f"[APIPI] Error sync_pair_voice: {e}"
+                )
 
     # ========================================================
     # SYNC PAIR VOICE
@@ -1953,8 +1960,6 @@ class Apipi(commands.Cog):
                     pair
                 )
 
-                # Simpan waktu terakhir yang benar-benar
-                # diketahui sebelum bot mati.
                 if last_seen:
 
                     await self.save_split_sessions(
@@ -1973,9 +1978,6 @@ class Apipi(commands.Cog):
                     (pair["id"],)
                 )
 
-                # Kalau ketika bot hidup kembali mereka
-                # masih berada di VC yang sama,
-                # mulai sesi baru dari waktu sekarang.
                 if current_shared:
 
                     await self.start_session(
@@ -1995,7 +1997,6 @@ class Apipi(commands.Cog):
 
         now = utc_now()
 
-        # Minggu yang sudah selesai
         current_week = get_week_start(
             now
         )
@@ -2022,8 +2023,6 @@ class Apipi(commands.Cog):
                     active_since
                 )
 
-                # Minggu saat role pertama kali aktif
-                # tidak langsung dihukum.
                 activation_week = get_week_start(
                     active_since_aware
                 ).date()
@@ -2263,8 +2262,6 @@ class Apipi(commands.Cog):
         total = await self.get_total_seconds(
             pair["id"]
         )
-
-        total_target = UNLOCK_HOURS * 3600
 
         if pair["status"] == "active":
 
@@ -2741,7 +2738,6 @@ class RegisterPairModal(
             for role in partner.roles
         )
 
-        # Harus Siswa + Siswi
         if user_is_siswa and partner_is_siswi:
 
             siswa = user
@@ -2920,8 +2916,8 @@ class ApipiMemberPanel(
     )
     async def register(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         await interaction.response.send_modal(
@@ -2941,8 +2937,8 @@ class ApipiMemberPanel(
     )
     async def take(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         await self.cog.approve_take(
@@ -2960,8 +2956,8 @@ class ApipiMemberPanel(
     )
     async def remove(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         await self.cog.approve_remove(
@@ -2979,8 +2975,8 @@ class ApipiMemberPanel(
     )
     async def status(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         pair = await self.cog.get_pair_by_member(
@@ -3015,8 +3011,8 @@ class ApipiMemberPanel(
     )
     async def rules(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         embed = discord.Embed(
@@ -3103,8 +3099,8 @@ class ApipiManagementPanel(
     )
     async def status(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         if not await self.check_admin(interaction):
@@ -3128,8 +3124,8 @@ class ApipiManagementPanel(
     )
     async def set_role(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         if not await self.check_admin(interaction):
@@ -3153,8 +3149,8 @@ class ApipiManagementPanel(
     )
     async def remove_role(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         if not await self.check_admin(interaction):
@@ -3178,8 +3174,8 @@ class ApipiManagementPanel(
     )
     async def reset_progress(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         if not await self.check_admin(interaction):
@@ -3203,8 +3199,8 @@ class ApipiManagementPanel(
     )
     async def reset_strike(
         self,
-        button,
-        interaction
+        interaction,
+        button
     ):
 
         if not await self.check_admin(interaction):
