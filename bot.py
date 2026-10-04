@@ -7,7 +7,6 @@ import discord
 from cogs.verifysystem import VerifyButton
 from cogs.setupquote import QuoteView
 from cogs.ticket import TicketView
-from cogs.setup_murid import MuridView
 from cogs.setup_minat import MinatView
 from cogs.setup_game import GameView
 from cogs.setup_botgame import BotGameView
@@ -75,7 +74,6 @@ async def load_cogs():
         "cogs.setup_game",
         "cogs.setup_botgame",
         "cogs.nanzteamevent",
-        "cogs.setup_murid",
         "cogs.setup_minat",
         "cogs.setupquote",
         "cogs.nanzquiz",
@@ -142,11 +140,6 @@ def register_persistent_views():
     # Ticket
     bot.add_view(
         TicketView()
-    )
-
-    # Murid
-    bot.add_view(
-        MuridView()
     )
 
     # Minat
