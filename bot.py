@@ -1,6 +1,5 @@
 import os
 import asyncio
-import aiohttp
 
 from discord.ext import commands
 import discord
@@ -8,9 +7,10 @@ import discord
 from cogs.verifysystem import VerifyButton
 from cogs.setupquote import QuoteView
 from cogs.ticket import TicketView
-from cogs.setup_murid import BotGameView  # <-- DIPERBAIKI (sebelumnya MuridView)
+from cogs.setup_murid import MuridView
 from cogs.setup_minat import MinatView
 from cogs.setup_game import GameView
+from cogs.setup_botgame import BotGameView
 from cogs.role_request import RoleRequestView
 
 from dotenv import load_dotenv
@@ -20,11 +20,6 @@ from database import db
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-
-print(
-    "DEBUG: TOKEN =",
-    TOKEN if TOKEN else "TOKEN TIDAK DITEMUKAN"
-)
 
 if not TOKEN:
     raise RuntimeError(
@@ -78,6 +73,7 @@ async def load_cogs():
         "cogs.nzloyalist",
         "cogs.cantikganteng",
         "cogs.setup_game",
+        "cogs.setup_botgame",
         "cogs.nanzteamevent",
         "cogs.setup_murid",
         "cogs.setup_minat",
@@ -128,6 +124,7 @@ async def load_cogs():
 
 # ==========================================================
 # REGISTER PERSISTENT VIEWS
+# (fungsi biasa, JANGAN di-await)
 # ==========================================================
 
 def register_persistent_views():
@@ -149,7 +146,7 @@ def register_persistent_views():
 
     # Murid
     bot.add_view(
-        BotGameView()  # <-- DIPERBAIKI (sebelumnya MuridView())
+        MuridView()
     )
 
     # Minat
@@ -162,10 +159,12 @@ def register_persistent_views():
         GameView()
     )
 
-    # ======================================================
-    # CUSTOM ROLE REQUEST
-    # ======================================================
+    # Bot Game (OwO / UwU)
+    bot.add_view(
+        BotGameView()
+    )
 
+    # Custom Role Request
     bot.add_view(
         RoleRequestView()
     )
@@ -188,8 +187,8 @@ async def main():
             # Load semua cog
             await load_cogs()
 
-            # Register semua persistent view
-            await register_persistent_views()
+            # Register semua persistent view (tanpa await)
+            register_persistent_views()
 
             # Start bot
             await bot.start(TOKEN)
