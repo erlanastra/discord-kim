@@ -8,7 +8,7 @@ import discord
 from cogs.verifysystem import VerifyButton
 from cogs.setupquote import QuoteView
 from cogs.ticket import TicketView
-from cogs.setup_murid import MuridView
+from cogs.setup_murid import BotGameView  # <-- DIPERBAIKI (sebelumnya MuridView)
 from cogs.setup_minat import MinatView
 from cogs.setup_game import GameView
 from cogs.role_request import RoleRequestView
@@ -149,7 +149,7 @@ def register_persistent_views():
 
     # Murid
     bot.add_view(
-        MuridView()
+        BotGameView()  # <-- DIPERBAIKI (sebelumnya MuridView())
     )
 
     # Minat
@@ -189,7 +189,7 @@ async def main():
             await load_cogs()
 
             # Register semua persistent view
-            register_persistent_views()
+            await register_persistent_views()
 
             # Start bot
             await bot.start(TOKEN)
