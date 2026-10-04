@@ -1,4 +1,6 @@
 import re
+import sqlite3
+from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
 import discord
@@ -14,7 +16,7 @@ TEAM_EVENT_CHANNEL_ID  = 1510142235730120744
 STAFF_CONTROL_CHANNEL_ID = 1498871689075753171
 TEAM_CATEGORY_ID       = 1406602545828466709
 
-MOD_ROLE_ID     = 1453103644244316343
+MOD_ROLE_ID     = 1555556260269527151
 OSIS_ROLE_ID    = 1427276194876751902
 PEMBINA_ROLE_ID = 1467360501745844446
 
@@ -22,6 +24,42 @@ ROLE_MARKER      = "[NANZ-EVENT]"   # suffix pada nama role
 CHANNEL_MARKER   = "[NANZ-EVENT]"   # substring di topic channel
 ROLE_PREFIX      = "Team "          # "Team nanZ [NANZ-EVENT]"
 CHANNEL_PREFIX   = "event-"         # "event-nanz"
+
+# Database dibuat otomatis di folder kerja bot jika belum ada.
+# Jika file sudah ada, data lama tetap dipertahankan.
+DB_PATH = Path(__file__).resolve().parent.parent / "nanz_event.db"
+
+def init_database():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS event_config (
+                guild_id INTEGER PRIMARY KEY,
+                event_name TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                max_teams INTEGER NOT NULL DEFAULT 5,
+                max_members INTEGER NOT NULL DEFAULT 5,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+
+def save_event_config(guild_id: int, event_name: str, description: str,
+                      max_teams: int, max_members: int):
+    init_database()
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        conn.execute("""
+            INSERT INTO event_config
+                (guild_id, event_name, description, max_teams, max_members, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(guild_id) DO UPDATE SET
+                event_name=excluded.event_name,
+                description=excluded.description,
+                max_teams=excluded.max_teams,
+                max_members=excluded.max_members,
+                updated_at=CURRENT_TIMESTAMP
+        """, (guild_id, event_name, description, max_teams, max_members))
+        conn.commit()
 
 # ==========================================
 # HELPER: baca state dari Discord
@@ -270,6 +308,8 @@ class CreateEventModal(Modal, title="Buat Team Event"):
                 "Max team/member harus berupa angka.", ephemeral=True
             )
 
+        save_event_config(guild.id, self.event_name.value.strip(), self.event_description.value or "", mt, mm)
+
         # Simpan config di channel tersembunyi agar tahan restart
         category = guild.get_channel(TEAM_CATEGORY_ID)
         overwrites = {
@@ -286,13 +326,17 @@ class CreateEventModal(Modal, title="Buat Team Event"):
             f"max_members:{mm} "
             f"{CHANNEL_MARKER}"
         )
-        await guild.create_text_channel(
-            name="event-config",
-            category=category,
-            overwrites=overwrites,
-            topic=config_topic,
-            reason="NANZ-EVENT config channel"
-        )
+        old_config = _get_event_config_channel(guild)
+        if old_config:
+            await old_config.edit(topic=config_topic, category=category, overwrites=overwrites)
+        else:
+            await guild.create_text_channel(
+                name="event-config",
+                category=category,
+                overwrites=overwrites,
+                topic=config_topic,
+                reason="NANZ-EVENT config channel"
+            )
 
         public_channel = guild.get_channel(TEAM_EVENT_CHANNEL_ID)
         embed = discord.Embed(
@@ -688,6 +732,7 @@ class NanZTeamEvent(commands.Cog):
 
         self.bot.add_view(CreateTeamView())
         self.bot.add_view(StaffControlView())
+        self.bot.add_view(EventControlView())
         print("[nanZ] Persistent views registered.")
 
     # ------------------------------------------
@@ -711,30 +756,7 @@ class NanZTeamEvent(commands.Cog):
         embed.set_footer(text="nanZ Team Event")
         embed.timestamp = discord.utils.utcnow()
 
-        view = View(timeout=None)
-
-        create_btn = Button(
-            label="Buat Event",
-            style=discord.ButtonStyle.blurple,
-            custom_id="nanz_open_create_event_modal"
-        )
-
-        async def create_callback(interaction: discord.Interaction):
-            await interaction.response.send_modal(CreateEventModal())
-
-        create_btn.callback = create_callback
-        view.add_item(create_btn)
-
-        # Tombol "Tutup Event" dari StaffControlView
-        close_btn = Button(
-            label="Tutup Event",
-            style=discord.ButtonStyle.red,
-            custom_id="nanz_close_event_button"
-        )
-        close_btn.callback = StaffControlView().close_event
-        view.add_item(close_btn)
-
-        await ctx.send(embed=embed, view=view)
+        await ctx.send(embed=embed, view=EventControlView())
 
     # ------------------------------------------
     @commands.command()
@@ -771,4 +793,5 @@ class NanZTeamEvent(commands.Cog):
 # ==========================================
 
 async def setup(bot: commands.Bot):
+    init_database()
     await bot.add_cog(NanZTeamEvent(bot))
