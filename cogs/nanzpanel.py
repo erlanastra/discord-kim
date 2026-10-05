@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 
@@ -8,7 +9,6 @@ from discord.ext import commands
 class NanzPanel(commands.Cog):
 
     def __init__(self, bot):
-
         self.bot = bot
 
         # ========================================================
@@ -523,6 +523,10 @@ class NanzPanel(commands.Cog):
             self.PANEL_CHANNEL_ID
         )
 
+        # ========================================================
+        # FALLBACK FETCH CHANNEL
+        # ========================================================
+
         if channel is None:
 
             try:
@@ -538,6 +542,22 @@ class NanzPanel(commands.Cog):
                 )
 
                 return
+
+        # Pastikan channel memang text channel
+        if not isinstance(
+            channel,
+            (
+                discord.TextChannel,
+                discord.Thread
+            )
+        ):
+
+            print(
+                "[NanzPanel] Channel panel bukan "
+                "TextChannel/Thread."
+            )
+
+            return
 
         embed = self.create_panel_embed()
 
@@ -565,6 +585,13 @@ class NanzPanel(commands.Cog):
                     embed=embed,
                     view=view
                 )
+
+                # Simpan kembali data untuk memastikan
+                # channel dan message ID tetap sinkron.
+                self.save_panel_data({
+                    "panel_message_id": str(message.id),
+                    "channel_id": str(channel.id)
+                })
 
                 print(
                     f"[NanzPanel] Panel berhasil di-update "
@@ -616,26 +643,18 @@ class NanzPanel(commands.Cog):
                 f"(Message ID: {message.id})"
             )
 
+        except discord.Forbidden:
+
+            print(
+                "[NanzPanel] Bot tidak memiliki izin "
+                "untuk mengirim pesan di channel panel."
+            )
+
         except Exception as e:
 
             print(
                 f"[NanzPanel] Gagal mengirim panel: {e}"
             )
-
-    # ============================================================
-    # READY LISTENER
-    # ============================================================
-
-    @commands.Cog.listener()
-    async def on_ready(self):
-
-        # Hindari sync berkali-kali jika on_ready dipanggil ulang
-        if getattr(self.bot, "_nanz_panel_synced", False):
-            return
-
-        self.bot._nanz_panel_synced = True
-
-        await self.sync_panel()
 
     # ============================================================
     # COMMAND PANEL MANUAL
@@ -700,6 +719,10 @@ async def setup(bot):
 
     cog = NanzPanel(bot)
 
+    # ============================================================
+    # LOAD COG
+    # ============================================================
+
     await bot.add_cog(cog)
 
     # ============================================================
@@ -716,4 +739,85 @@ async def setup(bot):
 
     bot.add_view(
         NanzPanel.BackView()
+    )
+
+    # ============================================================
+    # AUTO SYNC PANEL
+    # ============================================================
+    #
+    # Ini adalah bagian penting.
+    #
+    # Berbeda dari on_ready, task ini dibuat LANGSUNG ketika
+    # extension/cog selesai di-load.
+    #
+    # Jika bot belum READY:
+    #     → tunggu bot READY
+    #
+    # Jika bot SUDAH READY:
+    #     → wait_until_ready() langsung selesai
+    #     → panel langsung disinkronkan
+    #
+    # Jadi aman untuk:
+    #     - bot restart
+    #     - cog reload
+    #     - extension load
+    #     - bot sudah READY sebelum cog di-load
+    #
+    # ============================================================
+
+    async def auto_sync_panel():
+
+        try:
+
+            await bot.wait_until_ready()
+
+            # Beri waktu sedikit agar cache channel/guild
+            # benar-benar siap.
+            await asyncio.sleep(2)
+
+            await cog.sync_panel()
+
+            print(
+                "[NanzPanel] Auto sync panel berhasil dijalankan."
+            )
+
+        except asyncio.CancelledError:
+
+            print(
+                "[NanzPanel] Auto sync panel dibatalkan."
+            )
+
+        except Exception as e:
+
+            print(
+                f"[NanzPanel] Gagal auto sync panel: {e}"
+            )
+
+    # ============================================================
+    # HINDARI TASK DUPLIKAT
+    # ============================================================
+
+    old_task = getattr(
+        bot,
+        "_nanz_panel_sync_task",
+        None
+    )
+
+    if old_task:
+
+        if not old_task.done():
+
+            old_task.cancel()
+
+    # ============================================================
+    # JALANKAN AUTO SYNC
+    # ============================================================
+
+    bot._nanz_panel_sync_task = asyncio.create_task(
+        auto_sync_panel()
+    )
+
+    print(
+        "[NanzPanel] Cog berhasil dimuat. "
+        "Auto sync panel dijadwalkan."
     )
