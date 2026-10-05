@@ -78,6 +78,7 @@ async def load_cogs():
         "cogs.setupquote",
         "cogs.nanzquiz",
         "cogs.autoreply",
+        "cogs.nanzpanel",
         "cogs.top_stats",
         "cogs.suggestion",
         "cogs.arcane_rank",
