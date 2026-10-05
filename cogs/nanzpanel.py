@@ -8,33 +8,25 @@ from discord.ext import commands
 
 class NanzPanel(commands.Cog):
 
-    def __init__(self, bot):
-        self.bot = bot
+    # ============================================================
+    # CONFIG
+    # ============================================================
 
-        # ========================================================
-        # CONFIG
-        # ========================================================
-
-        self.SERVER_ID = 1406557880475320340
-
-        # CHANNEL PANEL
-        self.PANEL_CHANNEL_ID = 1556578885225938985
-
-        # FILE PENYIMPANAN MESSAGE ID PANEL
-        self.PANEL_DATA_FILE = "nanz_panel.json"
+    SERVER_ID = 1406557880475320340
+    PANEL_CHANNEL_ID = 1556578885225938985
+    PANEL_DATA_FILE = "nanz_panel.json"
 
     # ============================================================
     # ROLE SPECIAL
     # ============================================================
 
     SPECIAL_ROLES = {
-
         "nZ Loyalist": {
             "role_id": 1555892286704062529,
             "description": (
                 "Gunakan **Server Tag nZ** "
                 "untuk mendapatkan role ini."
-            )
+            ),
         },
 
         "nZ Apipi": {
@@ -42,7 +34,7 @@ class NanzPanel(commands.Cog):
             "description": (
                 "Role khusus yang dapat diperoleh "
                 "melalui sistem Apipi."
-            )
+            ),
         },
 
         "VIP OwO": {
@@ -50,7 +42,7 @@ class NanzPanel(commands.Cog):
             "description": (
                 "Role VIP yang diperoleh melalui "
                 "**donasi OwO**."
-            )
+            ),
         },
 
         "VIP Rupiah": {
@@ -58,8 +50,8 @@ class NanzPanel(commands.Cog):
             "description": (
                 "Role VIP yang diperoleh melalui "
                 "**donasi Rupiah**."
-            )
-        }
+            ),
+        },
     }
 
     # ============================================================
@@ -67,18 +59,17 @@ class NanzPanel(commands.Cog):
     # ============================================================
 
     EVENT_ROLES = {
-
         "Riddle — Season 1": {
-            "role_id": 1514600587772035124
+            "role_id": 1514600587772035124,
         },
 
         "Riddle — Season 2": {
-            "role_id": 1517563935321227516
+            "role_id": 1517563935321227516,
         },
 
         "nanZ100 — Season 1": {
-            "role_id": 1514922900132593745
-        }
+            "role_id": 1514922900132593745,
+        },
     }
 
     # ============================================================
@@ -86,43 +77,50 @@ class NanzPanel(commands.Cog):
     # ============================================================
 
     ANNIVERSARY_ROLES = {
-
         "Winner Clip — Agustus 2026": {
-            "role_id": 1538539964290170994
+            "role_id": 1538539964290170994,
         },
 
         "Winner Poster — Agustus 2026": {
-            "role_id": 1538538863927099482
+            "role_id": 1538538863927099482,
         },
 
         "Winner Sambung Kata — Agustus 2026": {
-            "role_id": 1538540210223059084
+            "role_id": 1538540210223059084,
         },
 
         "Winner Mole — Agustus 2026": {
-            "role_id": 1538539398302539817
+            "role_id": 1538539398302539817,
         },
 
         "Winner FanArt — Agustus 2026": {
-            "role_id": 1538539261865762866
+            "role_id": 1538539261865762866,
         },
 
         "nanZ Award — Most Voice 2026": {
-            "role_id": 1538572694860210250
+            "role_id": 1538572694860210250,
         },
 
         "nanZ Award — Most Chatting 2026": {
-            "role_id": 1538572820752367756
+            "role_id": 1538572820752367756,
         },
 
         "nanZ Award — Most Girls of the Girls 2026": {
-            "role_id": 1538572966734995526
+            "role_id": 1538572966734995526,
         },
 
         "nanZ Award — Most Brain 2026": {
-            "role_id": 1538573098016706570
-        }
+            "role_id": 1538573098016706570,
+        },
     }
+
+    # ============================================================
+    # INIT
+    # ============================================================
+
+    def __init__(self, bot):
+        self.bot = bot
+        self.sync_task = None
 
     # ============================================================
     # PANEL DATA
@@ -134,16 +132,19 @@ class NanzPanel(commands.Cog):
             return {}
 
         try:
-
             with open(
                 self.PANEL_DATA_FILE,
                 "r",
-                encoding="utf-8"
-            ) as f:
+                encoding="utf-8",
+            ) as file:
+                data = json.load(file)
 
-                return json.load(f)
+            if not isinstance(data, dict):
+                return {}
 
-        except Exception:
+            return data
+
+        except (json.JSONDecodeError, OSError):
 
             return {}
 
@@ -152,42 +153,51 @@ class NanzPanel(commands.Cog):
     def save_panel_data(self, data):
 
         try:
+            temp_file = self.PANEL_DATA_FILE + ".tmp"
 
             with open(
-                self.PANEL_DATA_FILE,
+                temp_file,
                 "w",
-                encoding="utf-8"
-            ) as f:
+                encoding="utf-8",
+            ) as file:
 
                 json.dump(
                     data,
-                    f,
-                    indent=4
+                    file,
+                    indent=4,
+                    ensure_ascii=False,
                 )
 
-        except Exception as e:
+            os.replace(
+                temp_file,
+                self.PANEL_DATA_FILE,
+            )
+
+        except Exception as error:
 
             print(
-                f"[NanzPanel] Gagal menyimpan data panel: {e}"
+                "[NanzPanel] Gagal menyimpan "
+                f"data panel: {error}"
             )
 
     # ============================================================
-    # CHANNEL LINK
+    # CHANNEL URL
     # ============================================================
 
-    def channel_url(self, channel_id):
+    @classmethod
+    def channel_url(cls, channel_id):
 
         return (
-            f"https://discord.com/channels/"
-            f"{self.SERVER_ID}/"
-            f"{channel_id}"
+            "https://discord.com/channels/"
+            f"{cls.SERVER_ID}/{channel_id}"
         )
 
     # ============================================================
-    # MAIN EMBED
+    # MAIN PANEL EMBED
     # ============================================================
 
-    def create_panel_embed(self):
+    @staticmethod
+    def create_panel_embed():
 
         embed = discord.Embed(
             title="✦ Role Special nanZ",
@@ -197,7 +207,7 @@ class NanzPanel(commands.Cog):
                 "Pilih kategori melalui menu di bawah "
                 "untuk melihat informasi lengkap setiap role."
             ),
-            color=0x5865F2
+            color=0x5865F2,
         )
 
         embed.add_field(
@@ -206,7 +216,7 @@ class NanzPanel(commands.Cog):
                 "Role khusus yang dapat diperoleh "
                 "melalui aktivitas atau kontribusi tertentu."
             ),
-            inline=False
+            inline=False,
         )
 
         embed.add_field(
@@ -215,7 +225,7 @@ class NanzPanel(commands.Cog):
                 "Role penghargaan khusus untuk "
                 "para pemenang event nanZ."
             ),
-            inline=False
+            inline=False,
         )
 
         embed.add_field(
@@ -224,7 +234,7 @@ class NanzPanel(commands.Cog):
                 "Kumpulan award spesial dalam rangka "
                 "**Anniversary nanZ — Agustus 2026**."
             ),
-            inline=False
+            inline=False,
         )
 
         embed.set_footer(
@@ -237,7 +247,8 @@ class NanzPanel(commands.Cog):
     # SPECIAL EMBED
     # ============================================================
 
-    def create_special_embed(self):
+    @classmethod
+    def create_special_embed(cls):
 
         embed = discord.Embed(
             title="✦ Special Role",
@@ -245,10 +256,10 @@ class NanzPanel(commands.Cog):
                 "Role spesial yang dapat diperoleh "
                 "oleh murid nanZ."
             ),
-            color=0x5865F2
+            color=0x5865F2,
         )
 
-        for name, data in self.SPECIAL_ROLES.items():
+        for name, data in cls.SPECIAL_ROLES.items():
 
             role = f"<@&{data['role_id']}>"
 
@@ -258,7 +269,7 @@ class NanzPanel(commands.Cog):
                     f"{role}\n"
                     f"{data['description']}"
                 ),
-                inline=False
+                inline=False,
             )
 
         embed.set_footer(
@@ -271,7 +282,8 @@ class NanzPanel(commands.Cog):
     # EVENT EMBED
     # ============================================================
 
-    def create_event_embed(self):
+    @classmethod
+    def create_event_embed(cls):
 
         embed = discord.Embed(
             title="🏆 Role Pemenang Event",
@@ -279,17 +291,17 @@ class NanzPanel(commands.Cog):
                 "Role penghargaan khusus untuk "
                 "pemenang event nanZ."
             ),
-            color=0xFEE75C
+            color=0xFEE75C,
         )
 
-        for name, data in self.EVENT_ROLES.items():
+        for name, data in cls.EVENT_ROLES.items():
 
             role = f"<@&{data['role_id']}>"
 
             embed.add_field(
                 name=f"◆ {name}",
                 value=role,
-                inline=False
+                inline=False,
             )
 
         embed.set_footer(
@@ -302,7 +314,8 @@ class NanzPanel(commands.Cog):
     # ANNIVERSARY EMBED
     # ============================================================
 
-    def create_anniversary_embed(self):
+    @classmethod
+    def create_anniversary_embed(cls):
 
         embed = discord.Embed(
             title="🎉 nanZ Anniversary Awards 2026",
@@ -312,17 +325,17 @@ class NanzPanel(commands.Cog):
                 "Berikut penghargaan untuk para "
                 "pemenang dan penerima award Anniversary nanZ."
             ),
-            color=0xED4245
+            color=0xED4245,
         )
 
-        for name, data in self.ANNIVERSARY_ROLES.items():
+        for name, data in cls.ANNIVERSARY_ROLES.items():
 
             role = f"<@&{data['role_id']}>"
 
             embed.add_field(
                 name=f"◆ {name}",
                 value=role,
-                inline=False
+                inline=False,
             )
 
         embed.set_footer(
@@ -359,39 +372,43 @@ class NanzPanel(commands.Cog):
 
             self.cog = cog
 
+            # IMPORTANT:
+            # Gunakan emoji Unicode standar.
+            # Emoji seperti "✦" pada SelectOption sebelumnya
+            # dapat ditolak Discord sebagai Invalid emoji.
             options = [
 
                 discord.SelectOption(
                     label="Role Special",
                     description="Lihat role special nanZ",
-                    emoji="✦",
-                    value="special"
+                    emoji="⭐",
+                    value="special",
                 ),
 
                 discord.SelectOption(
                     label="Event Winner",
                     description="Lihat role pemenang event",
                     emoji="🏆",
-                    value="event"
+                    value="event",
                 ),
 
                 discord.SelectOption(
                     label="Anniversary 2026",
                     description="Lihat award Anniversary nanZ",
                     emoji="🎉",
-                    value="anniversary"
-                )
+                    value="anniversary",
+                ),
             ]
 
             super().__init__(
                 placeholder="Pilih kategori role...",
                 options=options,
-                custom_id="nanz_panel_category"
+                custom_id="nanz_panel_category",
             )
 
         async def callback(
             self,
-            interaction: discord.Interaction
+            interaction: discord.Interaction,
         ):
 
             value = self.values[0]
@@ -399,24 +416,21 @@ class NanzPanel(commands.Cog):
             if value == "special":
 
                 embed = self.cog.create_special_embed()
-
                 view = NanzPanel.SpecialView()
 
             elif value == "event":
 
                 embed = self.cog.create_event_embed()
-
                 view = NanzPanel.BackView()
 
             else:
 
                 embed = self.cog.create_anniversary_embed()
-
                 view = NanzPanel.BackView()
 
             await interaction.response.edit_message(
                 embed=embed,
-                view=view
+                view=view,
             )
 
     # ============================================================
@@ -434,13 +448,13 @@ class NanzPanel(commands.Cog):
             self.add_item(
                 discord.ui.Button(
                     label="Cara Dapat nZ Apipi",
-                    emoji="✦",
+                    emoji="⭐",
                     style=discord.ButtonStyle.link,
                     url=(
                         "https://discord.com/channels/"
                         "1406557880475320340/"
                         "1555862444054814740"
-                    )
+                    ),
                 )
             )
 
@@ -453,7 +467,7 @@ class NanzPanel(commands.Cog):
                         "https://discord.com/channels/"
                         "1406557880475320340/"
                         "1550884157435936908"
-                    )
+                    ),
                 )
             )
 
@@ -489,32 +503,35 @@ class NanzPanel(commands.Cog):
                 label="Kembali",
                 emoji="↩️",
                 style=discord.ButtonStyle.secondary,
-                custom_id="nanz_panel_back"
+                custom_id="nanz_panel_back",
             )
 
         async def callback(
             self,
-            interaction: discord.Interaction
+            interaction: discord.Interaction,
         ):
 
             cog = interaction.client.get_cog(
                 "NanzPanel"
             )
 
-            if not cog:
-                return
+            if cog is None:
+
+                return await interaction.response.send_message(
+                    "❌ Sistem panel sedang tidak tersedia.",
+                    ephemeral=True,
+                )
 
             embed = cog.create_panel_embed()
-
             view = NanzPanel.PanelView(cog)
 
             await interaction.response.edit_message(
                 embed=embed,
-                view=view
+                view=view,
             )
 
     # ============================================================
-    # AUTO CREATE / UPDATE PANEL
+    # SYNC PANEL
     # ============================================================
 
     async def sync_panel(self):
@@ -523,9 +540,9 @@ class NanzPanel(commands.Cog):
             self.PANEL_CHANNEL_ID
         )
 
-        # ========================================================
+        # --------------------------------------------------------
         # FALLBACK FETCH CHANNEL
-        # ========================================================
+        # --------------------------------------------------------
 
         if channel is None:
 
@@ -535,21 +552,42 @@ class NanzPanel(commands.Cog):
                     self.PANEL_CHANNEL_ID
                 )
 
-            except Exception as e:
+            except discord.NotFound:
 
                 print(
-                    f"[NanzPanel] Gagal mengambil channel: {e}"
+                    "[NanzPanel] Channel panel tidak ditemukan."
                 )
 
                 return
 
-        # Pastikan channel memang text channel
+            except discord.Forbidden:
+
+                print(
+                    "[NanzPanel] Bot tidak memiliki akses "
+                    "ke channel panel."
+                )
+
+                return
+
+            except Exception as error:
+
+                print(
+                    "[NanzPanel] Gagal mengambil channel: "
+                    f"{error}"
+                )
+
+                return
+
+        # --------------------------------------------------------
+        # VALIDASI CHANNEL
+        # --------------------------------------------------------
+
         if not isinstance(
             channel,
             (
                 discord.TextChannel,
-                discord.Thread
-            )
+                discord.Thread,
+            ),
         ):
 
             print(
@@ -559,8 +597,11 @@ class NanzPanel(commands.Cog):
 
             return
 
-        embed = self.create_panel_embed()
+        # --------------------------------------------------------
+        # SIAPKAN PANEL
+        # --------------------------------------------------------
 
+        embed = self.create_panel_embed()
         view = self.PanelView(self)
 
         data = self.load_panel_data()
@@ -569,9 +610,9 @@ class NanzPanel(commands.Cog):
             "panel_message_id"
         )
 
-        # ========================================================
-        # COBA UPDATE PANEL LAMA
-        # ========================================================
+        # --------------------------------------------------------
+        # UPDATE PANEL LAMA
+        # --------------------------------------------------------
 
         if message_id:
 
@@ -583,18 +624,16 @@ class NanzPanel(commands.Cog):
 
                 await message.edit(
                     embed=embed,
-                    view=view
+                    view=view,
                 )
 
-                # Simpan kembali data untuk memastikan
-                # channel dan message ID tetap sinkron.
                 self.save_panel_data({
                     "panel_message_id": str(message.id),
-                    "channel_id": str(channel.id)
+                    "channel_id": str(channel.id),
                 })
 
                 print(
-                    f"[NanzPanel] Panel berhasil di-update "
+                    "[NanzPanel] Panel berhasil di-update "
                     f"(Message ID: {message.id})"
                 )
 
@@ -610,36 +649,54 @@ class NanzPanel(commands.Cog):
             except discord.Forbidden:
 
                 print(
-                    "[NanzPanel] Tidak memiliki izin "
+                    "[NanzPanel] Bot tidak memiliki izin "
                     "untuk mengedit panel."
                 )
 
                 return
 
-            except Exception as e:
+            except ValueError:
 
                 print(
-                    f"[NanzPanel] Gagal update panel: {e}"
+                    "[NanzPanel] Message ID pada JSON tidak valid. "
+                    "Membuat panel baru."
                 )
 
-        # ========================================================
-        # JIKA PANEL BELUM ADA → KIRIM BARU
-        # ========================================================
+            except discord.HTTPException as error:
+
+                print(
+                    "[NanzPanel] Gagal update panel: "
+                    f"{error}"
+                )
+
+                # Jangan langsung return.
+                # Jika panel lama bermasalah, coba buat baru.
+
+            except Exception as error:
+
+                print(
+                    "[NanzPanel] Error saat update panel: "
+                    f"{error}"
+                )
+
+        # --------------------------------------------------------
+        # BUAT PANEL BARU
+        # --------------------------------------------------------
 
         try:
 
             message = await channel.send(
                 embed=embed,
-                view=view
+                view=view,
             )
 
             self.save_panel_data({
                 "panel_message_id": str(message.id),
-                "channel_id": str(channel.id)
+                "channel_id": str(channel.id),
             })
 
             print(
-                f"[NanzPanel] Panel baru berhasil dibuat "
+                "[NanzPanel] Panel baru berhasil dibuat "
                 f"(Message ID: {message.id})"
             )
 
@@ -650,21 +707,63 @@ class NanzPanel(commands.Cog):
                 "untuk mengirim pesan di channel panel."
             )
 
-        except Exception as e:
+        except discord.HTTPException as error:
 
             print(
-                f"[NanzPanel] Gagal mengirim panel: {e}"
+                "[NanzPanel] Discord menolak panel: "
+                f"{error}"
+            )
+
+        except Exception as error:
+
+            print(
+                "[NanzPanel] Gagal mengirim panel: "
+                f"{error}"
             )
 
     # ============================================================
-    # COMMAND PANEL MANUAL
+    # AUTO SYNC
+    # ============================================================
+
+    async def auto_sync_panel(self):
+
+        try:
+
+            await self.bot.wait_until_ready()
+
+            await asyncio.sleep(2)
+
+            await self.sync_panel()
+
+            print(
+                "[NanzPanel] Auto sync panel "
+                "berhasil dijalankan."
+            )
+
+        except asyncio.CancelledError:
+
+            print(
+                "[NanzPanel] Auto sync panel dibatalkan."
+            )
+
+            raise
+
+        except Exception as error:
+
+            print(
+                "[NanzPanel] Gagal auto sync panel: "
+                f"{error}"
+            )
+
+    # ============================================================
+    # MANUAL COMMAND
     # ============================================================
 
     @commands.command(name="panel")
     @commands.cooldown(
         1,
         5,
-        commands.BucketType.user
+        commands.BucketType.user,
     )
     async def panel(self, ctx):
 
@@ -676,7 +775,7 @@ class NanzPanel(commands.Cog):
                     "Command ini hanya bisa digunakan "
                     "di dalam server."
                 ),
-                color=0xED4245
+                color=0xED4245,
             )
 
             return await ctx.send(
@@ -684,118 +783,89 @@ class NanzPanel(commands.Cog):
             )
 
         embed = self.create_panel_embed()
-
         view = self.PanelView(self)
 
         await ctx.send(
             embed=embed,
-            view=view
+            view=view,
         )
 
     # ============================================================
-    # HIDE COOLDOWN
+    # COMMAND ERROR
     # ============================================================
 
     @panel.error
     async def panel_error(
         self,
         ctx,
-        error
+        error,
     ):
 
         if isinstance(
             error,
-            commands.CommandOnCooldown
+            commands.CommandOnCooldown,
         ):
-
             return
 
+        print(
+            f"[NanzPanel] Error command !panel: {error}"
+        )
 
-# ================================================================
+
+# =================================================================
 # SETUP
-# ================================================================
+# =================================================================
 
 async def setup(bot):
 
-    cog = NanzPanel(bot)
+    # -------------------------------------------------------------
+    # HINDARI COG DUPLIKAT
+    # -------------------------------------------------------------
 
-    # ============================================================
-    # LOAD COG
-    # ============================================================
+    old_cog = bot.get_cog(
+        "NanzPanel"
+    )
+
+    if old_cog is not None:
+
+        try:
+            await bot.remove_cog(
+                "NanzPanel"
+            )
+
+        except Exception:
+            pass
+
+    # -------------------------------------------------------------
+    # BUAT COG
+    # -------------------------------------------------------------
+
+    cog = NanzPanel(bot)
 
     await bot.add_cog(cog)
 
-    # ============================================================
+    # -------------------------------------------------------------
     # REGISTER PERSISTENT VIEWS
-    # ============================================================
+    # -------------------------------------------------------------
 
+    # Panel utama
     bot.add_view(
         NanzPanel.PanelView(cog)
     )
 
+    # Halaman Special Role
     bot.add_view(
         NanzPanel.SpecialView()
     )
 
+    # Halaman Event / Anniversary
     bot.add_view(
         NanzPanel.BackView()
     )
 
-    # ============================================================
-    # AUTO SYNC PANEL
-    # ============================================================
-    #
-    # Ini adalah bagian penting.
-    #
-    # Berbeda dari on_ready, task ini dibuat LANGSUNG ketika
-    # extension/cog selesai di-load.
-    #
-    # Jika bot belum READY:
-    #     → tunggu bot READY
-    #
-    # Jika bot SUDAH READY:
-    #     → wait_until_ready() langsung selesai
-    #     → panel langsung disinkronkan
-    #
-    # Jadi aman untuk:
-    #     - bot restart
-    #     - cog reload
-    #     - extension load
-    #     - bot sudah READY sebelum cog di-load
-    #
-    # ============================================================
-
-    async def auto_sync_panel():
-
-        try:
-
-            await bot.wait_until_ready()
-
-            # Beri waktu sedikit agar cache channel/guild
-            # benar-benar siap.
-            await asyncio.sleep(2)
-
-            await cog.sync_panel()
-
-            print(
-                "[NanzPanel] Auto sync panel berhasil dijalankan."
-            )
-
-        except asyncio.CancelledError:
-
-            print(
-                "[NanzPanel] Auto sync panel dibatalkan."
-            )
-
-        except Exception as e:
-
-            print(
-                f"[NanzPanel] Gagal auto sync panel: {e}"
-            )
-
-    # ============================================================
-    # HINDARI TASK DUPLIKAT
-    # ============================================================
+    # -------------------------------------------------------------
+    # HINDARI AUTO-SYNC TASK DUPLIKAT
+    # -------------------------------------------------------------
 
     old_task = getattr(
         bot,
@@ -803,19 +873,33 @@ async def setup(bot):
         None
     )
 
-    if old_task:
+    if old_task is not None:
 
         if not old_task.done():
 
             old_task.cancel()
 
-    # ============================================================
-    # JALANKAN AUTO SYNC
-    # ============================================================
+            try:
+                await old_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
 
-    bot._nanz_panel_sync_task = asyncio.create_task(
-        auto_sync_panel()
+    # -------------------------------------------------------------
+    # BUAT TASK BARU
+    # -------------------------------------------------------------
+
+    task = asyncio.create_task(
+        cog.auto_sync_panel()
     )
+
+    bot._nanz_panel_sync_task = task
+    cog.sync_task = task
+
+    # -------------------------------------------------------------
+    # LOG
+    # -------------------------------------------------------------
 
     print(
         "[NanzPanel] Cog berhasil dimuat. "
