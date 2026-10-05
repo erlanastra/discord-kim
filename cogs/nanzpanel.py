@@ -1,3 +1,6 @@
+import json
+import os
+
 import discord
 from discord.ext import commands
 
@@ -8,13 +11,21 @@ class NanzPanel(commands.Cog):
 
         self.bot = bot
 
-    # ============================================================
-    # CONFIG
-    # ============================================================
+        # ========================================================
+        # CONFIG
+        # ========================================================
 
-    SERVER_ID = 1406557880475320340
+        self.SERVER_ID = 1406557880475320340
 
-    # ================= ROLE SPECIAL =================
+        # CHANNEL PANEL
+        self.PANEL_CHANNEL_ID = 1556578885225938985
+
+        # FILE PENYIMPANAN MESSAGE ID PANEL
+        self.PANEL_DATA_FILE = "nanz_panel.json"
+
+    # ============================================================
+    # ROLE SPECIAL
+    # ============================================================
 
     SPECIAL_ROLES = {
 
@@ -51,7 +62,9 @@ class NanzPanel(commands.Cog):
         }
     }
 
-    # ================= EVENT WINNER =================
+    # ============================================================
+    # EVENT WINNER
+    # ============================================================
 
     EVENT_ROLES = {
 
@@ -68,7 +81,9 @@ class NanzPanel(commands.Cog):
         }
     }
 
-    # ================= ANNIVERSARY =================
+    # ============================================================
+    # ANNIVERSARY
+    # ============================================================
 
     ANNIVERSARY_ROLES = {
 
@@ -108,6 +123,53 @@ class NanzPanel(commands.Cog):
             "role_id": 1538573098016706570
         }
     }
+
+    # ============================================================
+    # PANEL DATA
+    # ============================================================
+
+    def load_panel_data(self):
+
+        if not os.path.exists(self.PANEL_DATA_FILE):
+            return {}
+
+        try:
+
+            with open(
+                self.PANEL_DATA_FILE,
+                "r",
+                encoding="utf-8"
+            ) as f:
+
+                return json.load(f)
+
+        except Exception:
+
+            return {}
+
+    # ============================================================
+
+    def save_panel_data(self, data):
+
+        try:
+
+            with open(
+                self.PANEL_DATA_FILE,
+                "w",
+                encoding="utf-8"
+            ) as f:
+
+                json.dump(
+                    data,
+                    f,
+                    indent=4
+                )
+
+        except Exception as e:
+
+            print(
+                f"[NanzPanel] Gagal menyimpan data panel: {e}"
+            )
 
     # ============================================================
     # CHANNEL LINK
@@ -452,7 +514,131 @@ class NanzPanel(commands.Cog):
             )
 
     # ============================================================
-    # COMMAND PANEL
+    # AUTO CREATE / UPDATE PANEL
+    # ============================================================
+
+    async def sync_panel(self):
+
+        channel = self.bot.get_channel(
+            self.PANEL_CHANNEL_ID
+        )
+
+        if channel is None:
+
+            try:
+
+                channel = await self.bot.fetch_channel(
+                    self.PANEL_CHANNEL_ID
+                )
+
+            except Exception as e:
+
+                print(
+                    f"[NanzPanel] Gagal mengambil channel: {e}"
+                )
+
+                return
+
+        embed = self.create_panel_embed()
+
+        view = self.PanelView(self)
+
+        data = self.load_panel_data()
+
+        message_id = data.get(
+            "panel_message_id"
+        )
+
+        # ========================================================
+        # COBA UPDATE PANEL LAMA
+        # ========================================================
+
+        if message_id:
+
+            try:
+
+                message = await channel.fetch_message(
+                    int(message_id)
+                )
+
+                await message.edit(
+                    embed=embed,
+                    view=view
+                )
+
+                print(
+                    f"[NanzPanel] Panel berhasil di-update "
+                    f"(Message ID: {message.id})"
+                )
+
+                return
+
+            except discord.NotFound:
+
+                print(
+                    "[NanzPanel] Panel lama tidak ditemukan. "
+                    "Membuat panel baru."
+                )
+
+            except discord.Forbidden:
+
+                print(
+                    "[NanzPanel] Tidak memiliki izin "
+                    "untuk mengedit panel."
+                )
+
+                return
+
+            except Exception as e:
+
+                print(
+                    f"[NanzPanel] Gagal update panel: {e}"
+                )
+
+        # ========================================================
+        # JIKA PANEL BELUM ADA → KIRIM BARU
+        # ========================================================
+
+        try:
+
+            message = await channel.send(
+                embed=embed,
+                view=view
+            )
+
+            self.save_panel_data({
+                "panel_message_id": str(message.id),
+                "channel_id": str(channel.id)
+            })
+
+            print(
+                f"[NanzPanel] Panel baru berhasil dibuat "
+                f"(Message ID: {message.id})"
+            )
+
+        except Exception as e:
+
+            print(
+                f"[NanzPanel] Gagal mengirim panel: {e}"
+            )
+
+    # ============================================================
+    # READY LISTENER
+    # ============================================================
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+
+        # Hindari sync berkali-kali jika on_ready dipanggil ulang
+        if getattr(self.bot, "_nanz_panel_synced", False):
+            return
+
+        self.bot._nanz_panel_synced = True
+
+        await self.sync_panel()
+
+    # ============================================================
+    # COMMAND PANEL MANUAL
     # ============================================================
 
     @commands.command(name="panel")
@@ -502,6 +688,7 @@ class NanzPanel(commands.Cog):
             error,
             commands.CommandOnCooldown
         ):
+
             return
 
 
@@ -516,7 +703,7 @@ async def setup(bot):
     await bot.add_cog(cog)
 
     # ============================================================
-    # REGISTER PERSISTENT VIEW
+    # REGISTER PERSISTENT VIEWS
     # ============================================================
 
     bot.add_view(
@@ -530,4 +717,3 @@ async def setup(bot):
     bot.add_view(
         NanzPanel.BackView()
     )
-
