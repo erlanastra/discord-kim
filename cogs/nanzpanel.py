@@ -310,7 +310,6 @@ class NanzPanel(commands.Cog):
             self.add_item(
                 discord.ui.Button(
                     label="Cara Dapat nZ Apipi",
-                    emoji="⭐",
                     style=discord.ButtonStyle.link,
                     url=(
                         "https://discord.com/channels/"
@@ -327,7 +326,6 @@ class NanzPanel(commands.Cog):
             self.add_item(
                 discord.ui.Button(
                     label="Cara Dapat VIP",
-                    emoji="💎",
                     style=discord.ButtonStyle.link,
                     url=(
                         "https://discord.com/channels/"
