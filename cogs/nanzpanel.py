@@ -124,7 +124,7 @@ class NanzPanel(commands.Cog):
         self.sync_task = None
 
     # ============================================================
-    # PANEL DATA
+    # LOAD PANEL DATA
     # ============================================================
 
     def load_panel_data(self):
@@ -154,6 +154,8 @@ class NanzPanel(commands.Cog):
 
             return {}
 
+    # ============================================================
+    # SAVE PANEL DATA
     # ============================================================
 
     def save_panel_data(self, data):
@@ -188,7 +190,73 @@ class NanzPanel(commands.Cog):
             )
 
     # ============================================================
-    # EMBED SPECIAL ROLE
+    # ANNIVERSARY EMBED
+    # ============================================================
+
+    @classmethod
+    def create_anniversary_embed(cls):
+
+        embed = discord.Embed(
+            title="🎉 nanZ Anniversary Awards 2026",
+            description=(
+                "**Agustus 2026** menjadi bulan spesial "
+                "bagi nanZ.\n\n"
+                "Berikut penghargaan untuk para pemenang "
+                "dan penerima award Anniversary nanZ."
+            ),
+            color=0xED4245,
+        )
+
+        for name, data in cls.ANNIVERSARY_ROLES.items():
+
+            role = f"<@&{data['role_id']}>"
+
+            embed.add_field(
+                name=f"◆ {name}",
+                value=role,
+                inline=False,
+            )
+
+        embed.set_footer(
+            text="nanZ Anniversary 2026 • Stay Solid!"
+        )
+
+        return embed
+
+    # ============================================================
+    # EVENT EMBED
+    # ============================================================
+
+    @classmethod
+    def create_event_embed(cls):
+
+        embed = discord.Embed(
+            title="🏆 Event Winner",
+            description=(
+                "Role penghargaan khusus untuk "
+                "para pemenang event nanZ."
+            ),
+            color=0xFEE75C,
+        )
+
+        for name, data in cls.EVENT_ROLES.items():
+
+            role = f"<@&{data['role_id']}>"
+
+            embed.add_field(
+                name=f"◆ {name}",
+                value=role,
+                inline=False,
+            )
+
+        embed.set_footer(
+            text="nanZ Server • Event Winner"
+        )
+
+        return embed
+
+    # ============================================================
+    # SPECIAL ROLE EMBED
     # ============================================================
 
     @classmethod
@@ -224,73 +292,7 @@ class NanzPanel(commands.Cog):
         return embed
 
     # ============================================================
-    # EMBED EVENT WINNER
-    # ============================================================
-
-    @classmethod
-    def create_event_embed(cls):
-
-        embed = discord.Embed(
-            title="🏆 Event Winner",
-            description=(
-                "Role penghargaan khusus untuk "
-                "para pemenang event nanZ."
-            ),
-            color=0xFEE75C,
-        )
-
-        for name, data in cls.EVENT_ROLES.items():
-
-            role = f"<@&{data['role_id']}>"
-
-            embed.add_field(
-                name=f"◆ {name}",
-                value=role,
-                inline=False,
-            )
-
-        embed.set_footer(
-            text="nanZ Server • Event Winner"
-        )
-
-        return embed
-
-    # ============================================================
-    # EMBED ANNIVERSARY
-    # ============================================================
-
-    @classmethod
-    def create_anniversary_embed(cls):
-
-        embed = discord.Embed(
-            title="🎉 nanZ Anniversary Awards 2026",
-            description=(
-                "**Agustus 2026** menjadi bulan spesial "
-                "bagi nanZ.\n\n"
-                "Berikut penghargaan untuk para pemenang "
-                "dan penerima award Anniversary nanZ."
-            ),
-            color=0xED4245,
-        )
-
-        for name, data in cls.ANNIVERSARY_ROLES.items():
-
-            role = f"<@&{data['role_id']}>"
-
-            embed.add_field(
-                name=f"◆ {name}",
-                value=role,
-                inline=False,
-            )
-
-        embed.set_footer(
-            text="nanZ Anniversary 2026 • Stay Solid!"
-        )
-
-        return embed
-
-    # ============================================================
-    # SPECIAL ROLE BUTTON VIEW
+    # SPECIAL ROLE BUTTONS
     # ============================================================
 
     class SpecialView(discord.ui.View):
@@ -336,7 +338,7 @@ class NanzPanel(commands.Cog):
             )
 
     # ============================================================
-    # EMPTY VIEW
+    # EMPTY PERSISTENT VIEW
     # ============================================================
 
     class EmptyView(discord.ui.View):
@@ -348,7 +350,7 @@ class NanzPanel(commands.Cog):
             )
 
     # ============================================================
-    # CHANNEL FETCH
+    # GET PANEL CHANNEL
     # ============================================================
 
     async def get_panel_channel(self):
@@ -392,7 +394,7 @@ class NanzPanel(commands.Cog):
         return None
 
     # ============================================================
-    # CREATE / UPDATE ONE PANEL
+    # SYNC ONE PANEL
     # ============================================================
 
     async def sync_single_panel(
@@ -408,7 +410,7 @@ class NanzPanel(commands.Cog):
         message_id = data.get(key)
 
         # ========================================================
-        # UPDATE EXISTING MESSAGE
+        # UPDATE EXISTING PANEL
         # ========================================================
 
         if message_id:
@@ -428,7 +430,7 @@ class NanzPanel(commands.Cog):
 
                 print(
                     f"[NanzPanel] {panel_name} "
-                    f"berhasil di-update "
+                    f"di-update "
                     f"(Message ID: {message.id})"
                 )
 
@@ -472,7 +474,7 @@ class NanzPanel(commands.Cog):
                 )
 
         # ========================================================
-        # CREATE NEW MESSAGE
+        # CREATE PANEL
         # ========================================================
 
         try:
@@ -517,6 +519,11 @@ class NanzPanel(commands.Cog):
 
     # ============================================================
     # SYNC ALL PANELS
+    #
+    # URUTAN:
+    # 1. ANNIVERSARY
+    # 2. EVENT
+    # 3. SPECIAL
     # ============================================================
 
     async def sync_panel(self):
@@ -539,42 +546,16 @@ class NanzPanel(commands.Cog):
             return
 
         # ========================================================
-        # LOAD DATA
+        # LOAD JSON
         # ========================================================
 
         data = self.load_panel_data()
 
         # ========================================================
-        # SPECIAL PANEL
+        # 1. ANNIVERSARY
         # ========================================================
 
-        special_message = await self.sync_single_panel(
-            channel=channel,
-            data=data,
-            key="special_message_id",
-            embed=self.create_special_embed(),
-            view=self.SpecialView(),
-            panel_name="Special Role Panel",
-        )
-
-        # ========================================================
-        # EVENT PANEL
-        # ========================================================
-
-        event_message = await self.sync_single_panel(
-            channel=channel,
-            data=data,
-            key="event_message_id",
-            embed=self.create_event_embed(),
-            view=self.EmptyView(),
-            panel_name="Event Winner Panel",
-        )
-
-        # ========================================================
-        # ANNIVERSARY PANEL
-        # ========================================================
-
-        anniversary_message = await self.sync_single_panel(
+        await self.sync_single_panel(
             channel=channel,
             data=data,
             key="anniversary_message_id",
@@ -584,17 +565,51 @@ class NanzPanel(commands.Cog):
         )
 
         # ========================================================
-        # SAVE
+        # 2. EVENT WINNER
+        # ========================================================
+
+        await self.sync_single_panel(
+            channel=channel,
+            data=data,
+            key="event_message_id",
+            embed=self.create_event_embed(),
+            view=self.EmptyView(),
+            panel_name="Event Winner Panel",
+        )
+
+        # ========================================================
+        # 3. SPECIAL ROLE
+        # ========================================================
+
+        await self.sync_single_panel(
+            channel=channel,
+            data=data,
+            key="special_message_id",
+            embed=self.create_special_embed(),
+            view=self.SpecialView(),
+            panel_name="Special Role Panel",
+        )
+
+        # ========================================================
+        # SAVE DATA
         # ========================================================
 
         data["channel_id"] = str(
             self.PANEL_CHANNEL_ID
         )
 
-        self.save_panel_data(data)
+        data["panel_order"] = [
+            "anniversary",
+            "event",
+            "special",
+        ]
+
+        self.save_panel_data(
+            data
+        )
 
         print(
-            "[NanzPanel] Semua panel selesai "
+            "[NanzPanel] Semua panel berhasil "
             "disinkronkan."
         )
 
@@ -634,7 +649,7 @@ class NanzPanel(commands.Cog):
             )
 
     # ============================================================
-    # MANUAL COMMAND
+    # MANUAL SYNC COMMAND
     # ============================================================
 
     @commands.command(name="panel")
@@ -743,17 +758,10 @@ async def setup(bot):
     # REGISTER PERSISTENT VIEWS
     # =============================================================
 
-    # Special Role
     bot.add_view(
         NanzPanel.SpecialView()
     )
 
-    # Event Winner
-    bot.add_view(
-        NanzPanel.EmptyView()
-    )
-
-    # Anniversary
     bot.add_view(
         NanzPanel.EmptyView()
     )
@@ -785,7 +793,7 @@ async def setup(bot):
                 pass
 
     # =============================================================
-    # BUAT TASK BARU
+    # BUAT AUTO-SYNC TASK
     # =============================================================
 
     task = asyncio.create_task(
@@ -800,6 +808,14 @@ async def setup(bot):
     # =============================================================
 
     print(
-        "[NanzPanel] Cog berhasil dimuat. "
-        "3 persistent panels siap."
+        "[NanzPanel] Cog berhasil dimuat."
+    )
+
+    print(
+        "[NanzPanel] Urutan panel: "
+        "Anniversary → Event → Special Role"
+    )
+
+    print(
+        "[NanzPanel] Persistent buttons aktif."
     )
