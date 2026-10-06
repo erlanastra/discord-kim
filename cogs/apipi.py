@@ -888,29 +888,31 @@ class Apipi(commands.Cog):
                 if (siswa and role in siswa.roles) or (siswi and role in siswi.roles):
                     return False, "already_active"
 
-        now = db_datetime(
-            utc_now()
-        )
+        pair_id = safe_int(pair.get("id"))
+        if pair_id is None:
+            return False, "invalid_pair"
 
-        # Hapus progress pasangan sebelum menandai pasangan lama sebagai removed.
+        now = db_datetime(utc_now())
+        now_sql = now.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Wrapper database.py nanZ melakukan Python-style % formatting.
+        # Karena itu reset pasangan memakai query tanpa placeholder %s.
         await db.execute(
-            """
+            f"""
             DELETE FROM nanz_apipi_sessions
-            WHERE pair_id = %s
-            """,
-            (pair["id"],)
+            WHERE pair_id = {pair_id}
+            """
         )
 
         await db.execute(
-            """
+            f"""
             DELETE FROM nanz_apipi_weekly
-            WHERE pair_id = %s
-            """,
-            (pair["id"],)
+            WHERE pair_id = {pair_id}
+            """
         )
 
         await db.execute(
-            """
+            f"""
             UPDATE nanz_apipi_pairs
             SET
                 status = 'removed',
@@ -919,13 +921,9 @@ class Apipi(commands.Cog):
                 take_siswi = 0,
                 remove_siswa = 0,
                 remove_siswi = 0,
-                updated_at = %s
-            WHERE id = %s
-            """,
-            (
-                now,
-                pair["id"]
-            )
+                updated_at = '{now_sql}'
+            WHERE id = {pair_id}
+            """
         )
 
         await self.log(
@@ -2941,7 +2939,7 @@ class Apipi(commands.Cog):
         )
 
         await interaction.response.send_message(
-            "✅ **Berhasil!** Role Apipi berhasil diberikan secara manual.",
+            "Role Apipi berhasil diberikan secara manual.",
             ephemeral=True
         )
 
@@ -2988,7 +2986,7 @@ class Apipi(commands.Cog):
         )
 
         await interaction.response.send_message(
-            "✅ **Berhasil!** Role Apipi berhasil dicabut dan progress telah di-reset.",
+            "Role Apipi berhasil dicabut dan progress di-reset.",
             ephemeral=True
         )
 
@@ -3069,7 +3067,7 @@ class Apipi(commands.Cog):
 
         await self.refresh_apipi_panels()
 
-        await reply("✅ **Berhasil!** Progress Apipi berhasil di-reset.")
+        await reply("Progress Apipi berhasil di-reset.")
 
     # ========================================================
     # ADMIN RESET STRIKE
@@ -3122,7 +3120,7 @@ class Apipi(commands.Cog):
         await self.refresh_apipi_panels()
 
         await interaction.response.send_message(
-            "✅ **Berhasil!** Strike berhasil di-reset menjadi 0.",
+            "Strike berhasil di-reset menjadi 0.",
             ephemeral=True
         )
 
@@ -3179,7 +3177,7 @@ class RegisterPairView(discord.ui.View):
             return
         self.siswa = self.siswa_select.values[0]
         await interaction.response.send_message(
-            f"✅ **Siswa berhasil dipilih:** {self.siswa.mention}",
+            f"Siswa dipilih: **{self.siswa.display_name}**.",
             ephemeral=True
         )
 
@@ -3188,7 +3186,7 @@ class RegisterPairView(discord.ui.View):
             return
         self.siswi = self.siswi_select.values[0]
         await interaction.response.send_message(
-            f"✅ **Siswi berhasil dipilih:** {self.siswi.mention}",
+            f"Siswi dipilih: **{self.siswi.display_name}**.",
             ephemeral=True
         )
 
@@ -3251,7 +3249,7 @@ class RegisterPairView(discord.ui.View):
             self.stop()
             await interaction.edit_original_response(
                 content=(
-                    f"{EMOJI_APIPI} **Berhasil! Pasangan Apipi telah didaftarkan.**\n\n"
+                    f"{EMOJI_APIPI} **Pasangan Apipi berhasil didaftarkan.**\n\n"
                     f"**Siswa:** {self.siswa.mention}\n"
                     f"**Siswi:** {self.siswi.mention}\n\n"
                     f"Selanjutnya kumpulkan **{UNLOCK_HOURS} jam** shared voice.\n\n"
@@ -3479,7 +3477,7 @@ class ApipiMemberPanel(
 
             await interaction.edit_original_response(
                 content=(
-                    f"{EMOJI_APIPI} **Berhasil! Pasangan Apipi telah di-reset.**\n\n"
+                    f"{EMOJI_APIPI} **Pasangan Apipi berhasil di-reset.**\n\n"
                     "Progress pasangan lama dihapus dan kamu sekarang bisa "
                     "memilih pasangan baru."
                 ),
@@ -3611,7 +3609,7 @@ class ApipiMemberPanel(
             )
 
             await interaction.response.send_message(
-                f"✅ **Status berhasil dimuat.**\n\n{text}",
+                text,
                 ephemeral=True
             )
 
@@ -3677,7 +3675,6 @@ class ApipiMemberPanel(
             )
 
             await interaction.response.send_message(
-                content="✅ **Ketentuan Apipi berhasil dibuka.**",
                 embed=embed,
                 ephemeral=True
             )
