@@ -3470,27 +3470,27 @@ class ApipiMemberPanel(
                     "not_found": "Kamu belum memiliki pasangan Apipi yang bisa di-reset.",
                     "already_active": "Pasangan sudah aktif/role Apipi sudah digunakan. Pasangan tidak dapat di-reset dari sini."
                 }
-                return await interaction.edit_original_response(
-                    content=messages.get(result, "Pasangan tidak dapat di-reset."),
-                    view=self
+                return await interaction.followup.send(
+                    messages.get(result, "Pasangan tidak dapat di-reset."),
+                    ephemeral=True
                 )
 
-            await interaction.edit_original_response(
-                content=(
+            await interaction.followup.send(
+                (
                     f"{EMOJI_APIPI} **Pasangan Apipi berhasil di-reset.**\n\n"
                     "Progress pasangan lama dihapus dan kamu sekarang bisa "
                     "memilih pasangan baru."
                 ),
-                view=self
+                ephemeral=True
             )
 
         except Exception as e:
             print(f"[APIPI] Reset pair button error: {e}")
             if interaction.response.is_done():
                 try:
-                    await interaction.edit_original_response(
-                        content="Terjadi kesalahan saat me-reset pasangan. Silakan coba lagi.",
-                        view=self
+                    await interaction.followup.send(
+                        "Terjadi kesalahan saat me-reset pasangan. Silakan coba lagi.",
+                        ephemeral=True
                     )
                 except Exception as edit_error:
                     print(f"[APIPI] Reset pair error response failed: {edit_error}")
