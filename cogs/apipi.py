@@ -537,7 +537,7 @@ class Apipi(commands.Cog):
                     try:
 
                         await message.edit(
-                            embed=self.management_panel_embed(),
+                            embed=await self.management_panel_embed(),
                             view=ApipiManagementPanel(self)
                         )
 
@@ -558,7 +558,7 @@ class Apipi(commands.Cog):
         try:
 
             await channel.send(
-                embed=self.management_panel_embed(),
+                embed=await self.management_panel_embed(),
                 view=ApipiManagementPanel(self)
             )
 
@@ -608,35 +608,111 @@ class Apipi(commands.Cog):
     # MANAGEMENT PANEL EMBED
     # ========================================================
 
-    def management_panel_embed(self):
+    async def management_panel_embed(self):
+
+        pairs = []
+        management_channel = self.bot.get_channel(APIPI_MANAGEMENT_PANEL_ID)
+        guild_id = management_channel.guild.id if management_channel else None
+
+        try:
+            if guild_id:
+                pairs = await db.fetchall(
+                    f"""
+                    SELECT *
+                    FROM nanz_apipi_pairs
+                    WHERE guild_id = {int(guild_id)}
+                    AND status != 'removed'
+                    ORDER BY id DESC
+                    LIMIT 20
+                    """
+                )
+        except Exception as e:
+            print(f"[APIPI] Gagal mengambil daftar management: {e}")
+
+        lines = []
+
+        for pair in pairs:
+            siswa = self.find_member(pair["siswa_id"])
+            siswi = self.find_member(pair["siswi_id"])
+
+            siswa_name = siswa.display_name if siswa else str(pair["siswa_id"])
+            siswi_name = siswi.display_name if siswi else str(pair["siswi_id"])
+
+            status_map = {
+                "tracking": "Tracking",
+                "eligible": "Siap Diambil",
+                "active": "Aktif",
+                "removed": "Dihapus"
+            }
+
+            lines.append(
+                f"`#{pair['id']}` **{siswa_name}** × **{siswi_name}** — "
+                f"{status_map.get(pair['status'], pair['status'])} — "
+                f"Strike {pair['strike']}/{MAX_STRIKE}"
+            )
+
+        rundown = "\n".join(lines) if lines else "Belum ada pasangan Apipi terdaftar."
 
         embed = discord.Embed(
             title="APIPI — MANAGEMENT",
             description=(
                 f"{EMOJI_APIPI} Panel khusus **Administrator**.\n\n"
-
-                f"{EMOJI_ARROW_PURPLE} **Cek Status**\n"
-                "Melihat data dan progress pasangan.\n\n"
-
-                f"{EMOJI_ARROW_PURPLE} **Set Role**\n"
-                "Memberikan role Apipi secara manual.\n\n"
-
-                f"{EMOJI_ARROW_PURPLE} **Cabut Role**\n"
-                "Mencabut role Apipi secara manual.\n\n"
-
-                f"{EMOJI_ARROW_PURPLE} **Reset Progress**\n"
-                "Menghapus progress 20 jam pasangan.\n\n"
-
-                f"{EMOJI_ARROW_PURPLE} **Reset Strike**\n"
-                "Mengembalikan strike pasangan menjadi 0.\n\n"
-
-                f"{EMOJI_WAITING} Semua tindakan management "
-                "akan dicatat ke log."
+                f"{EMOJI_ARROW_PURPLE} **Rundown Pasangan**\n"
+                f"{rundown}\n\n"
+                f"{EMOJI_ARROW_PURPLE} **Management**\n"
+                "• Cek Status — pilih member tanpa ID.\n"
+                "• Set Role — pilih member tanpa ID.\n"
+                "• Cabut Role — pilih member tanpa ID.\n"
+                "• Reset Progress — pilih member tanpa ID.\n"
+                "• Reset Strike — pilih member tanpa ID.\n"
+                "• Daftar Pasangan — lihat pasangan dan cari member.\n\n"
+                f"{EMOJI_WAITING} Semua tindakan management akan dicatat ke log.\n"
+                "Rundown di atas otomatis diperbarui setelah perubahan data."
             ),
             color=discord.Color.dark_purple()
         )
 
         return embed
+
+    async def refresh_apipi_panels(self):
+        """Refresh panel Apipi tanpa mengirim panel baru."""
+
+        member_channel = self.bot.get_channel(APIPI_PANEL_CHANNEL_ID)
+        management_channel = self.bot.get_channel(APIPI_MANAGEMENT_PANEL_ID)
+
+        if member_channel:
+            try:
+                async for message in member_channel.history(limit=50):
+                    if (
+                        self.bot.user
+                        and message.author.id == self.bot.user.id
+                        and message.embeds
+                        and message.embeds[0].title == "APIPI — PANEL"
+                    ):
+                        await message.edit(
+                            embed=self.member_panel_embed(),
+                            view=ApipiMemberPanel(self)
+                        )
+                        break
+            except Exception as e:
+                print(f"[APIPI] Refresh member panel error: {e}")
+
+        if management_channel:
+            try:
+                async for message in management_channel.history(limit=50):
+                    if (
+                        self.bot.user
+                        and message.author.id == self.bot.user.id
+                        and message.embeds
+                        and message.embeds[0].title == "APIPI — MANAGEMENT"
+                    ):
+                        await message.edit(
+                            embed=await self.management_panel_embed(),
+                            view=ApipiManagementPanel(self)
+                        )
+                        break
+            except Exception as e:
+                print(f"[APIPI] Refresh management panel error: {e}")
 
     # ========================================================
     # FIND MEMBER
@@ -809,8 +885,12 @@ class Apipi(commands.Cog):
             utc_now()
         )
 
+        # Gunakan nilai integer yang sudah divalidasi langsung pada query.
+        # Ini menghindari konflik Python-style % formatting pada wrapper db.py nanZ.
+        now_sql = now.strftime("%Y-%m-%d %H:%M:%S")
+
         await db.execute(
-            """
+            f"""
             INSERT INTO nanz_apipi_pairs
             (
                 guild_id,
@@ -822,21 +902,14 @@ class Apipi(commands.Cog):
             )
             VALUES
             (
-                %s,
-                %s,
-                %s,
+                {guild_id},
+                {siswa_id},
+                {siswi_id},
                 'tracking',
-                %s,
-                %s
+                '{now_sql}',
+                '{now_sql}'
             )
-            """,
-            (
-                guild_id,
-                siswa_id,
-                siswi_id,
-                now,
-                now
-            )
+            """
         )
 
         pair = await self.get_exact_pair(
@@ -857,6 +930,8 @@ class Apipi(commands.Cog):
                     f"Siswi={siswi_id}"
                 )
             )
+
+        await self.refresh_apipi_panels()
 
         return pair, "success"
 
@@ -1329,6 +1404,8 @@ class Apipi(commands.Cog):
                 pair
             )
 
+            await self.refresh_apipi_panels()
+
     # ========================================================
     # ELIGIBILITY NOTICE
     # ========================================================
@@ -1675,6 +1752,8 @@ class Apipi(commands.Cog):
             except Exception:
                 pass
 
+        await self.refresh_apipi_panels()
+
         return True
 
     # ========================================================
@@ -1933,6 +2012,8 @@ class Apipi(commands.Cog):
             "ROLE_REMOVED",
             reason
         )
+
+        await self.refresh_apipi_panels()
 
         return True
 
@@ -2399,6 +2480,8 @@ class Apipi(commands.Cog):
                                 pair
                             )
 
+                await self.refresh_apipi_panels()
+
             except Exception as e:
 
                 print(
@@ -2648,6 +2731,20 @@ class Apipi(commands.Cog):
                 f"[APIPI] Gagal mengirim log Discord: {e}"
             )
 
+    async def get_pair_rundown(self):
+        try:
+            return await db.fetchall(
+                """
+                SELECT *
+                FROM nanz_apipi_pairs
+                WHERE status != 'removed'
+                ORDER BY id DESC
+                """
+            )
+        except Exception as e:
+            print(f"[APIPI] Gagal mengambil rundown pasangan: {e}")
+            return []
+
     # ========================================================
     # ADMIN CHECK
     # ========================================================
@@ -2874,6 +2971,8 @@ class Apipi(commands.Cog):
             "Administrator mereset progress Apipi."
         )
 
+        await self.refresh_apipi_panels()
+
         await interaction.response.send_message(
             "Progress Apipi berhasil di-reset.",
             ephemeral=True
@@ -2927,6 +3026,8 @@ class Apipi(commands.Cog):
             "Administrator mereset strike menjadi 0."
         )
 
+        await self.refresh_apipi_panels()
+
         await interaction.response.send_message(
             "Strike berhasil di-reset menjadi 0.",
             ephemeral=True
@@ -2934,264 +3035,238 @@ class Apipi(commands.Cog):
 
 
 # ============================================================
-# REGISTER PAIR MODAL
+# MEMBER SELECT HELPERS
 # ============================================================
 
-class RegisterPairModal(
-    discord.ui.Modal
-):
+class ApipiUserSelect(discord.ui.UserSelect):
 
-    def __init__(
-        self,
-        cog
-    ):
-
-        self.cog = cog
-
+    def __init__(self, placeholder="Pilih member...", custom_id=None):
         super().__init__(
-            title="Daftarkan Pasangan Apipi"
+            placeholder=placeholder,
+            min_values=1,
+            max_values=1,
+            custom_id=custom_id
         )
 
-        self.partner = discord.ui.TextInput(
-            label="User ID / Mention Pasangan",
-            placeholder="Contoh: 123456789 atau @username",
-            required=True,
-            max_length=30
+
+class RegisterPairView(discord.ui.View):
+
+    def __init__(self, cog, author_id):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.author_id = author_id
+        self.siswa = None
+        self.siswi = None
+
+        self.siswa_select = ApipiUserSelect(
+            "Pilih Siswa...",
+            "nanz_apipi_register_siswa"
+        )
+        self.siswi_select = ApipiUserSelect(
+            "Pilih Siswi...",
+            "nanz_apipi_register_siswi"
         )
 
-        self.add_item(
-            self.partner
+        self.siswa_select.callback = self.siswa_callback
+        self.siswi_select.callback = self.siswi_callback
+        self.add_item(self.siswa_select)
+        self.add_item(self.siswi_select)
+
+    async def _check_author(self, interaction):
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "Menu ini bukan milikmu.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    async def siswa_callback(self, interaction):
+        if not await self._check_author(interaction):
+            return
+        self.siswa = self.siswa_select.values[0]
+        await interaction.response.send_message(
+            f"Siswa dipilih: **{self.siswa.display_name}**.",
+            ephemeral=True
         )
 
-    async def on_submit(
-        self,
-        interaction
-    ):
+    async def siswi_callback(self, interaction):
+        if not await self._check_author(interaction):
+            return
+        self.siswi = self.siswi_select.values[0]
+        await interaction.response.send_message(
+            f"Siswi dipilih: **{self.siswi.display_name}**.",
+            ephemeral=True
+        )
 
-        if not interaction.guild:
+    @discord.ui.button(
+        label="Daftarkan Pasangan",
+        style=discord.ButtonStyle.success,
+        custom_id="nanz_apipi_register_confirm"
+    )
+    async def confirm(self, interaction, button):
+        if not await self._check_author(interaction):
+            return
 
+        if not self.siswa or not self.siswi:
             return await interaction.response.send_message(
-                "Fitur ini hanya dapat digunakan di server.",
+                "Pilih Siswa dan Siswi terlebih dahulu.",
                 ephemeral=True
             )
 
-        partner_id = parse_user_id(
-            self.partner.value
-        )
-
-        if not partner_id:
-
+        if self.siswa.id == self.siswi.id:
             return await interaction.response.send_message(
-                "User ID / mention tidak valid.",
+                "Siswa dan Siswi tidak boleh member yang sama.",
                 ephemeral=True
             )
 
-        if partner_id == interaction.user.id:
-
+        if not self.cog.validate_pair_roles(self.siswa, self.siswi):
             return await interaction.response.send_message(
-                "Kamu tidak bisa memasangkan dirimu sendiri.",
-                ephemeral=True
-            )
-
-        user = interaction.guild.get_member(
-            interaction.user.id
-        )
-
-        partner = interaction.guild.get_member(
-            partner_id
-        )
-
-        if not user:
-
-            return await interaction.response.send_message(
-                "Data akunmu tidak ditemukan di server.",
-                ephemeral=True
-            )
-
-        if not partner:
-
-            return await interaction.response.send_message(
-                "Pasangan tidak ditemukan di server.",
-                ephemeral=True
-            )
-
-        user_is_siswa = any(
-            role.id == SISWA_ROLE_ID
-            for role in user.roles
-        )
-
-        user_is_siswi = any(
-            role.id == SISWI_ROLE_ID
-            for role in user.roles
-        )
-
-        partner_is_siswa = any(
-            role.id == SISWA_ROLE_ID
-            for role in partner.roles
-        )
-
-        partner_is_siswi = any(
-            role.id == SISWI_ROLE_ID
-            for role in partner.roles
-        )
-
-        if user_is_siswa and partner_is_siswi:
-
-            siswa = user
-            siswi = partner
-
-        elif user_is_siswi and partner_is_siswa:
-
-            siswa = partner
-            siswi = user
-
-        else:
-
-            return await interaction.response.send_message(
-                (
-                    "Pasangan tidak valid.\n"
-                    "Apipi wajib terdiri dari **1 Siswa + 1 Siswi**."
-                ),
+                "Pasangan tidak valid. Apipi wajib terdiri dari **1 Siswa + 1 Siswi**.",
                 ephemeral=True
             )
 
         pair, result = await self.cog.create_pair(
             interaction.guild.id,
-            siswa.id,
-            siswi.id,
+            self.siswa.id,
+            self.siswi.id,
             interaction.user.id
         )
 
-        if result == "siswa_busy":
+        messages = {
+            "siswa_busy": "Siswa tersebut sudah memiliki pasangan Apipi.",
+            "siswi_busy": "Siswi tersebut sudah memiliki pasangan Apipi."
+        }
 
+        if result in messages:
             return await interaction.response.send_message(
-                "Siswa tersebut sudah memiliki pasangan Apipi.",
-                ephemeral=True
-            )
-
-        if result == "siswi_busy":
-
-            return await interaction.response.send_message(
-                "Siswi tersebut sudah memiliki pasangan Apipi.",
+                messages[result],
                 ephemeral=True
             )
 
         if not pair:
-
             return await interaction.response.send_message(
-                "Gagal membuat pasangan.",
+                "Gagal membuat pasangan. Cek log nanZ System Monitor.",
                 ephemeral=True
             )
 
-        await interaction.response.send_message(
-            (
-                f"{EMOJI_APIPI} Pasangan Apipi berhasil didaftarkan.\n\n"
-                f"**Siswa:** {siswa.mention}\n"
-                f"**Siswi:** {siswi.mention}\n\n"
-                f"Selanjutnya kumpulkan **{UNLOCK_HOURS} jam** "
-                "shared voice."
+        self.stop()
+        await interaction.response.edit_message(
+            content=(
+                f"{EMOJI_APIPI} **Pasangan Apipi berhasil didaftarkan.**\n\n"
+                f"**Siswa:** {self.siswa.mention}\n"
+                f"**Siswi:** {self.siswi.mention}\n\n"
+                f"Selanjutnya kumpulkan **{UNLOCK_HOURS} jam** shared voice."
             ),
-            ephemeral=True
+            view=None
         )
 
 
-# ============================================================
-# ADMIN TARGET MODAL
-# ============================================================
+class AdminMemberSelectView(discord.ui.View):
 
-class AdminTargetModal(
-    discord.ui.Modal
-):
-
-    def __init__(
-        self,
-        cog,
-        action_name
-    ):
-
+    def __init__(self, cog, author_id, action_name):
+        super().__init__(timeout=180)
         self.cog = cog
+        self.author_id = author_id
         self.action_name = action_name
 
-        super().__init__(
-            title=action_name
+        self.member_select = ApipiUserSelect(
+            "Cari / pilih member...",
+            "nanz_apipi_admin_member_select"
         )
+        self.member_select.callback = self.member_callback
+        self.add_item(self.member_select)
 
-        self.target = discord.ui.TextInput(
-            label="User ID / Mention salah satu pasangan",
-            placeholder="123456789",
-            required=True,
-            max_length=30
-        )
-
-        self.add_item(
-            self.target
-        )
-
-    async def on_submit(
-        self,
-        interaction
-    ):
-
-        if not self.cog.is_admin(
-            interaction
-        ):
-
+    async def member_callback(self, interaction):
+        if interaction.user.id != self.author_id:
             return await interaction.response.send_message(
-                "Akses ditolak. Hanya Administrator.",
+                "Menu ini bukan milikmu.",
                 ephemeral=True
             )
 
-        user_id = parse_user_id(
-            self.target.value
-        )
-
-        if not user_id:
-
+        if not self.member_select.values:
             return await interaction.response.send_message(
-                "User ID tidak valid.",
+                "Member belum dipilih.",
                 ephemeral=True
             )
+
+        member = self.member_select.values[0]
+        self.stop()
 
         if self.action_name == "Cek Status":
-
-            return await self.cog.admin_status(
-                interaction,
-                user_id
-            )
-
+            return await self.cog.admin_status(interaction, member.id)
         if self.action_name == "Set Role":
-
-            return await self.cog.admin_set_role(
-                interaction,
-                user_id
-            )
-
+            return await self.cog.admin_set_role(interaction, member.id)
         if self.action_name == "Cabut Role":
-
-            return await self.cog.admin_remove_role(
-                interaction,
-                user_id
-            )
-
+            return await self.cog.admin_remove_role(interaction, member.id)
         if self.action_name == "Reset Progress":
-
-            return await self.cog.admin_reset_progress(
-                interaction,
-                user_id
-            )
-
+            return await self.cog.admin_reset_progress(interaction, member.id)
         if self.action_name == "Reset Strike":
+            return await self.cog.admin_reset_strike(interaction, member.id)
 
-            return await self.cog.admin_reset_strike(
-                interaction,
-                user_id
-            )
-
-        return await interaction.response.send_message(
+        await interaction.response.send_message(
             "Action management tidak dikenali.",
             ephemeral=True
         )
 
+
+class PairListView(discord.ui.View):
+
+    def __init__(self, cog, author_id, page=0):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.author_id = author_id
+        self.page = page
+
+    async def build_embed(self):
+        rows = await self.cog.get_pair_rundown()
+        per_page = 10
+        total_pages = max(1, (len(rows) + per_page - 1) // per_page)
+        self.page = max(0, min(self.page, total_pages - 1))
+        chunk = rows[self.page * per_page:(self.page + 1) * per_page]
+
+        lines = []
+        for pair in chunk:
+            siswa = self.cog.find_member(pair["siswa_id"])
+            siswi = self.cog.find_member(pair["siswi_id"])
+            siswa_text = siswa.mention if siswa else str(pair["siswa_id"])
+            siswi_text = siswi.mention if siswi else str(pair["siswi_id"])
+            lines.append(
+                f"`#{pair['id']}` {siswa_text} × {siswi_text} — "
+                f"`{pair['status']}` — Strike `{pair['strike']}/{MAX_STRIKE}`"
+            )
+
+        embed = discord.Embed(
+            title="APIPI — DAFTAR PASANGAN",
+            description=(
+                "\n".join(lines)
+                if lines else "Belum ada pasangan Apipi."
+            ),
+            color=discord.Color.blurple()
+        )
+        embed.set_footer(text=f"Halaman {self.page + 1}/{total_pages} • Pilih member pada menu management untuk mencari pasangan.")
+        return embed
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "Menu ini bukan milikmu.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="‹", style=discord.ButtonStyle.secondary, custom_id="nanz_apipi_pair_prev")
+    async def previous(self, interaction, button):
+        self.page -= 1
+        embed = await self.build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="›", style=discord.ButtonStyle.secondary, custom_id="nanz_apipi_pair_next")
+    async def next_page(self, interaction, button):
+        self.page += 1
+        embed = await self.build_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
 # ============================================================
 # MEMBER PANEL
@@ -3229,10 +3304,12 @@ class ApipiMemberPanel(
 
         try:
 
-            await interaction.response.send_modal(
-                RegisterPairModal(
-                    self.cog
-                )
+            await interaction.response.send_message(
+                f"{EMOJI_APIPI} **Pilih Pasangan Apipi**\n\n"
+                "Gunakan menu di bawah. Discord akan menampilkan daftar member "
+                "dan kamu bisa langsung mencari username tanpa copy ID.",
+                view=RegisterPairView(self.cog, interaction.user.id),
+                ephemeral=True
             )
 
         except Exception as e:
@@ -3539,11 +3616,10 @@ class ApipiManagementPanel(
             ):
                 return
 
-            await interaction.response.send_modal(
-                AdminTargetModal(
-                    self.cog,
-                    "Cek Status"
-                )
+            await interaction.response.send_message(
+                "**Cek Status**\nPilih member untuk melihat pasangan dan progress:",
+                view=AdminMemberSelectView(self.cog, interaction.user.id, "Cek Status"),
+                ephemeral=True
             )
 
         except Exception as e:
@@ -3581,11 +3657,10 @@ class ApipiManagementPanel(
             ):
                 return
 
-            await interaction.response.send_modal(
-                AdminTargetModal(
-                    self.cog,
-                    "Set Role"
-                )
+            await interaction.response.send_message(
+                "**Set Role**\nPilih member untuk diproses:",
+                view=AdminMemberSelectView(self.cog, interaction.user.id, "Set Role"),
+                ephemeral=True
             )
 
         except Exception as e:
@@ -3623,11 +3698,10 @@ class ApipiManagementPanel(
             ):
                 return
 
-            await interaction.response.send_modal(
-                AdminTargetModal(
-                    self.cog,
-                    "Cabut Role"
-                )
+            await interaction.response.send_message(
+                "**Cabut Role**\nPilih member untuk diproses:",
+                view=AdminMemberSelectView(self.cog, interaction.user.id, "Cabut Role"),
+                ephemeral=True
             )
 
         except Exception as e:
@@ -3665,11 +3739,10 @@ class ApipiManagementPanel(
             ):
                 return
 
-            await interaction.response.send_modal(
-                AdminTargetModal(
-                    self.cog,
-                    "Reset Progress"
-                )
+            await interaction.response.send_message(
+                "**Reset Progress**\nPilih member untuk diproses:",
+                view=AdminMemberSelectView(self.cog, interaction.user.id, "Reset Progress"),
+                ephemeral=True
             )
 
         except Exception as e:
@@ -3707,11 +3780,10 @@ class ApipiManagementPanel(
             ):
                 return
 
-            await interaction.response.send_modal(
-                AdminTargetModal(
-                    self.cog,
-                    "Reset Strike"
-                )
+            await interaction.response.send_message(
+                "**Reset Strike**\nPilih member untuk diproses:",
+                view=AdminMemberSelectView(self.cog, interaction.user.id, "Reset Strike"),
+                ephemeral=True
             )
 
         except Exception as e:
@@ -3724,6 +3796,68 @@ class ApipiManagementPanel(
 
                 await interaction.response.send_message(
                     "Gagal membuka form Reset Strike.",
+                    ephemeral=True
+                )
+
+    # ========================================================
+    # CARI PASANGAN
+    # ========================================================
+
+    @discord.ui.button(
+        label="Cari Pasangan",
+        style=discord.ButtonStyle.secondary,
+        custom_id="nanz_apipi_admin_find_pair"
+    )
+    async def find_pair(self, interaction, button):
+        try:
+            if not await self.check_admin(interaction):
+                return
+
+            await interaction.response.send_message(
+                "**Cari Pasangan**\nPilih member atau ketik username pada daftar Discord:",
+                view=AdminMemberSelectView(self.cog, interaction.user.id, "Cek Status"),
+                ephemeral=True
+            )
+
+        except Exception as e:
+            print(f"[APIPI] Admin find pair button error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "Gagal membuka pencarian pasangan.",
+                    ephemeral=True
+                )
+
+    # ========================================================
+    # DAFTAR PASANGAN
+    # ========================================================
+
+    @discord.ui.button(
+        label="Daftar Pasangan",
+        style=discord.ButtonStyle.primary,
+        custom_id="nanz_apipi_admin_pairs"
+    )
+    async def pairs(self, interaction, button):
+        try:
+            if not await self.check_admin(interaction):
+                return
+
+            view = PairListView(
+                self.cog,
+                interaction.user.id
+            )
+
+            await interaction.response.send_message(
+                f"{EMOJI_APIPI} **Rundown Pasangan Apipi**",
+                embed=await view.build_embed(),
+                view=view,
+                ephemeral=True
+            )
+
+        except Exception as e:
+            print(f"[APIPI] Admin pair list button error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "Gagal mengambil daftar pasangan.",
                     ephemeral=True
                 )
 
