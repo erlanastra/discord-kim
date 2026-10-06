@@ -3002,6 +3002,16 @@ class Apipi(commands.Cog):
         user_id
     ):
 
+        # Ack interaction immediately so database work cannot expire the Discord interaction.
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
+        async def reply(content):
+            return await interaction.followup.send(
+                content,
+                ephemeral=True
+            )
+
         pair = await self.get_pair_by_member(
             interaction.guild.id,
             user_id
@@ -3009,33 +3019,34 @@ class Apipi(commands.Cog):
 
         if not pair:
 
-            return await interaction.response.send_message(
-                "Pasangan tidak ditemukan.",
-                ephemeral=True
-            )
+            return await reply("Pasangan tidak ditemukan.")
 
+        pair_id = int(pair["id"])
+
+        # Jangan gunakan placeholder %s di sini. Wrapper database nanZ
+        # melakukan Python-style query formatting sebelum diteruskan ke aiomysql,
+        # sehingga query tertentu dapat memicu "not enough arguments for format string".
         await db.execute(
-            """
+            f"""
             DELETE FROM nanz_apipi_sessions
-            WHERE pair_id = %s
-            """,
-            (pair["id"],)
+            WHERE pair_id = {pair_id}
+            """
         )
 
         await db.execute(
-            """
+            f"""
             DELETE FROM nanz_apipi_weekly
-            WHERE pair_id = %s
-            """,
-            (pair["id"],)
+            WHERE pair_id = {pair_id}
+            """
         )
 
         now = db_datetime(
             utc_now()
         )
+        now_sql = now.strftime("%Y-%m-%d %H:%M:%S")
 
         await db.execute(
-            """
+            f"""
             UPDATE nanz_apipi_pairs
             SET
                 status = 'tracking',
@@ -3044,13 +3055,9 @@ class Apipi(commands.Cog):
                 take_siswi = 0,
                 remove_siswa = 0,
                 remove_siswi = 0,
-                updated_at = %s
-            WHERE id = %s
-            """,
-            (
-                now,
-                pair["id"]
-            )
+                updated_at = '{now_sql}'
+            WHERE id = {pair_id}
+            """
         )
 
         await self.log(
@@ -3062,10 +3069,7 @@ class Apipi(commands.Cog):
 
         await self.refresh_apipi_panels()
 
-        await interaction.response.send_message(
-            "Progress Apipi berhasil di-reset.",
-            ephemeral=True
-        )
+        await reply("Progress Apipi berhasil di-reset.")
 
     # ========================================================
     # ADMIN RESET STRIKE
