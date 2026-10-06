@@ -597,7 +597,9 @@ class Apipi(commands.Cog):
                 "• Strike ke-3 menyebabkan role dicabut otomatis.\n\n"
 
                 f"{EMOJI_LOVE} Gunakan tombol di bawah untuk "
-                "mengatur status Apipi."
+                "mengatur status Apipi.\n\n"
+                "Jika salah memilih pasangan dan role belum aktif, "
+                "gunakan **Reset Pasangan** untuk memilih ulang."
             ),
             color=discord.Color.blurple()
         )
@@ -665,7 +667,8 @@ class Apipi(commands.Cog):
                 "• Cabut Role — pilih member tanpa ID.\n"
                 "• Reset Progress — pilih member tanpa ID.\n"
                 "• Reset Strike — pilih member tanpa ID.\n"
-                "• Daftar Pasangan — lihat pasangan dan cari member.\n\n"
+                "• Daftar Pasangan — lihat pasangan dan cari member.\n"
+                "• Reset Pasangan — hapus pasangan yang belum aktif agar bisa memilih ulang.\n\n"
                 f"{EMOJI_WAITING} Semua tindakan management akan dicatat ke log.\n"
                 "Rundown di atas otomatis diperbarui setelah perubahan data."
             ),
@@ -852,6 +855,88 @@ class Apipi(commands.Cog):
                 siswi_id
             )
         )
+
+    # ========================================================
+    # RESET PAIR SELECTION
+    # ========================================================
+
+    async def reset_pair_selection(
+        self,
+        guild_id,
+        user_id,
+        actor_id
+    ):
+
+        pair = await self.get_pair_by_member(
+            guild_id,
+            user_id
+        )
+
+        if not pair:
+            return False, "not_found"
+
+        if pair["status"] == "active":
+            return False, "already_active"
+
+        # Jangan izinkan reset jika salah satu pihak sudah memiliki role Apipi.
+        guild = self.bot.get_guild(int(guild_id))
+        if guild:
+            role = guild.get_role(APIPI_ROLE_ID)
+            if role:
+                siswa = guild.get_member(pair["siswa_id"])
+                siswi = guild.get_member(pair["siswi_id"])
+                if (siswa and role in siswa.roles) or (siswi and role in siswi.roles):
+                    return False, "already_active"
+
+        now = db_datetime(
+            utc_now()
+        )
+
+        # Hapus progress pasangan sebelum menandai pasangan lama sebagai removed.
+        await db.execute(
+            """
+            DELETE FROM nanz_apipi_sessions
+            WHERE pair_id = %s
+            """,
+            (pair["id"],)
+        )
+
+        await db.execute(
+            """
+            DELETE FROM nanz_apipi_weekly
+            WHERE pair_id = %s
+            """,
+            (pair["id"],)
+        )
+
+        await db.execute(
+            """
+            UPDATE nanz_apipi_pairs
+            SET
+                status = 'removed',
+                eligible_notified = 0,
+                take_siswa = 0,
+                take_siswi = 0,
+                remove_siswa = 0,
+                remove_siswi = 0,
+                updated_at = %s
+            WHERE id = %s
+            """,
+            (
+                now,
+                pair["id"]
+            )
+        )
+
+        await self.log(
+            pair["id"],
+            actor_id,
+            "PAIR_RESET",
+            "Pasangan Apipi di-reset sebelum role aktif."
+        )
+
+        await self.refresh_apipi_panels()
+        return True, pair
 
     # ========================================================
     # CREATE PAIR
@@ -1465,6 +1550,10 @@ class Apipi(commands.Cog):
                 ephemeral=True
             )
 
+        # Semua jalur di bawah dapat melakukan query database / grant role.
+        # Defer lebih awal supaya interaction tidak timeout.
+        await interaction.response.defer(ephemeral=True)
+
         pair = await self.get_pair_by_member(
             guild.id,
             interaction.user.id
@@ -1472,14 +1561,14 @@ class Apipi(commands.Cog):
 
         if not pair:
 
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "Kamu belum terdaftar sebagai pasangan Apipi.",
                 ephemeral=True
             )
 
         if pair["status"] == "active":
 
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "Role Apipi sudah aktif.",
                 ephemeral=True
             )
@@ -1495,7 +1584,7 @@ class Apipi(commands.Cog):
                 (UNLOCK_HOURS * 3600) - total
             )
 
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 (
                     f"Progress saat ini: "
                     f"**{format_hours(total)}**.\n"
@@ -1517,7 +1606,7 @@ class Apipi(commands.Cog):
 
         if not is_siswa and not is_siswi:
 
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "Kamu bukan bagian dari pasangan ini.",
                 ephemeral=True
             )
@@ -1578,7 +1667,7 @@ class Apipi(commands.Cog):
 
         if not updated:
 
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "Data pasangan tidak dapat diperbarui.",
                 ephemeral=True
             )
@@ -1595,7 +1684,7 @@ class Apipi(commands.Cog):
 
             if success:
 
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     (
                         f"{EMOJI_LOVE} Persetujuan kedua pihak "
                         "telah diterima. Role Apipi berhasil diberikan."
@@ -1605,13 +1694,13 @@ class Apipi(commands.Cog):
 
                 return
 
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "Persetujuan sudah lengkap, tetapi role gagal diberikan. "
                 "Cek posisi role Apipi dan permission bot.",
                 ephemeral=True
             )
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             (
                 f"{EMOJI_WAITING} Persetujuanmu sudah dicatat.\n"
                 "Role akan diberikan setelah pasanganmu "
@@ -3126,40 +3215,58 @@ class RegisterPairView(discord.ui.View):
                 ephemeral=True
             )
 
-        pair, result = await self.cog.create_pair(
-            interaction.guild.id,
-            self.siswa.id,
-            self.siswi.id,
-            interaction.user.id
-        )
+        # Database/refresh panel bisa membutuhkan >3 detik.
+        # Defer terlebih dahulu agar Discord tidak menampilkan Interaction Failed.
+        await interaction.response.defer(ephemeral=True)
 
-        messages = {
-            "siswa_busy": "Siswa tersebut sudah memiliki pasangan Apipi.",
-            "siswi_busy": "Siswi tersebut sudah memiliki pasangan Apipi."
-        }
-
-        if result in messages:
-            return await interaction.response.send_message(
-                messages[result],
-                ephemeral=True
+        try:
+            pair, result = await self.cog.create_pair(
+                interaction.guild.id,
+                self.siswa.id,
+                self.siswi.id,
+                interaction.user.id
             )
 
-        if not pair:
-            return await interaction.response.send_message(
-                "Gagal membuat pasangan. Cek log nanZ System Monitor.",
-                ephemeral=True
+            messages = {
+                "siswa_busy": "Siswa tersebut sudah memiliki pasangan Apipi.",
+                "siswi_busy": "Siswi tersebut sudah memiliki pasangan Apipi."
+            }
+
+            if result in messages:
+                return await interaction.edit_original_response(
+                    content=messages[result],
+                    view=self
+                )
+
+            if not pair:
+                return await interaction.edit_original_response(
+                    content="Gagal membuat pasangan. Cek log nanZ System Monitor.",
+                    view=self
+                )
+
+            self.stop()
+            await interaction.edit_original_response(
+                content=(
+                    f"{EMOJI_APIPI} **Pasangan Apipi berhasil didaftarkan.**\n\n"
+                    f"**Siswa:** {self.siswa.mention}\n"
+                    f"**Siswi:** {self.siswi.mention}\n\n"
+                    f"Selanjutnya kumpulkan **{UNLOCK_HOURS} jam** shared voice.\n\n"
+                    "Jika salah memilih pasangan, gunakan tombol **Reset Pasangan** "
+                    "di panel Apipi selama role belum aktif."
+                ),
+                view=None
             )
 
-        self.stop()
-        await interaction.response.edit_message(
-            content=(
-                f"{EMOJI_APIPI} **Pasangan Apipi berhasil didaftarkan.**\n\n"
-                f"**Siswa:** {self.siswa.mention}\n"
-                f"**Siswi:** {self.siswi.mention}\n\n"
-                f"Selanjutnya kumpulkan **{UNLOCK_HOURS} jam** shared voice."
-            ),
-            view=None
-        )
+        except Exception as e:
+            print(f"[APIPI] Register pair confirm error: {e}")
+            try:
+                await interaction.edit_original_response(
+                    content="Terjadi kesalahan saat mendaftarkan pasangan. Silakan coba lagi.",
+                    view=self
+                )
+            except Exception as edit_error:
+                print(f"[APIPI] Register pair error response failed: {edit_error}")
+
 
 
 class AdminMemberSelectView(discord.ui.View):
@@ -3322,6 +3429,72 @@ class ApipiMemberPanel(
 
                 await interaction.response.send_message(
                     "Gagal membuka form pendaftaran.",
+                    ephemeral=True
+                )
+
+    # ========================================================
+    # RESET PASANGAN
+    # ========================================================
+
+    @discord.ui.button(
+        label="Reset Pasangan",
+        style=discord.ButtonStyle.danger,
+        custom_id="nanz_apipi_reset_pair"
+    )
+    async def reset_pair(
+        self,
+        interaction,
+        button
+    ):
+
+        try:
+            if not interaction.guild:
+                return await interaction.response.send_message(
+                    "Fitur ini hanya dapat digunakan di server.",
+                    ephemeral=True
+                )
+
+            # Reset dapat menyentuh database dan refresh panel, jadi defer dulu.
+            await interaction.response.defer(ephemeral=True)
+
+            success, result = await self.cog.reset_pair_selection(
+                interaction.guild.id,
+                interaction.user.id,
+                interaction.user.id
+            )
+
+            if not success:
+                messages = {
+                    "not_found": "Kamu belum memiliki pasangan Apipi yang bisa di-reset.",
+                    "already_active": "Pasangan sudah aktif/role Apipi sudah digunakan. Pasangan tidak dapat di-reset dari sini."
+                }
+                return await interaction.edit_original_response(
+                    content=messages.get(result, "Pasangan tidak dapat di-reset."),
+                    view=self
+                )
+
+            await interaction.edit_original_response(
+                content=(
+                    f"{EMOJI_APIPI} **Pasangan Apipi berhasil di-reset.**\n\n"
+                    "Progress pasangan lama dihapus dan kamu sekarang bisa "
+                    "memilih pasangan baru."
+                ),
+                view=self
+            )
+
+        except Exception as e:
+            print(f"[APIPI] Reset pair button error: {e}")
+            if interaction.response.is_done():
+                try:
+                    await interaction.edit_original_response(
+                        content="Terjadi kesalahan saat me-reset pasangan. Silakan coba lagi.",
+                        view=self
+                    )
+                except Exception as edit_error:
+                    print(f"[APIPI] Reset pair error response failed: {edit_error}")
+            else:
+                await interaction.response.send_message(
+                    "Terjadi kesalahan saat me-reset pasangan. Silakan coba lagi.",
                     ephemeral=True
                 )
 
