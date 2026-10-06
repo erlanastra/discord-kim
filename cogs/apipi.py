@@ -1074,28 +1074,53 @@ class Apipi(commands.Cog):
     # SHARED VOICE CHECK
     # ========================================================
 
-    def get_shared_channel(self, pair):
+    async def get_shared_channel(self, pair):
+        """
+        Mengambil VC bersama secara reliable.
 
-        siswa, siswi = self.get_pair_members(
-            pair
-        )
+        Jangan hanya mengandalkan cache global bot karena cache member
+        bisa tidak lengkap. Untuk pair Apipi, guild adalah sumber utama.
+        Jika member belum ada di cache, coba fetch_member() satu per satu.
+        """
+        guild_id = safe_int(pair.get("guild_id"))
+        siswa_id = safe_int(pair.get("siswa_id"))
+        siswi_id = safe_int(pair.get("siswi_id"))
 
-        if not siswa or not siswi:
+        if not guild_id or not siswa_id or not siswi_id:
             return None
 
-        if not siswa.voice or not siswi.voice:
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
             return None
 
-        if not siswa.voice.channel:
+        siswa = guild.get_member(siswa_id)
+        siswi = guild.get_member(siswi_id)
+
+        # Cache miss: ambil langsung dari Discord.
+        if siswa is None:
+            try:
+                siswa = await guild.fetch_member(siswa_id)
+            except Exception as e:
+                print(f"[APIPI] Gagal fetch siswa {siswa_id}: {e}")
+                return None
+
+        if siswi is None:
+            try:
+                siswi = await guild.fetch_member(siswi_id)
+            except Exception as e:
+                print(f"[APIPI] Gagal fetch siswi {siswi_id}: {e}")
+                return None
+
+        siswa_channel = siswa.voice.channel if siswa.voice else None
+        siswi_channel = siswi.voice.channel if siswi.voice else None
+
+        if siswa_channel is None or siswi_channel is None:
             return None
 
-        if not siswi.voice.channel:
+        if siswa_channel.id != siswi_channel.id:
             return None
 
-        if siswa.voice.channel.id != siswi.voice.channel.id:
-            return None
-
-        return siswa.voice.channel
+        return siswa_channel
 
     # ========================================================
     # START SESSION
@@ -1156,6 +1181,11 @@ class Apipi(commands.Cog):
             )
         )
 
+        print(
+            f"[APIPI] LIVE SESSION START | pair={pair['id']} "
+            f"channel={channel_id} started_at={now.isoformat()}"
+        )
+
     # ========================================================
     # CLOSE SESSION
     # ========================================================
@@ -1207,6 +1237,11 @@ class Apipi(commands.Cog):
             WHERE pair_id = %s
             """,
             (pair_id,)
+        )
+
+        print(
+            f"[APIPI] LIVE SESSION CLOSE | pair={pair_id} "
+            f"ended_at={end_time.isoformat()}"
         )
 
     # ========================================================
@@ -2174,7 +2209,7 @@ class Apipi(commands.Cog):
         pair
     ):
 
-        channel = self.get_shared_channel(
+        channel = await self.get_shared_channel(
             pair
         )
 
@@ -2242,6 +2277,12 @@ class Apipi(commands.Cog):
 
         for pair in pairs:
             try:
+                channel = await self.get_shared_channel(pair)
+                print(
+                    f"[APIPI] DISCOVERY | pair={pair['id']} "
+                    f"status={pair['status']} "
+                    f"shared_vc={channel.id if channel else None}"
+                )
                 await self.sync_pair_voice(pair)
             except Exception as e:
                 print(
@@ -2292,7 +2333,7 @@ class Apipi(commands.Cog):
                     if not pair:
                         continue
 
-                    channel = self.get_shared_channel(
+                    channel = await self.get_shared_channel(
                         pair
                     )
 
@@ -2319,6 +2360,8 @@ class Apipi(commands.Cog):
 
                         continue
 
+                    heartbeat_now = utc_now()
+
                     await db.execute(
                         """
                         UPDATE nanz_apipi_live_sessions
@@ -2326,9 +2369,19 @@ class Apipi(commands.Cog):
                         WHERE pair_id = %s
                         """,
                         (
-                            db_datetime(utc_now()),
+                            db_datetime(heartbeat_now),
                             pair["id"]
                         )
+                    )
+
+                    elapsed = max(
+                        0,
+                        int((heartbeat_now - from_db_datetime(live["started_at"])).total_seconds())
+                    )
+
+                    print(
+                        f"[APIPI] HEARTBEAT | pair={pair['id']} "
+                        f"vc={channel.id} elapsed={elapsed}s"
                     )
 
                     await self.check_eligibility(
@@ -2386,7 +2439,7 @@ class Apipi(commands.Cog):
                         live["last_seen_at"]
                     )
 
-                    current_shared = self.get_shared_channel(
+                    current_shared = await self.get_shared_channel(
                         pair
                     )
 
