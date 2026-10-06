@@ -814,7 +814,7 @@ class Apipi(commands.Cog):
             WHERE id = %s
             LIMIT 1
             """,
-            (pair_id,)
+            pair_id
         )
 
     # ========================================================
@@ -849,11 +849,9 @@ class Apipi(commands.Cog):
             ORDER BY id DESC
             LIMIT 1
             """,
-            (
-                guild_id,
+            guild_id,
                 siswa_id,
                 siswi_id
-            )
         )
 
     # ========================================================
@@ -1139,7 +1137,7 @@ class Apipi(commands.Cog):
             WHERE pair_id = %s
             LIMIT 1
             """,
-            (pair["id"],)
+            pair["id"]
         )
 
         if existing:
@@ -1173,12 +1171,10 @@ class Apipi(commands.Cog):
                 %s
             )
             """,
-            (
-                pair["id"],
+            pair["id"],
                 channel_id,
                 now,
                 now
-            )
         )
 
         print(
@@ -1203,7 +1199,7 @@ class Apipi(commands.Cog):
             WHERE pair_id = %s
             LIMIT 1
             """,
-            (pair_id,)
+            pair_id
         )
 
         if not live:
@@ -1220,7 +1216,7 @@ class Apipi(commands.Cog):
                 DELETE FROM nanz_apipi_live_sessions
                 WHERE pair_id = %s
                 """,
-                (pair_id,)
+                pair_id
             )
 
             return
@@ -1236,7 +1232,7 @@ class Apipi(commands.Cog):
             DELETE FROM nanz_apipi_live_sessions
             WHERE pair_id = %s
             """,
-            (pair_id,)
+            pair_id
         )
 
         print(
@@ -1317,14 +1313,12 @@ class Apipi(commands.Cog):
                         %s
                     )
                     """,
-                    (
-                        pair_id,
+                    pair_id,
                         db_datetime(cursor),
                         db_datetime(segment_end),
                         duration,
                         current_week.date(),
                         db_datetime(utc_now())
-                    )
                 )
 
             cursor = segment_end
@@ -1348,7 +1342,7 @@ class Apipi(commands.Cog):
             FROM nanz_apipi_sessions
             WHERE pair_id = %s
             """,
-            (pair_id,)
+            pair_id
         )
 
         total = int(
@@ -1365,7 +1359,7 @@ class Apipi(commands.Cog):
             WHERE pair_id = %s
             LIMIT 1
             """,
-            (pair_id,)
+            pair_id
         )
 
         if live:
@@ -1406,10 +1400,8 @@ class Apipi(commands.Cog):
             WHERE pair_id = %s
             AND week_start = %s
             """,
-            (
-                pair_id,
+            pair_id,
                 week_start_date
-            )
         )
 
         total = int(
@@ -1426,7 +1418,7 @@ class Apipi(commands.Cog):
             WHERE pair_id = %s
             LIMIT 1
             """,
-            (pair_id,)
+            pair_id
         )
 
         if live:
@@ -1513,10 +1505,8 @@ class Apipi(commands.Cog):
                     updated_at = %s
                 WHERE id = %s
                 """,
-                (
-                    now,
+                now,
                     pair["id"]
-                )
             )
 
             await self.log(
@@ -1669,10 +1659,8 @@ class Apipi(commands.Cog):
                     updated_at = %s
                 WHERE id = %s
                 """,
-                (
-                    now,
+                now,
                     pair["id"]
-                )
             )
 
             await self.log(
@@ -1692,10 +1680,8 @@ class Apipi(commands.Cog):
                     updated_at = %s
                 WHERE id = %s
                 """,
-                (
-                    now,
+                now,
                     pair["id"]
-                )
             )
 
             await self.log(
@@ -1852,11 +1838,9 @@ class Apipi(commands.Cog):
                 updated_at = %s
             WHERE id = %s
             """,
-            (
-                now,
+            now,
                 now,
                 pair["id"]
-            )
         )
 
         await self.log(
@@ -1957,10 +1941,8 @@ class Apipi(commands.Cog):
                     updated_at = %s
                 WHERE id = %s
                 """,
-                (
-                    now,
+                now,
                     pair["id"]
-                )
             )
 
         elif is_siswi:
@@ -1973,10 +1955,8 @@ class Apipi(commands.Cog):
                     updated_at = %s
                 WHERE id = %s
                 """,
-                (
-                    now,
+                now,
                     pair["id"]
-                )
             )
 
         await self.log(
@@ -2117,10 +2097,8 @@ class Apipi(commands.Cog):
                 updated_at = %s
             WHERE id = %s
             """,
-            (
-                now,
+            now,
                 pair["id"]
-            )
         )
 
         await db.execute(
@@ -2128,7 +2106,7 @@ class Apipi(commands.Cog):
             DELETE FROM nanz_apipi_sessions
             WHERE pair_id = %s
             """,
-            (pair["id"],)
+            pair["id"]
         )
 
         await db.execute(
@@ -2136,7 +2114,7 @@ class Apipi(commands.Cog):
             DELETE FROM nanz_apipi_weekly
             WHERE pair_id = %s
             """,
-            (pair["id"],)
+            pair["id"]
         )
 
         await self.log(
@@ -2220,7 +2198,7 @@ class Apipi(commands.Cog):
             WHERE pair_id = %s
             LIMIT 1
             """,
-            (pair["id"],)
+            pair["id"]
         )
 
         if channel:
@@ -2285,9 +2263,9 @@ class Apipi(commands.Cog):
                 )
                 await self.sync_pair_voice(pair)
             except Exception as e:
-                print(
-                    f"[APIPI] Pair discovery error pair={pair.get('id')}: {e}"
-                )
+                import traceback
+                print(f"[APIPI] Pair discovery error pair={pair.get('id')}: {e}")
+                traceback.print_exc()
 
     # ========================================================
     # HEARTBEAT
@@ -2368,10 +2346,8 @@ class Apipi(commands.Cog):
                         SET last_seen_at = %s
                         WHERE pair_id = %s
                         """,
-                        (
-                            db_datetime(heartbeat_now),
+                        db_datetime(heartbeat_now),
                             pair["id"]
-                        )
                     )
 
                     elapsed = max(
@@ -2458,7 +2434,7 @@ class Apipi(commands.Cog):
                         DELETE FROM nanz_apipi_live_sessions
                         WHERE pair_id = %s
                         """,
-                        (pair["id"],)
+                        pair["id"]
                     )
 
                     if current_shared:
@@ -2545,10 +2521,8 @@ class Apipi(commands.Cog):
                     AND week_start = %s
                     LIMIT 1
                     """,
-                    (
-                        pair["id"],
+                    pair["id"],
                         previous_week.date()
-                    )
                 )
 
                 if already_checked:
@@ -2594,15 +2568,13 @@ class Apipi(commands.Cog):
                         %s
                     )
                     """,
-                    (
-                        pair["id"],
+                    pair["id"],
                         previous_week.date(),
                         seconds,
                         target_seconds,
                         1 if met else 0,
                         new_strike,
                         db_datetime(now)
-                    )
                 )
 
                 if met:
@@ -2628,11 +2600,9 @@ class Apipi(commands.Cog):
                             updated_at = %s
                         WHERE id = %s
                         """,
-                        (
-                            new_strike,
+                        new_strike,
                             db_datetime(now),
                             pair["id"]
-                        )
                     )
 
                     await self.log(
@@ -2869,13 +2839,11 @@ class Apipi(commands.Cog):
                     %s
                 )
                 """,
-                (
-                    pair_id,
+                pair_id,
                     actor_id,
                     action,
                     details,
                     db_datetime(utc_now())
-                )
             )
 
         except Exception as e:
@@ -3207,10 +3175,8 @@ class Apipi(commands.Cog):
                 updated_at = %s
             WHERE id = %s
             """,
-            (
-                now,
+            now,
                 pair["id"]
-            )
         )
 
         await self.log(
