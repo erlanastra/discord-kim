@@ -1014,6 +1014,18 @@ class Apipi(commands.Cog):
                 )
             )
 
+            # Penting: pasangan bisa saja sudah berada di VC yang sama
+            # sebelum proses registrasi dilakukan. Discord tidak selalu
+            # mengirim ulang voice-state event setelah pair dibuat, sehingga
+            # sesi live harus langsung disinkronkan di sini.
+            try:
+                async with self.session_lock:
+                    await self.sync_pair_voice(pair)
+            except Exception as e:
+                print(
+                    f"[APIPI] Gagal initial voice sync pair={pair['id']}: {e}"
+                )
+
         await self.refresh_apipi_panels()
 
         return pair, "success"
@@ -2208,6 +2220,40 @@ class Apipi(commands.Cog):
                 )
 
     # ========================================================
+    # VOICE SESSION DISCOVERY / RECONCILIATION
+    # ========================================================
+
+    async def reconcile_all_pairs(self):
+        """
+        Sinkronisasi seluruh pair yang masih memiliki status tracking.
+
+        Ini sengaja tidak hanya membaca nanz_apipi_live_sessions karena
+        live session bisa belum pernah dibuat, misalnya pasangan sudah
+        berada di VC yang sama sebelum bot/restart/registrasi pair.
+        """
+
+        try:
+            pairs = await db.fetchall(
+                """
+                SELECT *
+                FROM nanz_apipi_pairs
+                WHERE status IN ('tracking', 'eligible', 'active')
+                ORDER BY id ASC
+                """
+            )
+        except Exception as e:
+            print(f"[APIPI] Pair discovery database error: {e}")
+            return
+
+        for pair in pairs:
+            try:
+                await self.sync_pair_voice(pair)
+            except Exception as e:
+                print(
+                    f"[APIPI] Pair discovery error pair={pair.get('id')}: {e}"
+                )
+
+    # ========================================================
     # HEARTBEAT
     # ========================================================
 
@@ -2217,61 +2263,57 @@ class Apipi(commands.Cog):
         if not self.initialized:
             return
 
+        # Heartbeat sekarang menjadi safety-net sekaligus discovery.
+        # Dengan begitu, sesi tetap dibuat walaupun voice event terlewat.
         async with self.session_lock:
 
-            try:
+            await self.reconcile_all_pairs()
 
+            try:
                 live_sessions = await db.fetchall(
                     """
                     SELECT *
                     FROM nanz_apipi_live_sessions
                     """
                 )
-
             except Exception as e:
-
-                print(
-                    f"[APIPI] Heartbeat database error: {e}"
-                )
-
+                print(f"[APIPI] Heartbeat database error: {e}")
                 return
 
             for live in live_sessions:
-
                 try:
-
-                    pair = await self.get_pair(
-                        live["pair_id"]
-                    )
+                    pair = await self.get_pair(live["pair_id"])
 
                     if not pair:
+                        await db.execute(
+                            """
+                            DELETE FROM nanz_apipi_live_sessions
+                            WHERE pair_id = %s
+                            """,
+                            (live["pair_id"],)
+                        )
                         continue
 
-                    channel = self.get_shared_channel(
-                        pair
-                    )
+                    channel = self.get_shared_channel(pair)
 
                     if not channel:
-
                         await self.close_session(
                             pair["id"],
                             utc_now()
                         )
-
                         continue
 
+                    # Jika pasangan pindah VC, tutup sesi lama dan mulai
+                    # sesi baru dari channel yang baru.
                     if channel.id != live["channel_id"]:
-
                         await self.close_session(
                             pair["id"],
                             utc_now()
                         )
-
                         await self.start_session(
                             pair,
                             channel.id
                         )
-
                         continue
 
                     await db.execute(
@@ -2286,12 +2328,9 @@ class Apipi(commands.Cog):
                         )
                     )
 
-                    await self.check_eligibility(
-                        pair
-                    )
+                    await self.check_eligibility(pair)
 
                 except Exception as e:
-
                     print(
                         f"[APIPI] Heartbeat error "
                         f"pair={live.get('pair_id')}: {e}"
@@ -2304,54 +2343,44 @@ class Apipi(commands.Cog):
     async def reconcile_after_restart(self):
 
         await self.bot.wait_until_ready()
-
         await asyncio.sleep(5)
 
         async with self.session_lock:
 
             try:
-
                 live_sessions = await db.fetchall(
                     """
                     SELECT *
                     FROM nanz_apipi_live_sessions
                     """
                 )
-
             except Exception as e:
-
-                print(
-                    f"[APIPI] Reconcile database error: {e}"
-                )
-
+                print(f"[APIPI] Reconcile database error: {e}")
                 return
 
+            # Sesi lama dipotong sampai last_seen sebelum bot mati.
+            # Jangan menghitung waktu ketika bot benar-benar tidak berjalan.
             for live in live_sessions:
-
                 try:
-
-                    pair = await self.get_pair(
-                        live["pair_id"]
-                    )
+                    pair = await self.get_pair(live["pair_id"])
 
                     if not pair:
+                        await db.execute(
+                            """
+                            DELETE FROM nanz_apipi_live_sessions
+                            WHERE pair_id = %s
+                            """,
+                            (live["pair_id"],)
+                        )
                         continue
 
-                    last_seen = from_db_datetime(
-                        live["last_seen_at"]
-                    )
+                    start_time = from_db_datetime(live["started_at"])
+                    last_seen = from_db_datetime(live["last_seen_at"])
 
-                    current_shared = self.get_shared_channel(
-                        pair
-                    )
-
-                    if last_seen:
-
+                    if start_time and last_seen and last_seen > start_time:
                         await self.save_split_sessions(
                             pair["id"],
-                            from_db_datetime(
-                                live["started_at"]
-                            ),
+                            start_time,
                             last_seen
                         )
 
@@ -2363,297 +2392,18 @@ class Apipi(commands.Cog):
                         (pair["id"],)
                     )
 
-                    if current_shared:
-
-                        await self.start_session(
-                            pair,
-                            current_shared.id
-                        )
-
                 except Exception as e:
-
                     print(
                         f"[APIPI] Reconcile pair error "
                         f"{live.get('pair_id')}: {e}"
                     )
 
-    # ========================================================
-    # WEEKLY CHECKER
-    # ========================================================
-
-    @tasks.loop(minutes=30)
-    async def weekly_checker(self):
-
-        if not self.initialized:
-            return
-
-        now = utc_now()
-
-        current_week = get_week_start(
-            now
-        )
-
-        previous_week = current_week - timedelta(
-            days=7
-        )
-
-        try:
-
-            pairs = await db.fetchall(
-                """
-                SELECT *
-                FROM nanz_apipi_pairs
-                WHERE status = 'active'
-                """
-            )
-
-        except Exception as e:
-
-            print(
-                f"[APIPI] Weekly checker database error: {e}"
-            )
-
-            return
-
-        for pair in pairs:
-
-            try:
-
-                active_since = pair["active_since"]
-
-                if active_since:
-
-                    active_since_aware = from_db_datetime(
-                        active_since
-                    )
-
-                    activation_week = get_week_start(
-                        active_since_aware
-                    ).date()
-
-                    if previous_week.date() <= activation_week:
-                        continue
-
-                already_checked = await db.fetchone(
-                    """
-                    SELECT id
-                    FROM nanz_apipi_weekly
-                    WHERE pair_id = %s
-                    AND week_start = %s
-                    LIMIT 1
-                    """,
-                    (
-                        pair["id"],
-                        previous_week.date()
-                    )
-                )
-
-                if already_checked:
-                    continue
-
-                seconds = await self.get_week_seconds(
-                    pair["id"],
-                    previous_week.date()
-                )
-
-                target_seconds = WEEKLY_HOURS * 3600
-
-                met = seconds >= target_seconds
-
-                new_strike = int(
-                    pair["strike"] or 0
-                )
-
-                if not met:
-
-                    new_strike += 1
-
-                await db.execute(
-                    """
-                    INSERT INTO nanz_apipi_weekly
-                    (
-                        pair_id,
-                        week_start,
-                        seconds,
-                        target_seconds,
-                        met,
-                        strike_after,
-                        checked_at
-                    )
-                    VALUES
-                    (
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s,
-                        %s
-                    )
-                    """,
-                    (
-                        pair["id"],
-                        previous_week.date(),
-                        seconds,
-                        target_seconds,
-                        1 if met else 0,
-                        new_strike,
-                        db_datetime(now)
-                    )
-                )
-
-                if met:
-
-                    await self.log(
-                        pair["id"],
-                        None,
-                        "WEEK_MET",
-                        (
-                            f"Minggu {previous_week.date()} "
-                            f"memenuhi target: "
-                            f"{format_hours(seconds)}"
-                        )
-                    )
-
-                else:
-
-                    await db.execute(
-                        """
-                        UPDATE nanz_apipi_pairs
-                        SET
-                            strike = %s,
-                            updated_at = %s
-                        WHERE id = %s
-                        """,
-                        (
-                            new_strike,
-                            db_datetime(now),
-                            pair["id"]
-                        )
-                    )
-
-                    await self.log(
-                        pair["id"],
-                        None,
-                        "WEEK_MISSED",
-                        (
-                            f"Minggu {previous_week.date()} "
-                            f"hanya {format_hours(seconds)}. "
-                            f"Strike: {new_strike}/{MAX_STRIKE}"
-                        )
-                    )
-
-                    await self.send_strike_notice(
-                        pair,
-                        seconds,
-                        new_strike
-                    )
-
-                    if new_strike >= MAX_STRIKE:
-
-                        guild = self.bot.get_guild(
-                            pair["guild_id"]
-                        )
-
-                        if guild:
-
-                            await self.remove_apipi_role(
-                                pair,
-                                guild,
-                                "Auto removal: 3 weekly strikes"
-                            )
-
-                            await self.send_auto_remove_notice(
-                                pair
-                            )
-
-                await self.refresh_apipi_panels()
-
-            except Exception as e:
-
-                print(
-                    f"[APIPI] Weekly checker error "
-                    f"pair={pair.get('id')}: {e}"
-                )
+            # Setelah sesi lama dibereskan, scan ulang semua pair.
+            # Jika pasangan masih berada di VC yang sama, sesi baru langsung
+            # dibuat dari waktu bot kembali aktif.
+            await self.reconcile_all_pairs()
 
     # ========================================================
-    # STRIKE NOTICE
-    # ========================================================
-
-    async def send_strike_notice(
-        self,
-        pair,
-        seconds,
-        strike
-    ):
-
-        channel = self.bot.get_channel(
-            APIPI_PANEL_CHANNEL_ID
-        )
-
-        if not channel:
-            return
-
-        siswa = self.find_member(
-            pair["siswa_id"]
-        )
-
-        siswi = self.find_member(
-            pair["siswi_id"]
-        )
-
-        if not siswa or not siswi:
-            return
-
-        await channel.send(
-            (
-                f"{EMOJI_WAITING} **APIPI WEEKLY NOTICE**\n\n"
-                f"{siswa.mention} & {siswi.mention}\n\n"
-                f"Target minggu lalu: **{WEEKLY_HOURS} jam**\n"
-                f"Progress: **{format_hours(seconds)}**\n"
-                f"Strike: **{strike}/{MAX_STRIKE}**\n\n"
-                "Pastikan target mingguan terpenuhi "
-                "agar role tetap aktif."
-            )
-        )
-
-    # ========================================================
-    # AUTO REMOVE NOTICE
-    # ========================================================
-
-    async def send_auto_remove_notice(
-        self,
-        pair
-    ):
-
-        channel = self.bot.get_channel(
-            APIPI_PANEL_CHANNEL_ID
-        )
-
-        if not channel:
-            return
-
-        siswa = self.find_member(
-            pair["siswa_id"]
-        )
-
-        siswi = self.find_member(
-            pair["siswi_id"]
-        )
-
-        if not siswa or not siswi:
-            return
-
-        await channel.send(
-            (
-                f"{EMOJI_APIPI} **APIPI ROLE DICABUT**\n\n"
-                f"{siswa.mention} & {siswi.mention}\n\n"
-                f"Target mingguan tidak terpenuhi "
-                f"sebanyak **{MAX_STRIKE} kali**.\n\n"
-                "Role Apipi telah dicabut dan progress "
-                "dikembalikan ke awal."
-            )
-        )
 
     # ========================================================
     # STATUS
