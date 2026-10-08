@@ -2193,7 +2193,7 @@ class DonationControl(
             medal = {
                 1: "<a:peringkat1:1550870838947872829>",
                 2: "<a:peringkat2:1550871079914962975>",
-                3: "<a:peringkat3:1550871014634954863>"
+                3: "<a:peringkat3:1557778384333971546>"
             }.get(
                 index,
                 f"`{index:02}`"
