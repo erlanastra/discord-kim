@@ -4,7 +4,7 @@ import asyncio
 from discord.ext import commands
 import discord
 
-from cogs.verifysystem import VerifyButton, VoiceVerifyButtonView
+from cogs.verifysystem import VerifyButton
 from cogs.setupquote import QuoteView
 from cogs.ticket import TicketView
 from cogs.setup_minat import MinatView
@@ -15,19 +15,27 @@ from cogs.role_request import RoleRequestView
 from dotenv import load_dotenv
 from database import db
 
+
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN tidak ditemukan di environment variable")
+    raise RuntimeError(
+        "DISCORD_TOKEN tidak ditemukan di environment variable"
+    )
+
 
 # ==========================================================
 # BOT
 # ==========================================================
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
 
 # ==========================================================
@@ -36,6 +44,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
+
     print("=" * 50)
     print(f"Bot online sebagai {bot.user}")
     print("Persistent Views Loaded")
@@ -47,6 +56,7 @@ async def on_ready():
 # ==========================================================
 
 async def load_cogs():
+
     cogs = [
         "cogs.system_monitor",
         "cogs.apipi",
@@ -91,45 +101,67 @@ async def load_cogs():
         "cogs.nanz_task",
         "cogs.about",
         "cogs.hall_of_time",
-        "cogs.welcome",
+        "cogs.welcome"
     ]
 
     for cog in cogs:
+
         try:
+
             await bot.load_extension(cog)
-            print(f"Loaded: {cog.split('.')[-1]}.py")
-        except Exception as exc:
-            print(f"Gagal load {cog.split('.')[-1]}.py: {exc}")
+
+            print(
+                f"Loaded: {cog.split('.')[-1]}.py"
+            )
+
+        except Exception as e:
+
+            print(
+                f"Gagal load {cog.split('.')[-1]}.py: {e}"
+            )
 
 
 # ==========================================================
 # REGISTER PERSISTENT VIEWS
+# (fungsi biasa, JANGAN di-await)
 # ==========================================================
 
 def register_persistent_views():
-    # Verification member panel
-    bot.add_view(VerifyButton(bot))
 
-    # Tombol Join Voice Verif yang dipakai setelah formulir terkirim
-    bot.add_view(VoiceVerifyButtonView(bot))
+    # Verification
+    bot.add_view(
+        VerifyButton(bot)
+    )
 
     # Quote
-    bot.add_view(QuoteView(bot))
+    bot.add_view(
+        QuoteView(bot)
+    )
 
     # Ticket
-    bot.add_view(TicketView())
+    bot.add_view(
+        TicketView()
+    )
 
     # Minat
-    bot.add_view(MinatView())
+    bot.add_view(
+        MinatView()
+    )
 
     # Game
-    bot.add_view(GameView())
+    bot.add_view(
+        GameView()
+    )
 
     # Bot Game (OwO / UwU)
-    bot.add_view(BotGameView())
+    bot.add_view(
+        BotGameView()
+    )
 
     # Custom Role Request
-    bot.add_view(RoleRequestView())
+    bot.add_view(
+        RoleRequestView()
+    )
 
     print("Persistent Views berhasil didaftarkan.")
 
@@ -139,15 +171,29 @@ def register_persistent_views():
 # ==========================================================
 
 async def main():
+
     await db.connect()
+
     try:
+
         async with bot:
+
+            # Load semua cog
             await load_cogs()
+
+            # Register semua persistent view (tanpa await)
             register_persistent_views()
+
+            # Start bot
             await bot.start(TOKEN)
+
     finally:
+
         await db.close()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# ==========================================================
+# RUN
+# ==========================================================
+
+asyncio.run(main())
