@@ -1,1301 +1,32 @@
+"""nanZ welcome GIF + entry buttons for the verification flow.
+
+This cog is intentionally limited to the welcome message and its buttons.
+Application state, reminders, staff decisions, and voice-arrival notifications
+remain owned by cogs.verifysystem.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import io
 import math
 import random
+from typing import Optional
 
 import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
-# ══════════════════════════════════════════════
-#  GIF GENERATOR
-# ══════════════════════════════════════════════
-
-FONT_BOLD    = "fonts/LEMONMILK-Bold.otf"
-FONT_MEDIUM  = "fonts/LEMONMILK-Medium.otf"
-FONT_REGULAR = "fonts/LEMONMILK-Regular.otf"
-FONT_LIGHT   = "fonts/LEMONMILK-Light.otf"
-
-_FALLBACKS = (
-    "DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "arial.ttf",
-)
-
-# Tema biru + ungu
-BG_TOP, BG_BOT = (18, 10, 45), (40, 20, 80)
-
-PURPLE = (130, 80, 255)
-BLUE = (80, 180, 255)
-
-CARD_BG = (30, 15, 65)
-
-SOFT_PURPLE = (160, 120, 255)
-SOFT_BLUE = (150, 210, 255)
-
-W, H = 800, 340
-TOTAL_FRAMES = 36
-FPS_DELAY = 8
-
-AV = 140
-
-CARD = (20, 20, 780, 320)
-ZONE = (38, 38, 262, 302)
-
-AV_CX, AV_CY = 150, 146
-
-RX0, RX1 = 296, 754
-
-
-def _font(path, size):
-    for p in (path, *_FALLBACKS):
-        try:
-            return ImageFont.truetype(p, size)
-        except Exception:
-            continue
-
-    return ImageFont.load_default()
-
-
-def _lerp_color(c1, c2, t):
-    return tuple(
-        int(c1[i] + (c2[i] - c1[i]) * t)
-        for i in range(3)
-    )
-
-
-def _clamp(v, lo=0, hi=255):
-    return max(lo, min(hi, int(v)))
-
-
-def _ease_out(t):
-    return 1 - (1 - t) ** 3
-
-
-def _make_fx(seed=42):
-    rng = random.Random(seed)
-
-    stars = [
-        {
-            "x": rng.uniform(0, W),
-            "y": rng.uniform(0, H),
-            "r": rng.uniform(1.0, 2.6),
-            "k": rng.choice([1, 1, 2]),
-            "sway": rng.uniform(3, 12),
-            "m": rng.choice([1, 2]),
-            "ph": rng.uniform(0, math.tau),
-            "a": rng.randint(90, 200),
-        }
-        for _ in range(70)
-    ]
-
-    sparkles = [
-        {
-            "x": rng.uniform(15, W - 15),
-            "y": rng.uniform(12, H - 12),
-            "s": rng.uniform(5, 10),
-            "m": rng.choice([1, 2]),
-            "ph": rng.uniform(0, math.tau),
-        }
-        for _ in range(13)
-    ]
-
-    bubbles = [
-        {
-            "x": rng.uniform(0, W),
-            "y0": rng.uniform(0, H),
-            "r": rng.uniform(3, 7),
-            "speed": rng.choice([1, 1, 2]),
-            "sway": rng.uniform(4, 14),
-            "phase": rng.uniform(0, math.tau),
-        }
-        for _ in range(18)
-    ]
-
-    return {
-        "stars": stars,
-        "sparkles": sparkles,
-        "bubbles": bubbles,
-    }
-
-
-def _fit_font(draw, text, path, start, max_w, min_size=24):
-    size = start
-
-    while size > min_size:
-        f = _font(path, size)
-        b = draw.textbbox((0, 0), text, font=f)
-
-        if b[2] - b[0] <= max_w:
-            return f, text
-
-        size -= 2
-
-    f = _font(path, min_size)
-
-    while text and draw.textbbox(
-        (0, 0),
-        text + "…",
-        font=f,
-    )[2] > max_w:
-        text = text[:-1]
-
-    return f, text + "…"
-
-
-def _prepare_avatar(avatar_bytes):
-    av = (
-        Image.open(io.BytesIO(avatar_bytes))
-        .convert("RGBA")
-        .resize((AV, AV), Image.LANCZOS)
-    )
-
-    mask = Image.new(
-        "L",
-        (AV * 4, AV * 4),
-        0,
-    )
-
-    ImageDraw.Draw(mask).ellipse(
-        (0, 0, AV * 4, AV * 4),
-        fill=255,
-    )
-
-    mask = mask.resize(
-        (AV, AV),
-        Image.LANCZOS,
-    )
-
-    out = Image.new(
-        "RGBA",
-        (AV, AV),
-        (0, 0, 0, 0),
-    )
-
-    out.paste(
-        av,
-        (0, 0),
-        mask,
-    )
-
-    return out
-
-
-def _render_frame(idx, avatar, name, fx):
-    t = idx / (TOTAL_FRAMES - 1)
-    phase = math.tau * idx / TOTAL_FRAMES
-    pulse = (1 + math.sin(phase)) / 2
-
-    # ── Background ──
-
-    bg = Image.new("RGB", (W, H))
-    bd = ImageDraw.Draw(bg)
-
-    for y in range(H):
-        bd.line(
-            [(0, y), (W, y)],
-            fill=_lerp_color(
-                BG_TOP,
-                BG_BOT,
-                y / H,
-            ),
-        )
-
-    base = bg.convert("RGBA")
-
-    # ── Orbs ──
-
-    orbs = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
-    od0 = ImageDraw.Draw(orbs)
-
-    orb_data = [
-        (W * .10, H * .20, 140, PURPLE),
-        (W * .90, H * .70, 140, BLUE),
-        (W * .65, H * .02, 90, PURPLE),
-    ]
-
-    for i, (ox, oy, br, oc) in enumerate(orb_data):
-        p = (
-            math.sin(
-                phase + i * math.tau / 3
-            ) + 1
-        ) / 2
-
-        r = int(
-            br * (
-                0.88 +
-                0.22 * p
-            )
-        )
-
-        for st in range(r, 0, -5):
-            od0.ellipse(
-                [
-                    ox - st,
-                    oy - st,
-                    ox + st,
-                    oy + st,
-                ],
-                fill=(
-                    *oc,
-                    _clamp(
-                        60 *
-                        (st / r) ** 2.8 *
-                        (0.7 + 0.3 * p)
-                    ),
-                ),
-            )
-
-    base = Image.alpha_composite(
-        base,
-        orbs,
-    )
-
-    # ── Aurora ──
-
-    aur = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
-    ad = ImageDraw.Draw(aur)
-
-    aurora_data = [
-        (235, 30, 2, 0.0, BLUE, 60),
-        (268, 24, 3, 2.0, PURPLE, 75),
-        (300, 18, 4, 4.0, SOFT_BLUE, 50),
-    ]
-
-    for by, amp, k, off, col, a in aurora_data:
-        pts = [
-            (
-                x,
-                by +
-                amp *
-                math.sin(
-                    math.tau * k * x / W +
-                    phase *
-                    (1 if k % 2 else -1) +
-                    off
-                ),
-            )
-            for x in range(0, W + 10, 10)
-        ]
-
-        ad.polygon(
-            pts + [
-                (W, H),
-                (0, H),
-            ],
-            fill=(
-                *col,
-                a,
-            ),
-        )
-
-    aur = aur.filter(
-        ImageFilter.GaussianBlur(6)
-    )
-
-    base = Image.alpha_composite(
-        base,
-        aur,
-    )
-
-    # ── Partikel ──
-
-    fl = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
-    fd = ImageDraw.Draw(fl)
-
-    for p in fx["stars"]:
-        y = (
-            p["y"] -
-            (idx / TOTAL_FRAMES) *
-            H *
-            p["k"] *
-            0.5
-        ) % H
-
-        x = (
-            p["x"] +
-            p["sway"] *
-            math.sin(
-                phase *
-                p["m"] +
-                p["ph"]
-            )
-        )
-
-        tw = (
-            math.sin(
-                phase *
-                p["m"] *
-                2 +
-                p["ph"]
-            ) + 1
-        ) / 2
-
-        r = p["r"]
-
-        fd.ellipse(
-            [
-                x - r,
-                y - r,
-                x + r,
-                y + r,
-            ],
-            fill=(
-                *_lerp_color(
-                    PURPLE,
-                    BLUE,
-                    tw,
-                ),
-                _clamp(
-                    p["a"] *
-                    (0.45 + 0.55 * tw)
-                ),
-            ),
-        )
-
-    for p in fx["sparkles"]:
-        tw = (
-            math.sin(
-                phase *
-                p["m"] +
-                p["ph"]
-            ) + 1
-        ) / 2
-
-        sz = p["s"] * (
-            0.35 + 0.65 * tw
-        )
-
-        x, y = p["x"], p["y"]
-        q = sz * 0.25
-
-        fd.polygon(
-            [
-                (x, y - sz),
-                (x + q, y - q),
-                (x + sz, y),
-                (x + q, y + q),
-                (x, y + sz),
-                (x - q, y + q),
-                (x - sz, y),
-                (x - q, y - q),
-            ],
-            fill=(
-                *_lerp_color(
-                    SOFT_BLUE,
-                    SOFT_PURPLE,
-                    tw,
-                ),
-                _clamp(
-                    70 + 185 * tw
-                ),
-            ),
-        )
-
-    for b in fx["bubbles"]:
-        y = (
-            b["y0"] -
-            (idx / TOTAL_FRAMES) *
-            H *
-            b["speed"]
-        ) % H
-
-        x = (
-            b["x"] +
-            b["sway"] *
-            math.sin(
-                phase *
-                b["speed"] +
-                b["phase"]
-            )
-        )
-
-        r = b["r"]
-
-        a = _clamp(
-            70 +
-            90 *
-            (
-                1 +
-                math.sin(
-                    phase * 2 +
-                    b["phase"]
-                )
-            ) / 2
-        )
-
-        fd.ellipse(
-            [
-                x - r,
-                y - r,
-                x + r,
-                y + r,
-            ],
-            outline=(
-                255,
-                255,
-                255,
-                a,
-            ),
-            width=1,
-        )
-
-        fd.ellipse(
-            [
-                x - r * .35,
-                y - r * .35,
-                x + r * .1,
-                y + r * .1,
-            ],
-            fill=(
-                255,
-                255,
-                255,
-                a,
-            ),
-        )
-
-    base = Image.alpha_composite(
-        base,
-        fl,
-    )
-
-    # ── Card utama ──
-
-    pl = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
-    pd = ImageDraw.Draw(pl)
-
-    pd.rounded_rectangle(
-        CARD,
-        radius=30,
-        fill=(
-            *CARD_BG,
-            _clamp(
-                185 +
-                20 * pulse
-            ),
-        ),
-    )
-
-    pd.rounded_rectangle(
-        CARD,
-        radius=30,
-        outline=(
-            *PURPLE,
-            90,
-        ),
-        width=2,
-    )
-
-    pd.rounded_rectangle(
-        ZONE,
-        radius=22,
-        fill=(
-            *PURPLE,
-            38,
-        ),
-    )
-
-    pd.rounded_rectangle(
-        ZONE,
-        radius=22,
-        outline=(
-            *SOFT_PURPLE,
-            70,
-        ),
-        width=1,
-    )
-
-    # garis aksen gradasi
-    for i in range(38, 302):
-        color = _lerp_color(
-            BLUE,
-            PURPLE,
-            (i - 38) / 264,
-        )
-
-        pd.point(
-            (276, i),
-            fill=(*color, 200),
-        )
-
-        pd.point(
-            (277, i),
-            fill=(*color, 200),
-        )
-
-    base = Image.alpha_composite(
-        base,
-        pl,
-    )
-
-    # ── Avatar + orbit ──
-
-    rr = AV // 2 + 12
-    R2 = rr + 14
-
-    glow = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
-    ImageDraw.Draw(glow).ellipse(
-        [
-            AV_CX - rr - 8,
-            AV_CY - rr - 8,
-            AV_CX + rr + 8,
-            AV_CY + rr + 8,
-        ],
-        fill=(
-            *_lerp_color(
-                BLUE,
-                PURPLE,
-                pulse,
-            ),
-            _clamp(
-                60 + 50 * pulse
-            ),
-        ),
-    )
-
-    base = Image.alpha_composite(
-        base,
-        glow.filter(
-            ImageFilter.GaussianBlur(14)
-        ),
-    )
-
-    orb = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
-    od = ImageDraw.Draw(orb)
-
-    box = [
-        AV_CX - rr,
-        AV_CY - rr,
-        AV_CX + rr,
-        AV_CY + rr,
-    ]
-
-    od.ellipse(
-        box,
-        outline=(
-            255,
-            255,
-            255,
-            60,
-        ),
-        width=2,
-    )
-
-    ang = math.degrees(phase)
-
-    od.arc(
-        box,
-        ang,
-        ang + 110,
-        fill=(
-            *SOFT_BLUE,
-            255,
-        ),
-        width=5,
-    )
-
-    od.arc(
-        box,
-        ang + 180,
-        ang + 290,
-        fill=(
-            *SOFT_PURPLE,
-            255,
-        ),
-        width=5,
-    )
-
-    for i in range(6):
-        a = (
-            -phase +
-            i * math.tau / 6
-        )
-
-        px = (
-            AV_CX +
-            R2 *
-            math.cos(a)
-        )
-
-        py = (
-            AV_CY +
-            R2 *
-            math.sin(a)
-        )
-
-        rad = (
-            3 +
-            2 *
-            (
-                1 +
-                math.sin(
-                    phase * 2 + i
-                )
-            ) / 2
-        )
-
-        od.ellipse(
-            [
-                px - rad,
-                py - rad,
-                px + rad,
-                py + rad,
-            ],
-            fill=(
-                *(
-                    SOFT_BLUE
-                    if i % 2 == 0
-                    else SOFT_PURPLE
-                ),
-                230,
-            ),
-        )
-
-    base = Image.alpha_composite(
-        base,
-        orb,
-    )
-
-    base.alpha_composite(
-        avatar,
-        (
-            AV_CX - AV // 2,
-            AV_CY - AV // 2,
-        ),
-    )
-
-    # ── Teks & UI ──
-
-    tl = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
-    td = ImageDraw.Draw(tl)
-
-    f_pill = _font(
-        FONT_MEDIUM,
-        14,
-    )
-
-    f_tiny = _font(
-        FONT_LIGHT,
-        13,
-    )
-
-    f_med = _font(
-        FONT_MEDIUM,
-        18,
-    )
-
-    f_small = _font(
-        FONT_REGULAR,
-        16,
-    )
-
-    f_step = _font(
-        FONT_MEDIUM,
-        13,
-    )
-
-    def t_alpha(d):
-        lt = max(
-            0,
-            (t - d) /
-            (1.0 - d + 0.001),
-        )
-
-        return _clamp(
-            255 *
-            _ease_out(
-                min(
-                    lt * 2.5,
-                    1.0,
-                )
-            )
-        )
-
-    def slide(d, mx=16):
-        lt = max(
-            0,
-            (t - d) /
-            (1.0 - d + 0.001),
-        )
-
-        return int(
-            mx *
-            (
-                1 -
-                _ease_out(
-                    min(
-                        lt * 2.5,
-                        1.0,
-                    )
-                )
-            )
-        )
-
-    # label
-    la = t_alpha(0.05)
-
-    lw = int(
-        td.textlength(
-            "MURID BARU",
-            font=f_tiny,
-        )
-    ) + 30
-
-    td.rounded_rectangle(
-        [
-            AV_CX - lw // 2,
-            262,
-            AV_CX + lw // 2,
-            286,
-        ],
-        radius=12,
-        fill=(
-            *PURPLE,
-            _clamp(la * 0.35),
-        ),
-        outline=(
-            *SOFT_PURPLE,
-            _clamp(la * 0.8),
-        ),
-        width=1,
-    )
-
-    td.text(
-        (AV_CX, 274),
-        "MURID BARU",
-        font=f_tiny,
-        fill=(
-            255,
-            255,
-            255,
-            la,
-        ),
-        anchor="mm",
-    )
-
-    # baris atas
-    a = t_alpha(0.0)
-    dy = slide(0.0)
-
-    pw = int(
-        td.textlength(
-            "SELAMAT DATANG",
-            font=f_pill,
-        )
-    ) + 36
-
-    td.rounded_rectangle(
-        [
-            RX0,
-            52 + dy,
-            RX0 + pw,
-            80 + dy,
-        ],
-        radius=14,
-        fill=(
-            *PURPLE,
-            _clamp(a * 0.85),
-        ),
-    )
-
-    td.text(
-        (
-            RX0 + pw / 2,
-            66 + dy,
-        ),
-        "SELAMAT DATANG",
-        font=f_pill,
-        fill=(
-            255,
-            255,
-            255,
-            a,
-        ),
-        anchor="mm",
-    )
-
-    td.text(
-        (RX1, 66 + dy),
-        "nanZ Server",
-        font=f_tiny,
-        fill=(
-            *SOFT_PURPLE,
-            _clamp(a * 0.9),
-        ),
-        anchor="rm",
-    )
-
-    # nama
-    f_name, name_fit = _fit_font(
-        td,
-        name,
-        FONT_BOLD,
-        46,
-        RX1 - RX0,
-    )
-
-    td.text(
-        (
-            RX0,
-            122 + slide(0.1),
-        ),
-        name_fit,
-        font=f_name,
-        fill=(
-            255,
-            255,
-            255,
-            t_alpha(0.1),
-        ),
-        anchor="lm",
-    )
-
-    td.text(
-        (
-            RX0,
-            166 + slide(0.18),
-        ),
-        "Verifikasi kamu sudah masuk.",
-        font=f_med,
-        fill=(
-            *SOFT_BLUE,
-            t_alpha(0.18),
-        ),
-        anchor="lm",
-    )
-
-    # divider
-    dp = _ease_out(
-        min(
-            max(
-                0,
-                (t - 0.2) * 3,
-            ),
-            1.0,
-        )
-    )
-
-    for i in range(
-        int(
-            (RX1 - RX0) * dp
-        )
-    ):
-        td.line(
-            [
-                (RX0 + i, 194),
-                (RX0 + i, 195),
-            ],
-            fill=(
-                *_lerp_color(
-                    PURPLE,
-                    BLUE,
-                    i / (RX1 - RX0),
-                ),
-                170,
-            ),
-        )
-
-    # stepper
-    a = t_alpha(0.28)
-
-    ny = 232
-
-    n1 = RX0 + 24
-    n2 = (RX0 + RX1) // 2
-    n3 = RX1 - 24
-
-    td.line(
-        [
-            (n1, ny),
-            (n3, ny),
-        ],
-        fill=(
-            255,
-            255,
-            255,
-            _clamp(a * 0.16),
-        ),
-        width=4,
-    )
-
-    for x in range(n1, n2):
-        td.line(
-            [(x, ny), (x, ny)],
-            fill=(
-                *_lerp_color(
-                    BLUE,
-                    PURPLE,
-                    (x - n1) /
-                    (n3 - n1),
-                ),
-                a,
-            ),
-            width=4,
-        )
-
-    seg = 64
-
-    pos = (
-        n2 -
-        seg +
-        (
-            idx /
-            TOTAL_FRAMES
-        ) *
-        (
-            n3 -
-            n2 +
-            seg
-        )
-    )
-
-    for x in range(
-        int(max(n2, pos)),
-        int(min(n3, pos + seg)),
-    ):
-        edge = min(
-            x - pos,
-            pos + seg - x,
-        ) / (seg / 2)
-
-        td.line(
-            [(x, ny), (x, ny)],
-            fill=(
-                *_lerp_color(
-                    PURPLE,
-                    SOFT_PURPLE,
-                    edge,
-                ),
-                _clamp(
-                    a *
-                    min(
-                        1,
-                        edge * 1.4,
-                    )
-                ),
-            ),
-            width=4,
-        )
-
-    td.ellipse(
-        [
-            n1 - 11,
-            ny - 11,
-            n1 + 11,
-            ny + 11,
-        ],
-        fill=(
-            *BLUE,
-            a,
-        ),
-    )
-
-    td.line(
-        [
-            (n1 - 5, ny),
-            (n1 - 1, ny + 4),
-            (n1 + 6, ny - 4),
-        ],
-        fill=(
-            255,
-            255,
-            255,
-            a,
-        ),
-        width=3,
-    )
-
-    hr = 13 + 6 * pulse
-
-    td.ellipse(
-        [
-            n2 - hr,
-            ny - hr,
-            n2 + hr,
-            ny + hr,
-        ],
-        outline=(
-            *SOFT_PURPLE,
-            _clamp(
-                a *
-                (
-                    0.9 -
-                    0.6 * pulse
-                )
-            ),
-        ),
-        width=2,
-    )
-
-    td.ellipse(
-        [
-            n2 - 11,
-            ny - 11,
-            n2 + 11,
-            ny + 11,
-        ],
-        fill=(
-            *PURPLE,
-            a,
-        ),
-    )
-
-    td.ellipse(
-        [
-            n2 - 4,
-            ny - 4,
-            n2 + 4,
-            ny + 4,
-        ],
-        fill=(
-            255,
-            255,
-            255,
-            a,
-        ),
-    )
-
-    td.ellipse(
-        [
-            n3 - 11,
-            ny - 11,
-            n3 + 11,
-            ny + 11,
-        ],
-        outline=(
-            255,
-            255,
-            255,
-            _clamp(a * 0.4),
-        ),
-        width=3,
-    )
-
-    sa = t_alpha(0.33)
-
-    td.text(
-        (n1, ny + 26),
-        "Terkirim",
-        font=f_step,
-        fill=(
-            *SOFT_BLUE,
-            sa,
-        ),
-        anchor="mm",
-    )
-
-    td.text(
-        (n2, ny + 26),
-        "Diproses",
-        font=f_step,
-        fill=(
-            255,
-            255,
-            255,
-            sa,
-        ),
-        anchor="mm",
-    )
-
-    td.text(
-        (n3, ny + 26),
-        "Selesai",
-        font=f_step,
-        fill=(
-            255,
-            255,
-            255,
-            _clamp(sa * 0.45),
-        ),
-        anchor="mm",
-    )
-
-    td.text(
-        (
-            RX0,
-            286 + slide(
-                0.42,
-                12,
-            ),
-        ),
-        "Mohon tunggu staff memproses ya.",
-        font=f_small,
-        fill=(
-            215,
-            215,
-            240,
-            t_alpha(0.42),
-        ),
-        anchor="lm",
-    )
-
-    # ── Shimmer ──
-
-    sh = Image.new(
-        "RGBA",
-        (W, H),
-        (0, 0, 0, 0),
-    )
-
-    sd = ImageDraw.Draw(sh)
-
-    sp = int(
-        (
-            idx /
-            TOTAL_FRAMES
-        ) *
-        (W + 300)
-    ) - 150
-
-    for k in range(-24, 25):
-        sd.line(
-            [
-                (
-                    sp + k + 60,
-                    0,
-                ),
-                (
-                    sp + k - 60,
-                    H,
-                ),
-            ],
-            fill=(
-                255,
-                255,
-                255,
-                _clamp(
-                    26 *
-                    (
-                        1 -
-                        abs(k) / 24
-                    )
-                ),
-            ),
-            width=2,
-        )
-
-    cm = Image.new(
-        "L",
-        (W, H),
-        0,
-    )
-
-    ImageDraw.Draw(cm).rounded_rectangle(
-        CARD,
-        radius=30,
-        fill=255,
-    )
-
-    sh.putalpha(
-        Image.composite(
-            sh.getchannel("A"),
-            Image.new(
-                "L",
-                (W, H),
-                0,
-            ),
-            cm,
-        )
-    )
-
-    base = Image.alpha_composite(
-        base,
-        sh,
-    )
-
-    base = Image.alpha_composite(
-        base,
-        tl,
-    )
-
-    return base.convert("RGB")
-
-
-def generate_verify_gif(
-    avatar_bytes: bytes,
-    name: str,
-) -> bytes:
-
-    avatar = _prepare_avatar(
-        avatar_bytes
-    )
-
-    fx = _make_fx()
-
-    frames = []
-
-    for i in range(TOTAL_FRAMES):
-        frame = _render_frame(
-            i,
-            avatar,
-            name,
-            fx,
-        )
-
-        frames.append(
-            frame.quantize(
-                colors=256,
-                method=Image.Quantize.MEDIANCUT,
-                dither=1,
-            )
-        )
-
-    out = io.BytesIO()
-
-    frames[0].save(
-        out,
-        format="GIF",
-        save_all=True,
-        append_images=frames[1:],
-        loop=0,
-        duration=FPS_DELAY * 10,
-        optimize=True,
-        disposal=2,
-    )
-
-    return out.getvalue()
-
-
-# ══════════════════════════════════════════════
-#  CONFIG VERIFIKASI
-# ══════════════════════════════════════════════
+# ============================================================
+# CONFIG
+# ============================================================
+
+VERIF_CHANNEL_ID = 1486913580161962054
+MEMBER_ROLE_ID = 1453095603008442510
+MOD_DC_ROLE_ID = 1555556260269527151
+PEMBINA_OSIS_ROLE_ID = 1467360501745844446
+OSIS_ROLE_ID = 1427276194876751902
 
 VOICE_VERIF_CHANNEL_IDS = [
     1518251174149750906,
@@ -1303,501 +34,512 @@ VOICE_VERIF_CHANNEL_IDS = [
     1486913650374738030,
 ]
 
-ENGAGEMENT_CHANNEL_ID = 1525136678442893352
+# Persistent custom IDs: do not change them if existing welcome messages
+# should continue responding after a deployment.
+WELCOME_DATA_CUSTOM_ID = "nanz_welcome_data_verif"
+WELCOME_VOICE_CUSTOM_ID = "nanz_welcome_join_voice_verif"
+JOIN_VOICE_CUSTOM_ID = "nanz_join_voice_verif_after_data"
+
+FONT_BOLD = "fonts/LEMONMILK-Bold.otf"
+FONT_MEDIUM = "fonts/LEMONMILK-Medium.otf"
+FONT_REGULAR = "fonts/LEMONMILK-Regular.otf"
+FONT_LIGHT = "fonts/LEMONMILK-Light.otf"
+FONT_FALLBACKS = (
+    "DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "arial.ttf",
+)
+
+W, H = 800, 340
+FRAME_COUNT = 30
+FRAME_DURATION_MS = 80
+BG_TOP = (18, 10, 45)
+BG_BOTTOM = (40, 20, 80)
+PURPLE = (130, 80, 255)
+BLUE = (80, 180, 255)
+SOFT_PURPLE = (160, 120, 255)
+SOFT_BLUE = (150, 210, 255)
+CARD_BG = (30, 15, 65)
+CARD = (20, 20, 780, 320)
+AVATAR_SIZE = 140
+AVATAR_CENTER = (150, 146)
+TEXT_LEFT, TEXT_RIGHT = 296, 754
 
 
-# ══════════════════════════════════════════════
-#  HELPER
-# ══════════════════════════════════════════════
+# ============================================================
+# GIF HELPERS
+# ============================================================
 
-def _channel_url(
-    guild_id: int,
-    channel_id: int,
-) -> str:
-    return (
-        f"https://discord.com/channels/"
-        f"{guild_id}/{channel_id}"
+def _font(path: str, size: int) -> ImageFont.ImageFont:
+    for candidate in (path, *FONT_FALLBACKS):
+        try:
+            return ImageFont.truetype(candidate, size)
+        except (OSError, ValueError):
+            continue
+    return ImageFont.load_default()
+
+
+def _lerp(c1, c2, t: float):
+    t = max(0.0, min(1.0, t))
+    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+
+
+def _clamp(value: float, low: int = 0, high: int = 255) -> int:
+    return max(low, min(high, int(value)))
+
+
+def _ease_out(t: float) -> float:
+    t = max(0.0, min(1.0, t))
+    return 1 - (1 - t) ** 3
+
+
+def _fit_text(draw: ImageDraw.ImageDraw, text: str, font_path: str,
+              start_size: int, max_width: int, min_size: int = 22):
+    size = start_size
+    while size >= min_size:
+        font = _font(font_path, size)
+        if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+            return font, text
+        size -= 2
+    font = _font(font_path, min_size)
+    shortened = text
+    while shortened and draw.textbbox((0, 0), shortened + "…", font=font)[2] > max_width:
+        shortened = shortened[:-1]
+    return font, (shortened + "…") if shortened != text else text
+
+
+def _prepare_avatar(avatar_bytes: bytes) -> Image.Image:
+    with Image.open(io.BytesIO(avatar_bytes)) as source:
+        avatar = source.convert("RGBA").resize(
+            (AVATAR_SIZE, AVATAR_SIZE), Image.Resampling.LANCZOS
+        )
+    mask = Image.new("L", (AVATAR_SIZE, AVATAR_SIZE), 0)
+    ImageDraw.Draw(mask).ellipse((1, 1, AVATAR_SIZE - 2, AVATAR_SIZE - 2), fill=255)
+    avatar.putalpha(mask)
+    return avatar
+
+
+def _make_particles(seed: int = 42):
+    rng = random.Random(seed)
+    stars = [
+        (rng.uniform(0, W), rng.uniform(0, H), rng.uniform(1, 2.5),
+         rng.uniform(3, 12), rng.uniform(0, math.tau), rng.randint(90, 200))
+        for _ in range(65)
+    ]
+    bubbles = [
+        (rng.uniform(0, W), rng.uniform(0, H), rng.uniform(3, 7),
+         rng.choice((1, 1, 2)), rng.uniform(4, 14), rng.uniform(0, math.tau))
+        for _ in range(16)
+    ]
+    sparkles = [
+        (rng.uniform(15, W - 15), rng.uniform(12, H - 12),
+         rng.uniform(5, 10), rng.uniform(0, math.tau))
+        for _ in range(12)
+    ]
+    return stars, bubbles, sparkles
+
+
+def _render_frame(index: int, avatar: Image.Image, name: str, particles) -> Image.Image:
+    phase = math.tau * index / FRAME_COUNT
+    progress = index / max(1, FRAME_COUNT - 1)
+    pulse = (1 + math.sin(phase)) / 2
+
+    # Vertical midnight-blue/purple gradient.
+    background = Image.new("RGB", (W, H))
+    draw_bg = ImageDraw.Draw(background)
+    for y in range(H):
+        draw_bg.line((0, y, W, y), fill=_lerp(BG_TOP, BG_BOTTOM, y / H))
+    base = background.convert("RGBA")
+
+    # Soft glowing orbs.
+    orbs = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(orbs)
+    for i, (cx, cy, radius, color) in enumerate((
+        (W * .10, H * .20, 140, PURPLE),
+        (W * .90, H * .70, 140, BLUE),
+        (W * .65, H * .02, 90, PURPLE),
+    )):
+        factor = .88 + .22 * ((math.sin(phase + i * math.tau / 3) + 1) / 2)
+        r = int(radius * factor)
+        for step in range(r, 0, -7):
+            alpha = _clamp(58 * (step / r) ** 2.7)
+            od.ellipse((cx-step, cy-step, cx+step, cy+step), fill=(*color, alpha))
+    base = Image.alpha_composite(base, orbs.filter(ImageFilter.GaussianBlur(2)))
+
+    # Floating stars, sparkles, and bubbles.
+    stars, bubbles, sparkles = particles
+    fx = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(fx)
+    for x0, y0, radius, sway, offset, alpha in stars:
+        y = (y0 - progress * H * .45) % H
+        x = x0 + sway * math.sin(phase + offset)
+        twinkle = (math.sin(phase * 2 + offset) + 1) / 2
+        fd.ellipse((x-radius, y-radius, x+radius, y+radius),
+                   fill=(*_lerp(PURPLE, BLUE, twinkle), _clamp(alpha * (.45 + .55 * twinkle))))
+    for x0, y0, size, offset in sparkles:
+        twinkle = (math.sin(phase * 2 + offset) + 1) / 2
+        s = size * (.35 + .65 * twinkle)
+        q = s * .25
+        fd.polygon(((x0, y0-s), (x0+q, y0-q), (x0+s, y0), (x0+q, y0+q),
+                    (x0, y0+s), (x0-q, y0+q), (x0-s, y0), (x0-q, y0-q)),
+                   fill=(*_lerp(SOFT_BLUE, SOFT_PURPLE, twinkle), _clamp(70 + 185 * twinkle)))
+    for x0, y0, radius, speed, sway, offset in bubbles:
+        y = (y0 - progress * H * speed) % H
+        x = x0 + sway * math.sin(phase * speed + offset)
+        alpha = _clamp(65 + 90 * ((math.sin(phase * 2 + offset) + 1) / 2))
+        fd.ellipse((x-radius, y-radius, x+radius, y+radius), outline=(255, 255, 255, alpha), width=1)
+    base = Image.alpha_composite(base, fx)
+
+    # Main card and left avatar panel.
+    panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(panel)
+    pd.rounded_rectangle(CARD, radius=30, fill=(*CARD_BG, _clamp(185 + 20 * pulse)),
+                         outline=(*PURPLE, 110), width=2)
+    zone = (38, 38, 262, 302)
+    pd.rounded_rectangle(zone, radius=22, fill=(*PURPLE, 38), outline=(*SOFT_PURPLE, 80), width=1)
+    for y in range(38, 302):
+        color = _lerp(BLUE, PURPLE, (y - 38) / 264)
+        pd.line((276, y, 277, y), fill=(*color, 210), width=1)
+    base = Image.alpha_composite(base, panel)
+
+    # Avatar glow and rotating rings.
+    cx, cy = AVATAR_CENTER
+    ring = AVATAR_SIZE // 2 + 12
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse((cx-ring-8, cy-ring-8, cx+ring+8, cy+ring+8),
+                                 fill=(*_lerp(BLUE, PURPLE, pulse), _clamp(60 + 50 * pulse)))
+    base = Image.alpha_composite(base, glow.filter(ImageFilter.GaussianBlur(14)))
+    orbit = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(orbit)
+    ring_box = (cx-ring, cy-ring, cx+ring, cy+ring)
+    od.ellipse(ring_box, outline=(255, 255, 255, 65), width=2)
+    angle = math.degrees(phase)
+    od.arc(ring_box, angle, angle + 110, fill=(*SOFT_BLUE, 255), width=5)
+    od.arc(ring_box, angle + 180, angle + 290, fill=(*SOFT_PURPLE, 255), width=5)
+    for i in range(6):
+        a = -phase + i * math.tau / 6
+        px, py = cx + (ring + 14) * math.cos(a), cy + (ring + 14) * math.sin(a)
+        r = 3 + 2 * ((math.sin(phase * 2 + i) + 1) / 2)
+        col = SOFT_BLUE if i % 2 == 0 else SOFT_PURPLE
+        od.ellipse((px-r, py-r, px+r, py+r), fill=(*col, 230))
+    base = Image.alpha_composite(base, orbit)
+    base.alpha_composite(avatar, (cx - AVATAR_SIZE // 2, cy - AVATAR_SIZE // 2))
+
+    # Typography and progress indicator.
+    text_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    td = ImageDraw.Draw(text_layer)
+    def alpha(delay: float) -> int:
+        local = max(0.0, (progress - delay) / (1 - delay + .001))
+        return _clamp(255 * _ease_out(min(local * 2.5, 1)))
+    def slide(delay: float, amount: int = 16) -> int:
+        local = max(0.0, (progress - delay) / (1 - delay + .001))
+        return int(amount * (1 - _ease_out(min(local * 2.5, 1))))
+
+    label_font = _font(FONT_LIGHT, 13)
+    label = "MURID BARU"
+    label_width = int(td.textlength(label, font=label_font)) + 30
+    td.rounded_rectangle((cx-label_width//2, 262, cx+label_width//2, 286), radius=12,
+                         fill=(*PURPLE, _clamp(alpha(.05) * .35)),
+                         outline=(*SOFT_PURPLE, _clamp(alpha(.05) * .8)), width=1)
+    td.text((cx, 274), label, font=label_font, fill=(255, 255, 255, alpha(.05)), anchor="mm")
+
+    a, dy = alpha(0), slide(0)
+    pill_font = _font(FONT_MEDIUM, 14)
+    pill = "SELAMAT DATANG"
+    pill_width = int(td.textlength(pill, font=pill_font)) + 36
+    td.rounded_rectangle((TEXT_LEFT, 52+dy, TEXT_LEFT+pill_width, 80+dy), radius=14,
+                         fill=(*PURPLE, _clamp(a * .85)))
+    td.text((TEXT_LEFT+pill_width/2, 66+dy), pill, font=pill_font,
+            fill=(255, 255, 255, a), anchor="mm")
+    td.text((TEXT_RIGHT, 66+dy), "nanZ Server", font=_font(FONT_LIGHT, 13),
+            fill=(*SOFT_PURPLE, _clamp(a * .9)), anchor="rm")
+
+    name_font, fitted_name = _fit_text(td, name, FONT_BOLD, 46, TEXT_RIGHT-TEXT_LEFT, 22)
+    td.text((TEXT_LEFT, 122+slide(.1)), fitted_name, font=name_font,
+            fill=(255, 255, 255, alpha(.1)), anchor="lm")
+    td.text((TEXT_LEFT, 166+slide(.18)), "Verifikasi kamu sudah masuk.",
+            font=_font(FONT_MEDIUM, 18), fill=(*SOFT_BLUE, alpha(.18)), anchor="lm")
+
+    divider_progress = _ease_out(min(max(0, (progress - .2) * 3), 1))
+    for x in range(int((TEXT_RIGHT-TEXT_LEFT) * divider_progress)):
+        td.line((TEXT_LEFT+x, 194, TEXT_LEFT+x, 195),
+                fill=(*_lerp(PURPLE, BLUE, x/(TEXT_RIGHT-TEXT_LEFT)), 170))
+
+    # Animated three-step line.
+    step_y = 232
+    n1, n2, n3 = TEXT_LEFT + 24, (TEXT_LEFT + TEXT_RIGHT)//2, TEXT_RIGHT - 24
+    td.line((n1, step_y, n3, step_y), fill=(255, 255, 255, _clamp(alpha(.28)*.16)), width=4)
+    for x in range(n1, n2):
+        td.line((x, step_y, x, step_y), fill=(*_lerp(BLUE, PURPLE, (x-n1)/(n3-n1)), alpha(.28)), width=4)
+    seg = 64
+    pos = n2 - seg + progress * (n3 - n2 + seg)
+    for x in range(int(max(n2, pos)), int(min(n3, pos+seg))):
+        edge = min(x-pos, pos+seg-x) / (seg/2)
+        td.line((x, step_y, x, step_y), fill=(*_lerp(PURPLE, SOFT_PURPLE, edge),
+                _clamp(alpha(.28)*min(1, edge*1.4))), width=4)
+    td.ellipse((n1-11, step_y-11, n1+11, step_y+11), fill=(*BLUE, alpha(.28)))
+    td.line((n1-5, step_y, n1-1, step_y+4, n1+6, step_y-4), fill=(255,255,255,alpha(.28)), width=3)
+    hr = 13 + 6*pulse
+    td.ellipse((n2-hr, step_y-hr, n2+hr, step_y+hr),
+               outline=(*SOFT_PURPLE, _clamp(alpha(.28)*(.9-.6*pulse))), width=2)
+    td.ellipse((n2-11, step_y-11, n2+11, step_y+11), fill=(*PURPLE, alpha(.28)))
+    td.ellipse((n2-4, step_y-4, n2+4, step_y+4), fill=(255,255,255,alpha(.28)))
+    td.ellipse((n3-11, step_y-11, n3+11, step_y+11), outline=(255,255,255,_clamp(alpha(.28)*.4)), width=3)
+    step_font = _font(FONT_MEDIUM, 13)
+    td.text((n1, step_y+26), "Terkirim", font=step_font, fill=(*SOFT_BLUE, alpha(.33)), anchor="mm")
+    td.text((n2, step_y+26), "Diproses", font=step_font, fill=(255,255,255,alpha(.33)), anchor="mm")
+    td.text((n3, step_y+26), "Selesai", font=step_font, fill=(255,255,255,_clamp(alpha(.33)*.45)), anchor="mm")
+    td.text((TEXT_LEFT, 286+slide(.42, 12)), "Mohon tunggu staff memproses ya.",
+            font=_font(FONT_REGULAR, 16), fill=(215,215,240,alpha(.42)), anchor="lm")
+
+    # Subtle shimmer clipped to the card.
+    shimmer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shimmer)
+    sp = int(progress * (W + 300)) - 150
+    for k in range(-24, 25):
+        sd.line((sp+k+60, 0, sp+k-60, H),
+                fill=(255,255,255,_clamp(24*(1-abs(k)/24)),), width=2)
+    mask = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(CARD, radius=30, fill=255)
+    shimmer.putalpha(Image.composite(shimmer.getchannel("A"), Image.new("L", (W,H),0), mask))
+    base = Image.alpha_composite(base, shimmer)
+    base = Image.alpha_composite(base, text_layer)
+    return base.convert("RGB")
+
+
+def generate_verify_gif(avatar_bytes: bytes, name: str) -> bytes:
+    """Render a short looping welcome GIF; call this in an executor thread."""
+    avatar = _prepare_avatar(avatar_bytes)
+    particles = _make_particles()
+    frames = [_render_frame(i, avatar, name, particles) for i in range(FRAME_COUNT)]
+    output = io.BytesIO()
+    frames[0].save(
+        output,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        loop=0,
+        duration=FRAME_DURATION_MS,
+        optimize=True,
+        disposal=2,
     )
+    return output.getvalue()
 
 
-async def _select_verif_voice(
-    guild: discord.Guild,
-    member: discord.Member,
-):
+# ============================================================
+# VOICE HELPERS
+# ============================================================
 
+def _channel_url(guild_id: int, channel_id: int) -> str:
+    return f"https://discord.com/channels/{guild_id}/{channel_id}"
+
+
+async def _select_verif_voice(guild: discord.Guild, member: discord.Member):
     channels = []
-
     for channel_id in VOICE_VERIF_CHANNEL_IDS:
         channel = guild.get_channel(channel_id)
-
-        if isinstance(
-            channel,
-            (
-                discord.VoiceChannel,
-                discord.StageChannel,
-            ),
-        ):
+        if isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
             channels.append(channel)
-
     if not channels:
         return None
-
-    # Prioritas voice kosong
     for channel in channels:
-        other_members = [
-            m
-            for m in channel.members
-            if m.id != member.id
-        ]
-
-        if not other_members:
+        if not any(m.id != member.id for m in channel.members):
             return channel
-
-    # Kalau semua berisi member
     return channels[0]
 
 
-# ══════════════════════════════════════════════
-#  JOIN VOICE VIEW
-# ══════════════════════════════════════════════
-
-class JoinVoiceVerifView(discord.ui.View):
-    """
-    Persistent View.
-
-    View ini tetap aktif setelah bot restart
-    karena timeout=None + custom_id tetap.
-    """
-
-    def __init__(self, bot):
-        super().__init__(timeout=None)
-        self.bot = bot
-
-    @discord.ui.button(
-        label="Join Voice Verif",
-        style=discord.ButtonStyle.primary,
-        custom_id="nanz_join_voice_verif_after_data",
-    )
-    async def join_voice(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-        await handle_voice_verif_interaction(
-            interaction
-        )
-
-
-# ══════════════════════════════════════════════
-#  VOICE VERIF HANDLER
-# ══════════════════════════════════════════════
-
-async def handle_voice_verif_interaction(
-    interaction: discord.Interaction,
-):
-
+async def handle_voice_verif_interaction(interaction: discord.Interaction):
     guild = interaction.guild
     member = interaction.user
-
-    # Validasi cepat sebelum defer
-    if (
-        guild is None
-        or not isinstance(
-            member,
-            discord.Member,
-        )
-    ):
+    if guild is None or not isinstance(member, discord.Member):
         return await interaction.response.send_message(
-            "Verifikasi voice hanya bisa digunakan di dalam server.",
-            ephemeral=True,
+            "Verifikasi voice hanya bisa digunakan di dalam server.", ephemeral=True
         )
 
-    target = await _select_verif_voice(
-        guild,
-        member,
-    )
-
+    # Acknowledge first so the interaction does not expire while checking/moving.
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    target = await _select_verif_voice(guild, member)
     if target is None:
-        return await interaction.response.send_message(
-            "Voice verifikasi sedang tidak tersedia. Silakan hubungi staff.",
-            ephemeral=True,
+        return await interaction.followup.send(
+            "Voice verifikasi sedang tidak tersedia. Silakan hubungi staff.", ephemeral=True
         )
 
-    # ══════════════════════════════════════
-    # PENTING:
-    # ACK INTERACTION SEBELUM API CALL
-    # ══════════════════════════════════════
-
-    await interaction.response.defer(
-        ephemeral=True
-    )
-
-    # ══════════════════════════════════════
-    # MEMBER SUDAH DI VOICE
-    # ══════════════════════════════════════
-
-    if (
-        member.voice
-        and member.voice.channel
-    ):
-
-        try:
-            await member.move_to(
-                target,
-                reason="nanZ Verification Voice",
+    if member.voice and member.voice.channel:
+        if member.voice.channel.id == target.id:
+            return await interaction.followup.send(
+                f"Kamu sudah berada di **{target.name}**. Tunggu staff melakukan konfirmasi.",
+                ephemeral=True,
             )
-
+        try:
+            await member.move_to(target, reason="nanZ Verification Voice")
         except discord.Forbidden:
             return await interaction.followup.send(
                 "Bot tidak memiliki izin untuk memindahkan member ke voice verifikasi.",
                 ephemeral=True,
             )
-
-        except discord.HTTPException:
+        except discord.HTTPException as exc:
+            print(f"[VerifyGreeting][user={member.id}] move voice gagal: {exc}")
             return await interaction.followup.send(
-                "Gagal memindahkan kamu ke voice verifikasi. Coba lagi.",
-                ephemeral=True,
+                "Gagal memindahkan kamu ke voice verifikasi. Coba lagi.", ephemeral=True
             )
-
-        engagement = guild.get_channel(
-            ENGAGEMENT_CHANNEL_ID
-        )
-
-        embed = discord.Embed(
-            title="Member Masuk Voice Verifikasi",
-            description=(
-                f"{member.mention} sudah berada di "
-                f"**{target.name}**.\n"
-                "Staff dapat masuk ke voice tersebut "
-                "untuk konfirmasi data."
-            ),
-            color=0x5865F2,
-        )
-
-        embed.add_field(
-            name="Member",
-            value=(
-                f"{member.mention}\n"
-                f"`{member.id}`"
-            ),
-            inline=True,
-        )
-
-        embed.add_field(
-            name="Voice",
-            value=f"<#{target.id}>",
-            inline=True,
-        )
-
-        embed.set_thumbnail(
-            url=member.display_avatar.url
-        )
-
-        staff_view = discord.ui.View(
-            timeout=None
-        )
-
-        staff_view.add_item(
-            discord.ui.Button(
-                label="Masuk Voice",
-                style=discord.ButtonStyle.link,
-                url=_channel_url(
-                    guild.id,
-                    target.id,
-                ),
-            )
-        )
-
-        if engagement:
-            try:
-                await engagement.send(
-                    embed=embed,
-                    view=staff_view,
-                    allowed_mentions=discord.AllowedMentions(
-                        users=True
-                    ),
-                )
-
-            except discord.HTTPException as e:
-                print(
-                    f"[VerifySystem] gagal kirim "
-                    f"notifikasi engagement: {e}"
-                )
-
+        # The VerifySystem cog's on_voice_state_update listener is the only
+        # source of staff arrival notifications, preventing duplicate notices.
         return await interaction.followup.send(
-            (
-                f"Kamu diarahkan ke **{target.name}**. "
-                "Tunggu staff melakukan konfirmasi."
-            ),
+            f"Kamu diarahkan ke **{target.name}**. Tunggu staff melakukan konfirmasi.",
             ephemeral=True,
         )
 
-    # ══════════════════════════════════════
-    # MEMBER BELUM DI VOICE
-    # ══════════════════════════════════════
-
-    view = discord.ui.View(
-        timeout=None
-    )
-
-    view.add_item(
-        discord.ui.Button(
-            label=f"Join {target.name}",
-            style=discord.ButtonStyle.link,
-            url=_channel_url(
-                guild.id,
-                target.id,
-            ),
-        )
-    )
-
+    link_view = discord.ui.View(timeout=60)
+    link_view.add_item(discord.ui.Button(
+        label=f"Join {target.name}", style=discord.ButtonStyle.link,
+        url=_channel_url(guild.id, target.id),
+    ))
     return await interaction.followup.send(
-        (
-            "Kamu belum berada di voice.\n"
-            f"Klik **Join {target.name}** untuk masuk "
-            "ke voice verifikasi. Setelah kamu masuk, "
-            "gunakan tombol **Join Voice Verif** lagi "
-            "jika bot belum memindahkanmu otomatis."
-        ),
-        view=view,
+        "Kamu belum berada di voice. Klik tombol di bawah untuk masuk. "
+        "Setelah masuk, sistem akan memberi tahu staff secara otomatis.",
+        view=link_view,
         ephemeral=True,
     )
 
 
-# ══════════════════════════════════════════════
-#  WELCOME ACTION VIEW
-# ══════════════════════════════════════════════
+# ============================================================
+# PERSISTENT VIEWS
+# ============================================================
 
-class WelcomeActionView(discord.ui.View):
-    """
-    Persistent View.
-
-    Tombol:
-    - Data Verif
-    - Join Voice Verif
-
-    Tetap aktif setelah bot restart.
-    """
-
-    def __init__(self, bot):
+class JoinVoiceVerifView(discord.ui.View):
+    def __init__(self, bot: commands.Bot):
         super().__init__(timeout=None)
         self.bot = bot
 
     @discord.ui.button(
-        label="Data Verif",
-        style=discord.ButtonStyle.primary,
-        custom_id="nanz_welcome_data_verif",
+        label="Join Voice Verif", style=discord.ButtonStyle.primary,
+        custom_id=JOIN_VOICE_CUSTOM_ID,
     )
-    async def data_verif(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-
-        cog = self.bot.get_cog(
-            "VerifySystem"
-        )
-
-        if cog is None:
-            return await interaction.response.send_message(
-                "Panel verifikasi sedang tidak tersedia. Hubungi staff.",
-                ephemeral=True,
-            )
-
-        await cog.show_verification_panel(
-            interaction
-        )
-
-    @discord.ui.button(
-        label="Join Voice Verif",
-        style=discord.ButtonStyle.secondary,
-        custom_id="nanz_welcome_join_voice_verif",
-    )
-    async def voice_verif(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-
-        await handle_voice_verif_interaction(
-            interaction
-        )
+    async def join_voice(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_voice_verif_interaction(interaction)
 
 
-# ══════════════════════════════════════════════
-#  COG
-# ══════════════════════════════════════════════
-
-class VerifyGreeting(commands.Cog):
-
-    def __init__(self, bot):
+class WelcomeActionView(discord.ui.View):
+    def __init__(self, bot: commands.Bot):
+        super().__init__(timeout=None)
         self.bot = bot
 
-        # CHANNEL VERIF
-        self.VERIF_CHANNEL_ID = (
-            1486913580161962054
-        )
+    @discord.ui.button(
+        label="Data Verif", style=discord.ButtonStyle.primary,
+        custom_id=WELCOME_DATA_CUSTOM_ID,
+    )
+    async def data_verif(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cog = self.bot.get_cog("VerifySystem")
+        if cog is None:
+            return await interaction.response.send_message(
+                "Panel verifikasi sedang tidak tersedia. Coba beberapa saat lagi atau hubungi staff.",
+                ephemeral=True,
+            )
+        try:
+            await cog.show_verification_panel(interaction)
+        except Exception as exc:
+            print(f"[VerifyGreeting][user={interaction.user.id}] panel verifikasi gagal: {exc}")
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "Panel verifikasi gagal dibuka. Silakan coba lagi.", ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "Panel verifikasi gagal dibuka. Silakan coba lagi.", ephemeral=True
+                )
 
-        # ROLE MEMBER
-        self.MEMBER_ROLE_ID = (
-            1453095603008442510
-        )
+    @discord.ui.button(
+        label="Join Voice Verif", style=discord.ButtonStyle.secondary,
+        custom_id=WELCOME_VOICE_CUSTOM_ID,
+    )
+    async def voice_verif(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await handle_voice_verif_interaction(interaction)
 
-        # ROLE STAFF
-        self.MOD_DC_ROLE_ID = (
-            1555556260269527151
-        )
 
-        self.PEMBINA_OSIS_ROLE_ID = (
-            1467360501745844446
-        )
+# ============================================================
+# WELCOME COG
+# ============================================================
 
-        self.OSIS_ROLE_ID = (
-            1427276194876751902
-        )
-
-        self.already_greeted = set()
-
-    # ══════════════════════════════════════
-    # ON MESSAGE
-    # ══════════════════════════════════════
+class VerifyGreeting(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self._greeted_this_session: set[tuple[int, int]] = set()
+        self._greeting_locks: dict[tuple[int, int], asyncio.Lock] = {}
 
     @commands.Cog.listener()
-    async def on_message(
-        self,
-        message: discord.Message,
-    ):
-
-        if message.author.bot:
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or message.guild is None:
             return
-
-        if (
-            message.channel.id
-            != self.VERIF_CHANNEL_ID
-        ):
+        if message.channel.id != VERIF_CHANNEL_ID:
+            return
+        if not isinstance(message.author, discord.Member):
             return
 
         member = message.author
-
-        if any(
-            role.id == self.MEMBER_ROLE_ID
-            for role in member.roles
-        ):
+        if any(role.id == MEMBER_ROLE_ID for role in member.roles):
             return
 
-        if member.id in self.already_greeted:
-            return
+        key = (message.guild.id, member.id)
+        lock = self._greeting_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            if key in self._greeted_this_session:
+                return
+            self._greeted_this_session.add(key)
 
-        self.already_greeted.add(
-            member.id
-        )
-
-        # ══════════════════════════════════
-        # WORDING GREETING
-        # ══════════════════════════════════
-
-        content = (
-            "<a:welcome:1553703629880299610> "
-            "**Murid Baru tiba!**\n"
-            f"Selamat datang di **nanZ Server**, "
-            f"{member.mention}!\n"
-            f"|| <@&{self.MOD_DC_ROLE_ID}> "
-            f"<@&{self.PEMBINA_OSIS_ROLE_ID}> "
-            f"<@&{self.OSIS_ROLE_ID}> ||"
-        )
-
-        # ══════════════════════════════════
-        # GENERATE GIF
-        # ══════════════════════════════════
-
-        try:
-            avatar_bytes = await (
-                member.display_avatar
-                .replace(
-                    size=256,
-                    format="png",
+            try:
+                avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
+                loop = asyncio.get_running_loop()
+                gif_bytes = await loop.run_in_executor(
+                    None, generate_verify_gif, avatar_bytes, member.display_name
                 )
-                .read()
+            except Exception as exc:
+                print(f"[VerifyGreeting][user={member.id}] gagal membuat GIF: {exc}")
+                self._greeted_this_session.discard(key)
+                return
+
+            # Keep the small delay from the original welcome behavior.
+            await asyncio.sleep(2)
+            content = (
+                "<a:welcome:1553703629880299610> **Murid Baru tiba!**\n"
+                f"Selamat datang di **nanZ Server**, {member.mention}!\n"
+                f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||"
             )
+            try:
+                await message.channel.send(
+                    content=content,
+                    file=discord.File(io.BytesIO(gif_bytes), filename="verify_welcome.gif"),
+                    view=WelcomeActionView(self.bot),
+                    allowed_mentions=discord.AllowedMentions(users=True, roles=True),
+                )
+            except discord.HTTPException as exc:
+                print(f"[VerifyGreeting][user={member.id}] gagal mengirim welcome: {exc}")
+                self._greeted_this_session.discard(key)
 
-            loop = asyncio.get_running_loop()
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        """Izinkan member mendapat greeting lagi jika keluar lalu join kembali."""
+        key = (member.guild.id, member.id)
+        self._greeted_this_session.discard(key)
 
-            gif_bytes = await loop.run_in_executor(
-                None,
-                generate_verify_gif,
-                avatar_bytes,
-                member.display_name,
-            )
+        # Hapus lock yang tidak sedang dipakai agar tidak menumpuk.
+        lock = self._greeting_locks.get(key)
+        if lock is not None and not lock.locked():
+            self._greeting_locks.pop(key, None)
 
-        except Exception as e:
-            print(
-                f"[VerifyGreeting] gagal bikin GIF: {e}"
-            )
+        print(
+            f"[VerifyGreeting][user={member.id}] status greeting direset "
+            "karena member keluar dari server."
+        )
 
-            self.already_greeted.discard(
-                member.id
-            )
-
-            return
-
-        # Delay kecil seperti versi sebelumnya
-        await asyncio.sleep(2)
-
-        # ══════════════════════════════════
-        # KIRIM WELCOME
-        # ══════════════════════════════════
-
-        try:
-            await message.channel.send(
-                content=content,
-                file=discord.File(
-                    io.BytesIO(gif_bytes),
-                    filename="verify_welcome.gif",
-                ),
-                view=WelcomeActionView(
-                    self.bot
-                ),
-                allowed_mentions=discord.AllowedMentions(
-                    users=True,
-                    roles=True,
-                ),
-            )
-
-        except discord.HTTPException as e:
-            print(
-                f"[VerifyGreeting] gagal kirim "
-                f"welcome message: {e}"
-            )
-
-            self.already_greeted.discard(
-                member.id
-            )
+    def cog_unload(self):
+        self._greeted_this_session.clear()
+        self._greeting_locks.clear()
 
 
-# ══════════════════════════════════════════════
-#  SETUP
-# ══════════════════════════════════════════════
-
-async def setup(bot):
-
-    # Load Cog
-    await bot.add_cog(
-        VerifyGreeting(bot)
-    )
-
-    # ══════════════════════════════════════
-    # REGISTER PERSISTENT VIEWS
-    # ══════════════════════════════════════
-
-    bot.add_view(
-        WelcomeActionView(bot)
-    )
-
-    bot.add_view(
-        JoinVoiceVerifView(bot)
-    )
-
-    print(
-        "[VerifyGreeting] Persistent views "
-        "registered successfully."
-    )
+async def setup(bot: commands.Bot):
+    await bot.add_cog(VerifyGreeting(bot))
+    # Register only this cog's own persistent views. Do not register these
+    # again in bot.py; that avoids duplicate dispatch registration.
+    bot.add_view(WelcomeActionView(bot))
+    bot.add_view(JoinVoiceVerifView(bot))
+    print("[VerifyGreeting] Persistent welcome views registered.")
