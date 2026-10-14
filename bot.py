@@ -94,12 +94,28 @@ async def load_cogs():
         "cogs.welcome",
     ]
 
+    required_verification_cogs = {
+        "cogs.verifygreeting",
+        "cogs.verifysystem",
+    }
+    failed_required = []
+
     for cog in cogs:
         try:
             await bot.load_extension(cog)
             print(f"Loaded: {cog.split('.')[-1]}.py")
         except Exception as exc:
             print(f"Gagal load {cog.split('.')[-1]}.py: {exc}")
+            if cog in required_verification_cogs:
+                failed_required.append(cog)
+
+    if failed_required:
+        failed_names = ", ".join(failed_required)
+        raise RuntimeError(
+            "Cog verifikasi wajib gagal dimuat: "
+            f"{failed_names}. Bot dihentikan agar tidak berjalan dengan "
+            "fitur verifikasi yang diam-diam tidak aktif."
+        )
 
 
 # ==========================================================

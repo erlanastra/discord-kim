@@ -346,7 +346,14 @@ async def mark_voice_arrival(bot, member, target):
         return
     channel = bot.get_channel(ENGAGEMENT_CHANNEL_ID)
     if channel is None:
-        print(f"[VERIFY][app={app_id}][MENUNGGU_STAFF] Engagement channel tidak ditemukan")
+        # Do not leave voice_notice_claim permanently locked if the channel is
+        # unavailable during startup/cache warm-up; a later voice event can retry.
+        await db.execute(
+            "UPDATE nanz_verification_applications "
+            "SET voice_notice_claim=NULL WHERE id=%s AND voice_notice_claim=%s AND voice_notice_sent=0",
+            app_id, token
+        )
+        print(f"[VERIFY][app={app_id}][MENUNGGU_STAFF] Engagement channel tidak ditemukan; claim dilepas untuk retry")
         return
     embed = discord.Embed(
         title='Member Menunggu Verifikasi Voice',
@@ -365,7 +372,17 @@ async def mark_voice_arrival(bot, member, target):
         )
         await db.execute("UPDATE nanz_verification_applications SET voice_notice_sent=1 WHERE id=%s AND voice_notice_claim=%s", app_id, token)
     except Exception as exc:
-        # Keep claim to avoid duplicate spam; staff can follow up manually.
+        # Release only this attempt's claim so the next valid voice event can retry.
+        # If Discord accepted the message but the DB write failed, a duplicate is
+        # possible; this is preferable to permanently losing the staff notification.
+        try:
+            await db.execute(
+                "UPDATE nanz_verification_applications "
+                "SET voice_notice_claim=NULL WHERE id=%s AND voice_notice_claim=%s AND voice_notice_sent=0",
+                app_id, token
+            )
+        except Exception as release_exc:
+            print(f"[VERIFY][app={app_id}][MENUNGGU_STAFF] Gagal melepas claim voice notice: {release_exc}")
         print(f"[VERIFY][app={app_id}][MENUNGGU_STAFF] Gagal kirim voice notice: {exc}")
 
 
@@ -4835,15 +4852,48 @@ class VerifySystem(
                 if not claim_row or claim_row.get('reminder_claim') != reminder_token:
                     continue
                 guild = self.bot.get_guild(guild_id)
-                member = guild.get_member(user_id) if guild else None
-                if guild and member is None:
+                if guild is None:
+                    # Cache/connection may not be ready just after restart. Do not
+                    # incorrectly mark a valid applicant as LEFT; release the claim
+                    # so a later worker pass can retry.
+                    await db.execute(
+                        "UPDATE nanz_verification_applications "
+                        "SET reminder_claim=NULL WHERE id=%s AND reminder_claim=%s",
+                        app_id, reminder_token
+                    )
+                    continue
+
+                member = guild.get_member(user_id)
+                if member is None:
                     try:
                         member = await guild.fetch_member(user_id)
                     except discord.NotFound:
                         member = None
+                    except (discord.Forbidden, discord.HTTPException) as exc:
+                        # A temporary fetch failure is not proof that the member left.
+                        await db.execute(
+                            "UPDATE nanz_verification_applications "
+                            "SET reminder_claim=NULL WHERE id=%s AND reminder_claim=%s",
+                            app_id, reminder_token
+                        )
+                        print(
+                            f"[VERIFY][app={app_id}][REMINDER] "
+                            f"Gagal memastikan member masih di server; akan dicoba lagi: {exc}"
+                        )
+                        continue
+
                 if member is None:
-                    await db.execute("UPDATE nanz_verification_applications SET status='LEFT',reminder_blocked=1,next_reminder_at=NULL WHERE id=%s AND status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF')", app_id)
-                    await db.execute("UPDATE nanz_verification_active SET status='LEFT' WHERE guild_id=%s AND user_id=%s AND current_app_id=%s", guild_id, user_id, app_id)
+                    await db.execute(
+                        "UPDATE nanz_verification_applications "
+                        "SET status='LEFT',reminder_blocked=1,next_reminder_at=NULL,reminder_claim=NULL "
+                        "WHERE id=%s AND reminder_claim=%s AND status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF')",
+                        app_id, reminder_token
+                    )
+                    await db.execute(
+                        "UPDATE nanz_verification_active SET status='LEFT' "
+                        "WHERE guild_id=%s AND user_id=%s AND current_app_id=%s",
+                        guild_id, user_id, app_id
+                    )
                     continue
                 if row['status'] == 'MENUNGGU_VOICE':
                     message = "Pengingat verifikasi nanZ: data kamu sudah dikirim. Silakan masuk ke Voice Verif untuk konfirmasi bersama staff."
@@ -4864,6 +4914,18 @@ class VerifySystem(
                     WHERE id=%s AND reminder_claim=%s AND status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF') AND reminder_blocked=0 AND reminder_count < 3
                 """, app_id, reminder_token)
             except Exception as exc:
+                # Avoid a permanent reminder_claim lock after transient DB/API errors.
+                try:
+                    await db.execute(
+                        "UPDATE nanz_verification_applications "
+                        "SET reminder_claim=NULL WHERE id=%s AND reminder_claim=%s",
+                        app_id, reminder_token
+                    )
+                except Exception as release_exc:
+                    print(
+                        f"[VERIFY][app={app_id}][REMINDER] "
+                        f"Gagal melepas claim pengingat: {release_exc}"
+                    )
                 print(f"[VERIFY][app={app_id}][REMINDER] Error: {exc}")
 
     @reminder_worker.before_loop
