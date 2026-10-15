@@ -73,18 +73,21 @@ class AutoReply(commands.Cog):
         # =============================================
 
         self.badwords = [
-            # anjing variants
             "anjim",
             "anjink",
             "anjing",
             "anj",
             "anjng",
+            "anjg",
             "ajg",
             "ajng",
             "ajang",
             "anjinh",
             "anding",
             "andeng",
+            "aj9",
+            "4jg",
+            "4nj1n9",
             "4nj1n9",
             "anjin9",
             "4njing",
