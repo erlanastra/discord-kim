@@ -19,6 +19,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 SETUP_CHANNEL_ID = 1509158797376229427
 # Channel tempat hasil saran diterbitkan
 SUGGESTION_CHANNEL_ID = 1554397431234564167
+# Channel log internal untuk mengetahui siapa pengirim saran
+SUGGESTION_LOG_CHANNEL_ID = 1560709492193230848
 
 # Font panel (channel 1) - sama seperti welcome card
 FONT_BOLD    = "fonts/LEMONMILK-Bold.otf"
@@ -506,6 +508,37 @@ class Suggestion(commands.Cog):
         except discord.HTTPException as e:
             print("[Saran] gagal kirim/bikin thread:", e)
             return await interaction.followup.send("❌ Gagal mengirim saran, coba lagi nanti.", ephemeral=True)
+
+        # Log internal: identitas pengirim hanya dicatat di channel log,
+        # tidak ditampilkan pada papan saran publik.
+        log_channel = self.bot.get_channel(SUGGESTION_LOG_CHANNEL_ID)
+        if log_channel is None:
+            try:
+                log_channel = await self.bot.fetch_channel(SUGGESTION_LOG_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                print(f"[Saran] channel log tidak bisa diakses: {e}")
+                log_channel = None
+
+        if log_channel is not None:
+            log_embed = discord.Embed(
+                title=f"📝 Log Saran #{nomor}",
+                color=discord.Color.blurple(),
+                timestamp=discord.utils.utcnow()
+            )
+            log_embed.add_field(
+                name="Pengirim",
+                value=f"{interaction.user.mention} (`{interaction.user}`)\\nID: `{interaction.user.id}`",
+                inline=False
+            )
+            log_embed.add_field(name="Nama yang ditampilkan", value=nama, inline=True)
+            log_embed.add_field(name="Judul", value=judul, inline=False)
+            log_embed.add_field(name="Isi saran", value=isi[:1024], inline=False)
+            log_embed.add_field(name="Papan saran", value=f"[Buka pesan saran]({msg.jump_url})", inline=True)
+            log_embed.add_field(name="Thread diskusi", value=thread.mention, inline=True)
+            try:
+                await log_channel.send(embed=log_embed)
+            except (discord.Forbidden, discord.HTTPException) as e:
+                print(f"[Saran] gagal mengirim log: {e}")
 
         self.cooldowns[interaction.user.id] = time.time()
         await interaction.followup.send(f"✅ Saranmu sudah terbit! Lihat di {thread.mention}", ephemeral=True)
