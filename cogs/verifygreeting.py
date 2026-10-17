@@ -501,10 +501,10 @@ class VerifyGreeting(commands.Cog):
             await asyncio.sleep(2)
             content = (
                 "<a:welcome:1553703629880299610> **Selamat datang di nanZ Server!**\n"
-                f"Hai {member.mention}, sebelum mulai beraktivitas, kamu wajib menyelesaikan verifikasi "
-                "agar bisa menjadi member nanZ. Tenang, kamu akan dipandu langkah demi langkah.\n"
+                f"Hi {member.mention}, sebelum mulai beraktivitas, kamu wajib menyelesaikan verifikasi "
+                "agar bisa menjadi Murid nanZ. "
                 f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||\n"
-                "```Langkah pertama bisa dimulai dari klik button Data Verif dibawah.```"
+                "```Langkah pertama verif bisa dimulai dari klik button Data Verif dibawah.```"
             )
             try:
                 await message.channel.send(
