@@ -502,16 +502,9 @@ class VerifyGreeting(commands.Cog):
             content = (
                 "<a:welcome:1553703629880299610> **Selamat datang di nanZ Server!**\n"
                 f"Hai {member.mention}, sebelum mulai beraktivitas, kamu wajib menyelesaikan verifikasi "
-                "agar bisa menjadi member nanZ. Tenang, kamu akan dipandu langkah demi langkah.\n\n"
-                "> **Alur verifikasi:**\n"
-                "> 1. Tekan **Data Verif** di bawah pesan ini.\n"
-                "> 2. Pilih platform medsos, rentang umur, dan gender.\n"
-                "> 3. Tekan **Lanjut Isi Data**, lalu isi nama, asal, dan username medsos. "
-                "> Username boleh ditulis dengan atau tanpa `@`.\n"
-                "> 4. Setelah menekan submit, tekan **Join Voice Verif** dan tunggu staff mengonfirmasi data kamu.\n"
-                "> 5. Setelah staff menyetujui, verifikasi selesai dan kamu bisa mulai beraktivitas di nanZ!\n\n"
-                "```Jangan khawatir kalau staff belum langsung datang. Bot akan mengirim pengingat lewat DM selama pengajuanmu masih menunggu. Pastikan DM dari server tidak ditutup.```\n"
-                f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||"
+                "agar bisa menjadi member nanZ. Tenang, kamu akan dipandu langkah demi langkah.\n"
+                f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||\n"
+                "```Langkah pertama bisa dimulai dari klik button Data Verif dibawah.```"
             )
             try:
                 await message.channel.send(
