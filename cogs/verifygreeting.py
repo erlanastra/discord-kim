@@ -548,17 +548,11 @@ class VerifyGreeting(commands.Cog):
                 gif_bytes = None
 
             content = (
-                "<a:welcome:1553703629880299610> **Selamat datang di nanZ Server!**\\n"
-                f"Hai {member.mention}, sebelum mulai beraktivitas, kamu **wajib menyelesaikan verifikasi**.\\n\\n"
-                "**IKUTI LANGKAH INI:**\\n"
-                "1. Tekan **Data Verif** di bawah pesan ini.\\n"
-                "2. Pilih platform medsos, rentang umur, dan gender.\\n"
-                "3. Tekan **Lanjut Isi Data**, lalu isi nama, asal, dan username medsos. "
-                "Username boleh dengan atau tanpa `@`. Setelah itu tekan submit.\\n"
-                "4. Tekan **Join Voice Verif**, lalu tunggu staff mengonfirmasi data kamu di voice.\\n"
-                "5. Setelah disetujui staff, verifikasi selesai dan kamu bisa mulai beraktivitas di nanZ.\\n\\n"
-                "Kalau staff belum langsung datang, tetap tenang dan tunggu. Bot akan mengirim pengingat melalui DM "
-                "selama pengajuanmu masih menunggu. Pastikan DM dari server terbuka."
+                "<a:welcome:1553703629880299610> **Selamat datang di nanZ Server!**\n"
+                f"Hi {member.mention}, sebelum mulai beraktivitas, kamu wajib menyelesaikan verifikasi "
+                "agar bisa menjadi Murid nanZ.\n\n"
+                "```Langkah pertama bisa dimulai dari klik button Data Verif dibawah.```\n"
+                f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||"
             )
 
             try:
