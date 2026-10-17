@@ -502,9 +502,9 @@ class VerifyGreeting(commands.Cog):
             content = (
                 "<a:welcome:1553703629880299610> **Selamat datang di nanZ Server!**\n"
                 f"Hi {member.mention}, sebelum mulai beraktivitas, kamu wajib menyelesaikan verifikasi "
-                "agar bisa menjadi Murid nanZ. "
-                f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||\n"
-                "```Langkah pertama verif bisa dimulai dari klik button Data Verif dibawah.```"
+                "agar bisa menjadi Murid nanZ.\n\n"
+                "```Langkah pertama bisa dimulai dari klik button Data Verif dibawah.```\n"
+                f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||"
             )
             try:
                 await message.channel.send(
