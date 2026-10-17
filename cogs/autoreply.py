@@ -1066,9 +1066,14 @@ class AutoReply(commands.Cog):
 
     async def _moderate_toxic_message(
         self,
-        message
+        message,
+        detected_badword=None
     ):
 
+        # Simpan teks asli sebelum pesan dihapus agar audit log lengkap.
+        original_content = (message.content or "").strip()
+        detected_badword = detected_badword or self._find_badword(original_content) or "Tidak diketahui"
+        message_id = getattr(message, "id", None)
         guild = message.guild
 
         if guild is None:
@@ -1138,9 +1143,11 @@ class AutoReply(commands.Cog):
         # HAPUS PESAN
         # =====================================================
 
+        message_deleted = False
         try:
 
             await message.delete()
+            message_deleted = True
 
             print(
                 f"[TOXIC] MESSAGE DELETED | "
@@ -1365,6 +1372,10 @@ class AutoReply(commands.Cog):
                 "at": now.isoformat(),
                 "violation": violation,
                 "channel_id": message.channel.id,
+                "message_id": message_id,
+                "detected_word": str(detected_badword)[:100],
+                "message_content": original_content[:1500],
+                "message_deleted": message_deleted,
                 "action": (
                     "warning"
                     if violation <= WARNING_LIMIT
@@ -1473,18 +1484,22 @@ class AutoReply(commands.Cog):
         # LOG MODERASI
         # =====================================================
 
+        action_text = (
+            "Warning" if violation <= WARNING_LIMIT
+            else f"Timeout {self._format_duration(duration)}"
+        )
+        safe_content = original_content[:1000] or "(pesan kosong/tidak terbaca)"
         log_embed = discord.Embed(
-            title="Catatan Moderasi Toxic",
+            title="🛡️ Laporan Moderasi Toxic NANZ",
             description=(
-                f"Member: "
-                f"{message.author.mention} "
-                f"(`{message.author.id}`)\n"
-                f"Pelanggaran: **#{violation}**\n"
-                f"Channel: "
-                f"{message.channel.mention}\n"
-                f"Tindakan: **"
-                f"{'Warning' if violation <= WARNING_LIMIT else 'Timeout'}"
-                f"**"
+                f"**Member:** {message.author.mention} (`{message.author.id}`)\n"
+                f"**Kata terdeteksi:** `{str(detected_badword)[:100]}`\n"
+                f"**Pelanggaran:** `#{violation}`\n"
+                f"**Tindakan:** **{action_text}**\n"
+                f"**Status hapus pesan:** {'Berhasil' if message_deleted else 'Gagal / tidak terhapus'}\n"
+                f"**Channel:** {message.channel.mention} (`{message.channel.id}`)\n"
+                f"**Message ID:** `{message_id}`\n\n"
+                f"**Isi chat asli:**\n```\n{safe_content.replace('```', 'ˋˋˋ')}\n```"
             ),
             color=(
                 discord.Color.orange()
@@ -1493,6 +1508,7 @@ class AutoReply(commands.Cog):
             ),
             timestamp=now
         )
+        log_embed.set_footer(text="nanZ Toxic Moderation • Audit Log")
 
         await self._send_log(
             guild,
@@ -1778,21 +1794,21 @@ class AutoReply(commands.Cog):
             # Pattern harus membentuk SELURUH badword.
             # =================================================
 
-            separator_pattern = (
-                r"(?<![a-z])"
-                + r"[^a-z0-9]*".join(
-                    re.escape(char)
-                    for char in bw_letters
+            # Jangan gunakan separator-matching untuk kata pendek: ini rawan
+            # salah deteksi pada singkatan/teks biasa. Untuk kata >= 4 huruf,
+            # setiap huruf harus dipisahkan minimal satu karakter non-alfanumerik.
+            if len(bw_letters) >= 4:
+                separator_pattern = (
+                    r"(?<![a-z])"
+                    + r"[^a-z0-9]+".join(
+                        re.escape(char)
+                        for char in bw_letters
+                    )
+                    + r"(?![a-z])"
                 )
-                + r"(?![a-z])"
-            )
 
-            if re.search(
-                separator_pattern,
-                normalized
-            ):
-
-                return bw
+                if re.search(separator_pattern, normalized):
+                    return bw
 
         return None
 
@@ -1859,7 +1875,8 @@ class AutoReply(commands.Cog):
             try:
 
                 await self._moderate_toxic_message(
-                    message
+                    message,
+                    detected_badword=detected_badword
                 )
 
             except Exception as exc:
