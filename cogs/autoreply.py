@@ -85,7 +85,6 @@ class AutoReply(commands.Cog):
             "anjinh",
             "anding",
             "andeng",
-            "aj9",
             "4jg",
             "4nj1n9",
             "4nj1n9",
