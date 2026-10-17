@@ -500,8 +500,17 @@ class VerifyGreeting(commands.Cog):
             # Keep the small delay from the original welcome behavior.
             await asyncio.sleep(2)
             content = (
-                "<a:welcome:1553703629880299610> **Murid Baru tiba!**\n"
-                f"Selamat datang di **nanZ Server**, {member.mention}!\n"
+                "<a:welcome:1553703629880299610> **Selamat datang di nanZ Server!**\n"
+                f"Hai {member.mention}, sebelum mulai beraktivitas, kamu wajib menyelesaikan verifikasi "
+                "agar bisa menjadi member nanZ. Tenang, kamu akan dipandu langkah demi langkah.\n\n"
+                "> **Alur verifikasi:**\n"
+                "> 1. Tekan **Data Verif** di bawah pesan ini.\n"
+                "> 2. Pilih platform medsos, rentang umur, dan gender.\n"
+                "> 3. Tekan **Lanjut Isi Data**, lalu isi nama, asal, dan username medsos. "
+                "> Username boleh ditulis dengan atau tanpa `@`.\n"
+                "> 4. Setelah menekan submit, tekan **Join Voice Verif** dan tunggu staff mengonfirmasi data kamu.\n"
+                "> 5. Setelah staff menyetujui, verifikasi selesai dan kamu bisa mulai beraktivitas di nanZ!\n\n"
+                "```Jangan khawatir kalau staff belum langsung datang. Bot akan mengirim pengingat lewat DM selama pengajuanmu masih menunggu. Pastikan DM dari server tidak ditutup.```\n"
                 f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||"
             )
             try:
@@ -514,6 +523,65 @@ class VerifyGreeting(commands.Cog):
             except discord.HTTPException as exc:
                 print(f"[VerifyGreeting][user={member.id}] gagal mengirim welcome: {exc}")
                 self._greeted_this_session.discard(key)
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Sambut member segera setelah join, tanpa menunggu mereka mengirim pesan."""
+        if member.bot:
+            return
+
+        channel = member.guild.get_channel(VERIF_CHANNEL_ID)
+        if channel is None or not isinstance(channel, discord.TextChannel):
+            print(
+                f"[VerifyGreeting][user={member.id}] channel verifikasi "
+                f"{VERIF_CHANNEL_ID} tidak ditemukan saat member join."
+            )
+            return
+
+        key = (member.guild.id, member.id)
+        lock = self._greeting_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            if key in self._greeted_this_session:
+                return
+
+            try:
+                avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
+                loop = asyncio.get_running_loop()
+                gif_bytes = await loop.run_in_executor(
+                    None, generate_verify_gif, avatar_bytes, member.display_name
+                )
+            except Exception as exc:
+                print(f"[VerifyGreeting][user={member.id}] gagal membuat GIF saat join: {exc}")
+                gif_bytes = None
+
+            content = (
+                "<a:welcome:1553703629880299610> **Selamat datang di nanZ Server!**\\n"
+                f"Hai {member.mention}, sebelum mulai beraktivitas, kamu **wajib menyelesaikan verifikasi**.\\n\\n"
+                "**IKUTI LANGKAH INI:**\\n"
+                "1. Tekan **Data Verif** di bawah pesan ini.\\n"
+                "2. Pilih platform medsos, rentang umur, dan gender.\\n"
+                "3. Tekan **Lanjut Isi Data**, lalu isi nama, asal, dan username medsos. "
+                "Username boleh dengan atau tanpa `@`. Setelah itu tekan submit.\\n"
+                "4. Tekan **Join Voice Verif**, lalu tunggu staff mengonfirmasi data kamu di voice.\\n"
+                "5. Setelah disetujui staff, verifikasi selesai dan kamu bisa mulai beraktivitas di nanZ.\\n\\n"
+                "Kalau staff belum langsung datang, tetap tenang dan tunggu. Bot akan mengirim pengingat melalui DM "
+                "selama pengajuanmu masih menunggu. Pastikan DM dari server terbuka."
+            )
+
+            try:
+                kwargs = {
+                    "content": content,
+                    "view": WelcomeActionView(self.bot),
+                    "allowed_mentions": discord.AllowedMentions(users=True, roles=False),
+                }
+                if gif_bytes:
+                    kwargs["file"] = discord.File(
+                        io.BytesIO(gif_bytes), filename="verify_welcome.gif"
+                    )
+                await channel.send(**kwargs)
+                self._greeted_this_session.add(key)
+            except discord.HTTPException as exc:
+                print(f"[VerifyGreeting][user={member.id}] gagal mengirim welcome saat join: {exc}")
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):

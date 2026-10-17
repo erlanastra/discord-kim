@@ -151,6 +151,15 @@ async def setup_verification_database():
     """)
     # MariaDB-safe additive migration for installations that ran an earlier draft.
     await db.execute("ALTER TABLE nanz_verification_applications ADD COLUMN IF NOT EXISTS reminder_claim VARCHAR(64) NULL")
+    # Older versions stopped reminders after three total messages. Resume those
+    # pending applications under the new recurring schedule (about every 8 hours).
+    await db.execute("""
+        UPDATE nanz_verification_applications
+        SET reminder_blocked=0, reminder_count=0,
+            next_reminder_at=DATE_ADD(NOW(), INTERVAL 8 HOUR)
+        WHERE status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF')
+          AND reminder_blocked=1 AND reminder_count >= 3
+    """)
 
     # Recover claims abandoned by a crash before an application row was created.
     await db.execute("""
@@ -215,7 +224,7 @@ async def create_application(guild_id, user_id, token, nama, asal, umur, gender,
         INSERT INTO nanz_verification_applications
         (guild_id,user_id,status,claim_token,next_reminder_at,reminder_count,reminder_blocked,
          nama,asal,umur,gender,medsos,followers,profile_url)
-        VALUES (%s,%s,'MENUNGGU_VOICE',%s,DATE_ADD(NOW(), INTERVAL 6 HOUR),0,0,%s,%s,%s,%s,%s,%s,%s)
+        VALUES (%s,%s,'MENUNGGU_VOICE',%s,DATE_ADD(NOW(), INTERVAL 8 HOUR),0,0,%s,%s,%s,%s,%s,%s,%s)
     """, guild_id, user_id, token, nama, asal, umur, gender, medsos, followers, link)
     row = await db.fetchone(
         "SELECT id FROM nanz_verification_applications WHERE claim_token=%s LIMIT 1", token
@@ -336,7 +345,7 @@ async def mark_voice_arrival(bot, member, target):
     await db.execute("""
         UPDATE nanz_verification_applications
         SET voice_notice_claim=%s,voice_channel_id=%s,status='MENUNGGU_STAFF',
-            next_reminder_at=DATE_ADD(NOW(), INTERVAL 6 HOUR)
+            next_reminder_at=DATE_ADD(NOW(), INTERVAL 8 HOUR)
         WHERE id=%s AND status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF') AND voice_notice_claim IS NULL
     """, token, target.id, app_id)
     row = await db.fetchone(
@@ -1655,7 +1664,7 @@ class VerifyModal(
 
         label="Username Medsos",
 
-        placeholder="@username",
+        placeholder="username atau @username",
 
         max_length=100,
 
@@ -1732,17 +1741,9 @@ class VerifyModal(
 
 
         raw_username = self.username.value.strip()
-        # Satu @ di depan diperbolehkan; @ di tengah atau @@ ditolak.
-        if raw_username.startswith('@@') or '@' in raw_username.lstrip('@'):
-            await safe_followup(
-                interaction,
-                f"{NANZ_QUESTION} Username tidak valid. Masukkan username tanpa @ atau dengan satu @ di depan.",
-                ephemeral=True,
-            )
-            return
-
-        username_clean = raw_username[1:] if raw_username.startswith('@') else raw_username
-        username_clean = username_clean.strip()
+        # Simpan username tanpa @ agar format input @username dan username sama-sama valid.
+        # @ hanya diperlakukan sebagai awalan; username akhir disimpan dalam format konsisten.
+        username_clean = raw_username.lstrip("@").strip()
 
         if not username_clean or not re.fullmatch(r'[A-Za-z0-9._]{1,30}', username_clean):
 
@@ -2285,11 +2286,18 @@ class VerifyModal(
 
             (
 
-                "Data verifikasi berhasil dikirim.\n\n"
+                "✅ **Data verifikasi berhasil dikirim!**\n\n"
 
-                "Selanjutnya, masuk ke **Voice Verif** "
+                "Langkah berikutnya wajib dilakukan:\n"
 
-                "untuk konfirmasi langsung bersama staff."
+                "1. Tekan tombol **Join Voice Verif** di bawah.\n"
+
+                "2. Masuk ke voice yang diarahkan dan tunggu staff.\n"
+
+                "3. Staff akan mengonfirmasi data kamu sebelum menyetujui verifikasi.\n\n"
+
+                "Pengajuanmu tetap tercatat selama menunggu. Jangan submit ulang; bot akan mengingatkan lewat DM "
+                "setiap sekitar 8 jam (maksimal 3 kali sehari) sampai pengajuan diproses."
 
             ),
 
@@ -4827,7 +4835,7 @@ class VerifySystem(
                 SELECT id,guild_id,user_id,status,reminder_count
                 FROM nanz_verification_applications
                 WHERE status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF')
-                  AND reminder_blocked=0 AND reminder_count < 3 AND reminder_claim IS NULL
+                  AND reminder_blocked=0 AND reminder_claim IS NULL
                   AND next_reminder_at IS NOT NULL AND next_reminder_at <= NOW()
                 ORDER BY next_reminder_at ASC LIMIT 50
             """)
@@ -4843,7 +4851,7 @@ class VerifySystem(
                 await db.execute("""
                     UPDATE nanz_verification_applications SET reminder_claim=%s
                     WHERE id=%s AND reminder_claim IS NULL AND reminder_blocked=0
-                      AND reminder_count < 3 AND next_reminder_at <= NOW()
+                      AND next_reminder_at <= NOW()
                       AND status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF')
                 """, reminder_token, app_id)
                 claim_row = await db.fetchone(
@@ -4908,10 +4916,11 @@ class VerifySystem(
                 await db.execute("""
                     UPDATE nanz_verification_applications
                     SET last_reminder_at=NOW(),
-                        next_reminder_at=IF(reminder_count+1 >= 3,NULL,DATE_ADD(NOW(), INTERVAL 6 HOUR)),
-                        reminder_blocked=IF(reminder_count+1 >= 3,1,0),
-                        reminder_count=reminder_count+1,reminder_claim=NULL
-                    WHERE id=%s AND reminder_claim=%s AND status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF') AND reminder_blocked=0 AND reminder_count < 3
+                        next_reminder_at=DATE_ADD(NOW(), INTERVAL 8 HOUR),
+                        reminder_blocked=0,
+                        reminder_count=IF(reminder_count >= 2,0,reminder_count+1),
+                        reminder_claim=NULL
+                    WHERE id=%s AND reminder_claim=%s AND status IN ('MENUNGGU_VOICE','MENUNGGU_STAFF') AND reminder_blocked=0
                 """, app_id, reminder_token)
             except Exception as exc:
                 # Avoid a permanent reminder_claim lock after transient DB/API errors.
@@ -4998,21 +5007,26 @@ class VerifySystem(
 
             description=(
 
-                f"{NANZ_ARROW_BLUE} "
+                "**Verifikasi wajib untuk semua member baru nanZ.**\n\n"
 
-                "Isi pilihan di bawah sesuai "
+                "**LANGKAH 1 — Pilih data awal**\n"
 
-                "data kamu.\n\n"
+                "Pilih platform medsos yang kamu gunakan, rentang umur, dan gender melalui menu di bawah.\n\n"
 
-                f"{NANZ_GEAR} Data akan dikirim ke "
+                "**LANGKAH 2 — Isi formulir**\n"
 
-                "divisi engagement untuk dikonfirmasi.\n"
+                "Setelah ketiga pilihan lengkap, tekan **Lanjut Isi Data**. Isi nama, asal, dan username medsos "
+                "(boleh dengan atau tanpa `@`), lalu submit formulir. Pastikan username benar agar staff bisa mengeceknya.\n\n"
 
-                f"{NANZ_ARROW_PURPLE} Setelah data dikirim, "
+                "**LANGKAH 3 — Konfirmasi lewat voice**\n"
 
-                "kamu akan mendapat tombol untuk "
+                "Setelah submit berhasil, tekan **Join Voice Verif**. Masuk atau tunggu di voice yang diarahkan, "
+                "lalu staff akan bergabung untuk mengonfirmasi data kamu.\n\n"
 
-                "masuk ke Voice Verif."
+                "**LANGKAH 4 — Tunggu keputusan staff**\n"
+
+                "Jangan mengirim formulir berulang kali. Jika staff belum datang atau belum memproses pengajuan, "
+                "bot akan mengirim pengingat lewat DM setiap sekitar 8 jam (maksimal 3 kali sehari) selama pengajuan masih pending."
 
             ),
 
@@ -5028,17 +5042,15 @@ class VerifySystem(
 
             value=(
 
-                "Platform medsos\n"
+                "1. Platform medsos, rentang umur, dan gender\n"
 
-                "Rentang umur\n"
+                "2. Tekan **Lanjut Isi Data**\n"
 
-                "Gender\n"
+                "3. Isi nama, asal, dan username medsos\n"
 
-                "Nama\n"
+                "4. Submit formulir\n"
 
-                "Asal\n"
-
-                "Username medsos"
+                "5. Join Voice Verif untuk konfirmasi bersama staff"
 
             ),
 
