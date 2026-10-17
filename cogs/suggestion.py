@@ -527,7 +527,7 @@ class Suggestion(commands.Cog):
             )
             log_embed.add_field(
                 name="Pengirim",
-                value=f"{interaction.user.mention} (`{interaction.user}`)\\nID: `{interaction.user.id}`",
+                value=f"{interaction.user.mention} (`{interaction.user}`)\nID: `{interaction.user.id}`",
                 inline=False
             )
             log_embed.add_field(name="Nama yang ditampilkan", value=nama, inline=True)
