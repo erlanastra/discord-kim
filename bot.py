@@ -90,6 +90,7 @@ async def load_cogs():
         "cogs.moddcrManager",
         "cogs.nanz_task",
         "cogs.about",
+        "cogs.member_control",
         "cogs.hall_of_time",
         "cogs.welcome",
     ]
