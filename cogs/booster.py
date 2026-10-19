@@ -272,7 +272,9 @@ class Booster(commands.Cog):
         self._ready_synced = set()
         self._pending_fallback = set()
         self._guild_sync_tasks = {}
-        self._processed_message_ids = set()
+        # Dedupe disimpan di JSON agar tetap berlaku setelah restart.
+        meta = self.data.setdefault("_meta", {})
+        self._processed_message_ids = set(str(x) for x in meta.get("processed_message_ids", []))
 
     # -------------------- STORAGE --------------------
     def _load(self):
@@ -281,6 +283,12 @@ class Booster(commands.Cog):
                 data = json.load(f)
             if not isinstance(data, dict):
                 raise ValueError("Format JSON tidak valid")
+            # Migrasi aman: format lama (guild_id -> user_id -> count) tetap dibaca.
+            meta = data.setdefault("_meta", {})
+            if not isinstance(meta, dict):
+                data["_meta"] = {}
+            data["_meta"].setdefault("processed_message_ids", [])
+            data["_meta"].setdefault("benefit_roles", {})
             return data
         except FileNotFoundError:
             print(f"[Booster] {DATA_FILE} belum ada; file akan dibuat saat data disimpan.")
@@ -305,6 +313,7 @@ class Booster(commands.Cog):
                     os.remove(temp)
             except OSError:
                 pass
+            raise
 
     def _get(self, guild_id, user_id):
         return int(self.data.get(str(guild_id), {}).get(str(user_id), 0))
@@ -316,6 +325,17 @@ class Booster(commands.Cog):
             group.pop(key, None)
         else:
             group[key] = int(count)
+        self._save()
+
+    def _benefit_roles(self, guild_id):
+        meta = self.data.setdefault("_meta", {})
+        roles = meta.setdefault("benefit_roles", {})
+        return [int(rid) for rid in roles.setdefault(str(guild_id), [])]
+
+    def _set_benefit_roles(self, guild_id, role_ids):
+        meta = self.data.setdefault("_meta", {})
+        roles = meta.setdefault("benefit_roles", {})
+        roles[str(guild_id)] = sorted(set(int(rid) for rid in role_ids))
         self._save()
 
     # -------------------- ROLES --------------------
@@ -336,6 +356,40 @@ class Booster(commands.Cog):
             print(f"[Booster] Tidak bisa mengatur role {member}; periksa Manage Roles/hierarki role.")
         except discord.HTTPException as e:
             print(f"[Booster] Gagal mengatur role: {e}")
+
+    async def sync_benefit_roles(self, guild):
+        """Benefit role hanya mengikuti status boost aktual, bukan hitungan manual."""
+        role_ids = self._benefit_roles(guild.id)
+        if not role_ids:
+            return
+        try:
+            active_ids = {m.id for m in guild.premium_subscribers}
+        except Exception as e:
+            print(f"[Booster] Tidak bisa membaca subscriber untuk benefit role: {e}")
+            return
+        for role_id in role_ids:
+            role = guild.get_role(role_id)
+            if role is None:
+                print(f"[Booster] Benefit role {role_id} tidak ditemukan di {guild.name}; konfigurasi dipertahankan.")
+                continue
+            # Berikan kepada booster aktif dan cabut hanya dari role benefit terdaftar.
+            for member in list(role.members):
+                if member.id not in active_ids:
+                    try:
+                        await member.remove_roles(role, reason="nanZ Booster benefit sync: no active boost")
+                    except discord.Forbidden:
+                        print(f"[Booster] Tidak bisa mencabut benefit role {role.name} dari {member}; cek hierarki/Manage Roles.")
+                    except discord.HTTPException as e:
+                        print(f"[Booster] Gagal mencabut benefit role {role.name}: {e}")
+            for member_id in active_ids:
+                member = guild.get_member(member_id)
+                if member and role not in member.roles:
+                    try:
+                        await member.add_roles(role, reason="nanZ Booster benefit sync: active boost")
+                    except discord.Forbidden:
+                        print(f"[Booster] Tidak bisa memberi benefit role {role.name} ke {member}; cek hierarki/Manage Roles.")
+                    except discord.HTTPException as e:
+                        print(f"[Booster] Gagal memberi benefit role {role.name}: {e}")
 
     # -------------------- NOTIFICATION --------------------
     async def send_boost_embed(self, member, boosts):
@@ -394,21 +448,22 @@ class Booster(commands.Cog):
         if member is None or member.bot:
             return
 
-        # Setiap pesan boost individual baru dihitung satu kali.
-        # Jika isi pesan hanya angka, angka itu dianggap jumlah tambahan.
+        # Satu pesan sistem boost = satu event. Jangan menafsirkan isi pesan
+        # sebagai angka tambahan karena itu dapat menggandakan hitungan.
         async with self._lock:
-            if message.id in self._processed_message_ids:
+            message_key = str(message.id)
+            if message_key in self._processed_message_ids:
                 return
-            self._processed_message_ids.add(message.id)
-            if len(self._processed_message_ids) > 3000:
-                self._processed_message_ids.clear()
-                self._processed_message_ids.add(message.id)
-
-            content = (message.content or "").strip()
-            match = re.fullmatch(r"\d+", content)
-            added = max(1, int(match.group(0))) if match else 1
-            new_count = self._get(message.guild.id, member.id) + added
-            self._set(message.guild.id, member.id, new_count)
+            new_count = self._get(message.guild.id, member.id) + 1
+            group = self.data.setdefault(str(message.guild.id), {})
+            group[str(member.id)] = int(new_count)
+            self._processed_message_ids.add(message_key)
+            # Simpan daftar dedupe terbatas; ID terbaru tetap persisten saat restart.
+            if len(self._processed_message_ids) > 10000:
+                self._processed_message_ids = set(sorted(self._processed_message_ids, key=int)[-8000:])
+            meta = self.data.setdefault("_meta", {})
+            meta["processed_message_ids"] = sorted(self._processed_message_ids, key=int)
+            self._save()
 
         await self.apply_roles(member, new_count)
         try:
@@ -426,6 +481,7 @@ class Booster(commands.Cog):
             async with self._lock:
                 self._set(after.guild.id, after.id, 0)
             await self.apply_roles(after, 0)
+            await self.sync_benefit_roles(after.guild)
             return
 
         # Fallback untuk boost baru jika pesan sistem tidak diterima.
@@ -478,37 +534,23 @@ class Booster(commands.Cog):
 
         async with self._lock:
             group = self.data.setdefault(str(guild_id), {})
+            # Hanya hapus catatan bagi anggota yang status boost-nya dipastikan berakhir.
             for uid in list(group):
-                if int(uid) not in active:
+                if str(uid).isdigit() and int(uid) not in active:
                     group.pop(uid, None)
             for uid in active:
                 group.setdefault(str(uid), 1)
-
-            tracked = sum(int(value) for value in group.values())
-            actual = guild.premium_subscription_count or 0
-            excess = tracked - actual
-            elites = [uid for uid, count in group.items() if int(count) >= 2 and int(uid) in active]
-            changed_uid = None
-
-            # Jangan menebak jika tidak jelas siapa kehilangan satu boost.
-            if excess > 0 and len(elites) == 1:
-                changed_uid = int(elites[0])
-                group[str(changed_uid)] = max(1, int(group[str(changed_uid)]) - excess)
             self._save()
 
-        if changed_uid is not None:
-            member = guild.get_member(changed_uid)
-            if member:
-                await self.apply_roles(member, self._get(guild_id, changed_uid))
-        elif excess > 0 and len(elites) > 1:
-            channel = guild.get_channel(BOOST_CHANNEL_ID)
-            if channel:
-                await channel.send(
-                    "⚠️ **Sinkronisasi Booster perlu pemeriksaan admin.**\n"
-                    "Jumlah boost server berkurang, tetapi ada beberapa Elite Boost. "
-                    "Bot tidak menebak siapa yang kehilangan boost. Verifikasi data, "
-                    "lalu gunakan `!boost_set @member 1` bila sudah dipastikan."
-                )
+        # Total server yang turun tidak mengidentifikasi pemilik boost yang hilang.
+        # Jangan mengubah angka Elite secara tebakan; minta admin memeriksa bila perlu.
+        actual = guild.premium_subscription_count or 0
+        tracked = sum(int(v) for k, v in self.data.get(str(guild_id), {}).items()
+                      if str(k).isdigit())
+        if tracked != actual:
+            print(f"[Booster] Rekonsiliasi {guild.name}: total boost server={actual}, jumlah tercatat={tracked}. "
+                  "Tidak mengubah hitungan individual tanpa bukti yang cukup.")
+        await self.sync_benefit_roles(guild)
 
     # -------------------- STARTUP SYNC: NO NOTIFICATIONS --------------------
     @commands.Cog.listener()
@@ -527,7 +569,7 @@ class Booster(commands.Cog):
                 group = self.data.setdefault(str(guild.id), {})
                 # Hapus anggota yang sudah tidak boost.
                 for uid in list(group):
-                    if int(uid) not in active:
+                    if str(uid).isdigit() and int(uid) not in active:
                         group.pop(uid, None)
                 # Pertahankan hitungan JSON yang sudah ada.
                 # Booster lama yang belum tercatat diberi default 1.
@@ -547,6 +589,7 @@ class Booster(commands.Cog):
                         if member.id not in active:
                             await self.apply_roles(member, 0)
 
+            await self.sync_benefit_roles(guild)
             self._ready_synced.add(guild.id)
             print(f"[Booster] Sync {guild.name} selesai; {len(active)} booster aktif; tanpa notifikasi.")
 
@@ -564,6 +607,65 @@ class Booster(commands.Cog):
         await self.apply_roles(member, jumlah)
         await ctx.send(f"Jumlah boost {member.mention} diatur menjadi **{jumlah}**.",
                        allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="boost_reqrole")
+    @commands.has_permissions(administrator=True)
+    async def boost_reqrole(self, ctx, role: discord.Role):
+        """Toggle role benefit booster: !boost_reqrole @Role"""
+        if ctx.guild is None:
+            return
+        if role.is_default() or role.managed:
+            await ctx.send("Role itu tidak bisa digunakan sebagai role benefit.",
+                           allowed_mentions=discord.AllowedMentions.none())
+            return
+        if role.id in (ROLE_PRIME_ID, ROLE_ELITE_ID):
+            await ctx.send("Prime Boost dan Elite Boost dikelola otomatis; pilih role benefit lain.",
+                           allowed_mentions=discord.AllowedMentions.none())
+            return
+        bot_member = ctx.guild.me
+        if bot_member is None or not bot_member.guild_permissions.manage_roles:
+            await ctx.send("Bot memerlukan izin **Manage Roles**.",
+                           allowed_mentions=discord.AllowedMentions.none())
+            return
+        if role >= bot_member.top_role:
+            await ctx.send("Posisikan role bot di atas role benefit tersebut terlebih dahulu.",
+                           allowed_mentions=discord.AllowedMentions.none())
+            return
+
+        role_ids = self._benefit_roles(ctx.guild.id)
+        if role.id in role_ids:
+            role_ids.remove(role.id)
+            async with self._lock:
+                self._set_benefit_roles(ctx.guild.id, role_ids)
+            await ctx.send(f"Role {role.mention} **dihapus dari daftar benefit**. Sistem Booster tidak akan lagi mengelola role ini.",
+                           allowed_mentions=discord.AllowedMentions.none())
+            return
+
+        role_ids.append(role.id)
+        try:
+            async with self._lock:
+                self._set_benefit_roles(ctx.guild.id, role_ids)
+        except Exception:
+            await ctx.send("Gagal menyimpan konfigurasi. Role tidak diaktifkan; periksa izin file dan log bot.",
+                           allowed_mentions=discord.AllowedMentions.none())
+            return
+        await self.sync_benefit_roles(ctx.guild)
+        await ctx.send(f"Role {role.mention} **terdaftar sebagai benefit booster** dan konfigurasi disimpan.",
+                       allowed_mentions=discord.AllowedMentions.none())
+
+    @boost_set.error
+    @boost_reqrole.error
+    async def booster_admin_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("Command ini hanya untuk administrator/staf berizin.",
+                           allowed_mentions=discord.AllowedMentions.none())
+        elif isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+            await ctx.send("Format command tidak valid. Contoh: `!boost_set @Murid 1` atau `!boost_reqrole @Role`.",
+                           allowed_mentions=discord.AllowedMentions.none())
+        else:
+            print(f"[Booster] Error command: {error}")
+            await ctx.send("Terjadi kesalahan saat menjalankan command. Periksa log bot.",
+                           allowed_mentions=discord.AllowedMentions.none())
 
     @commands.command(name="test_boost")
     @commands.has_permissions(administrator=True)
