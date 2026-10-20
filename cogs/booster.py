@@ -1326,7 +1326,7 @@ class Booster(commands.Cog):
             color = discord.Color.from_rgb(130, 80, 255)
 
         embed = discord.Embed(title=title, description=desc, color=color)
-        embed.set_footer(text="nanZ School Boost System")
+        embed.set_footer(text="nanZ Server")
         kwargs = {}
         if file:
             embed.set_image(url="attachment://booster.png")
