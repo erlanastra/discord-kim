@@ -14,7 +14,7 @@ QUOTE_CHANNEL_ID = 1474394873783128368
 # ==========================================
 # EMOJI LIKE (lovelike)
 # ==========================================
-LIKE_EMOJI = discord.PartialEmoji(name="lovelike", id=1493106010389483661)
+LIKE_EMOJI = discord.PartialEmoji(name="lovelike", id=1557691732039049276)
 
 # ==========================================
 # KONFIGURASI PANEL PNG

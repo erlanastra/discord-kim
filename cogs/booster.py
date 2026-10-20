@@ -5,10 +5,18 @@ import math
 import os
 import random
 import re
+import threading
+import unicodedata
+from functools import lru_cache
 
 import discord
 from discord.ext import commands
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+
+try:
+    import numpy as np  # dipakai desain kartu baru (pip install numpy)
+except ImportError:  # pragma: no cover
+    np = None
 
 # =========================================================
 # KONFIGURASI — booster_data.json lama tetap digunakan
@@ -26,6 +34,11 @@ E_PURPLE = "<a:purple:1512787191234035803>"
 FONT_BOLD    = "fonts/LEMONMILK-Bold.otf"
 FONT_MEDIUM  = "fonts/LEMONMILK-Medium.otf"
 FONT_REGULAR = "fonts/LEMONMILK-Regular.otf"
+# Desain kartu baru: taruh file font di folder fonts/ (nama file harus sama).
+FONT_SANS    = "fonts/Inter.ttf"                     # Inter (variable font, OFL)
+FONT_SERIF   = "fonts/InstrumentSerif-Italic.ttf"    # Instrument Serif Italic (OFL)
+# Logo nanZ Server (PNG transparan 1024x1024). Dicari berurutan; boleh ditaruh di salah satunya.
+LOGO_PATHS   = ("assets/nanz_logo.png", "nanz_logo.png", "fonts/nanz_logo.png")
 _FALLBACKS   = ("DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arial.ttf")
 
 PALETTES = {
@@ -148,7 +161,7 @@ def _background(fx, P):
     return Image.alpha_composite(base, fl)
 
 
-def render_booster_card(avatar_bytes: bytes, name: str, tier: int, total: int, boosts: int = 1) -> bytes:
+def _render_booster_card_legacy(avatar_bytes: bytes, name: str, tier: int, total: int, boosts: int = 1) -> bytes:
     """boosts == 1 -> Prime Boost; boosts >= 2 -> Elite Boost."""
     elite = boosts >= 2
     P = PALETTES["elite" if elite else "prime"]
@@ -258,6 +271,724 @@ def render_booster_card(avatar_bytes: bytes, name: str, tier: int, total: int, b
     out = io.BytesIO()
     base.convert("RGB").save(out, format="PNG", optimize=True)
     return out.getvalue()
+
+
+# =========================================================
+# NANZ CARD V2 — glass / 3D minimal / tema sekolah
+# Renderer baru. Signature publik tetap: render_booster_card(...)
+# =========================================================
+_SS = 2                      # supersampling (render 2x lalu diperkecil)
+_RENDER_LOCK = threading.Lock()
+_STATIC_CACHE = {}           # layer statis per tier (tidak bergantung user)
+_FRAME_CACHE = {}
+_NOISE_CACHE = {}
+
+# Warna biru/ungu Prime diambil dari logo nanZ; Elite = gold.
+_GP = {
+    "prime": dict(
+        base=(244, 246, 254),
+        corner=[(0.0, 1.12, 150, (40, 135, 245)), (1.03, -0.08, 170, (165, 80, 235)),
+                (0.50, 1.25, 140, (70, 205, 255))],
+        ink=(8, 12, 52), ink2=(112, 56, 214), mute=(86, 88, 134),
+        acc=(158, 72, 226), acc2=(36, 140, 242), glow=(130, 110, 250),
+        orbit=[(60, 212, 255), (45, 128, 238), (160, 76, 230), (240, 130, 250)],
+        sph=((34, 104, 226), (150, 214, 255)), bsph=((88, 40, 200), (214, 128, 250)),
+        vig=(60, 56, 170), tile=((34, 24, 112), (2, 4, 36)), rule=(36, 140, 242),
+        book=((36, 140, 242), (158, 72, 226)), cap=((88, 44, 206), (36, 140, 242)),
+        pen=((70, 34, 190), (40, 142, 246)), nib=(228, 234, 250),
+        stops=[(255, 255, 255), (70, 196, 255), (238, 242, 255), (196, 112, 245),
+               (255, 255, 255), (60, 150, 245)],
+    ),
+    "elite": dict(
+        base=(251, 247, 239),
+        corner=[(0.0, 1.12, 150, (255, 190, 80)), (1.03, -0.08, 170, (255, 150, 90)),
+                (0.50, 1.25, 140, (255, 215, 130))],
+        ink=(44, 26, 6), ink2=(178, 104, 8), mute=(126, 100, 68),
+        acc=(205, 128, 14), acc2=(244, 178, 58), glow=(255, 190, 90),
+        orbit=[(255, 215, 110), (250, 180, 60), (235, 140, 40), (255, 200, 120)],
+        sph=((232, 150, 30), (255, 232, 170)), bsph=((150, 78, 0), (236, 150, 24)),
+        vig=(120, 70, 40), tile=((34, 24, 112), (2, 4, 36)), rule=(214, 150, 40),
+        book=((244, 178, 58), (205, 128, 14)), cap=((176, 104, 8), (244, 178, 58)),
+        pen=((150, 80, 10), (246, 190, 76)), nib=(255, 226, 150),
+        stops=[(255, 248, 225), (244, 178, 58), (255, 252, 238), (205, 128, 14),
+               (255, 246, 215), (255, 208, 110)],
+    ),
+}
+
+
+def _sc(v):
+    return int(round(v * _SS))
+
+
+def _lerp3(a, b, t):
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(len(a)))
+
+
+def _gl(w, h):
+    return Image.new("RGBA", (w, h), (0, 0, 0, 0))
+
+
+@lru_cache(maxsize=96)
+def _gsans(size, wght=500):
+    px = _sc(size)
+    for p in (FONT_SANS, FONT_BOLD, *_FALLBACKS):
+        try:
+            f = ImageFont.truetype(p, px)
+        except Exception:
+            continue
+        if p == FONT_SANS:
+            try:
+                f.set_variation_by_axes([min(32, max(14, size)), wght])
+            except Exception:
+                try:
+                    f.set_variation_by_name("Bold" if wght >= 600 else "Medium" if wght >= 500 else "Regular")
+                except Exception:
+                    pass
+        return f
+    return ImageFont.load_default()
+
+
+@lru_cache(maxsize=16)
+def _gserif(size):
+    px = _sc(size)
+    for p in (FONT_SERIF, FONT_SANS, FONT_BOLD, *_FALLBACKS):
+        try:
+            return ImageFont.truetype(p, px)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+@lru_cache(maxsize=1)
+def _glogo_raw():
+    for p in LOGO_PATHS:
+        try:
+            im = Image.open(p).convert("RGBA")
+            bb = im.getchannel("A").getbbox()
+            return im.crop(bb) if bb else im
+        except Exception:
+            continue
+    print("[Booster] Logo nanZ tidak ditemukan; kartu dibuat tanpa logo. Cek LOGO_PATHS.")
+    return None
+
+
+@lru_cache(maxsize=4)
+def _glogo(hpx):
+    im = _glogo_raw()
+    if im is None:
+        return None
+    return im.resize((max(1, round(im.width * hpx / im.height)), hpx), Image.LANCZOS)
+
+
+def _gglyph(font, ch):
+    im = Image.new("L", (_sc(100), _sc(80)), 0)
+    ImageDraw.Draw(im).text((8, 8), ch, font=font, fill=255)
+    return im.tobytes()
+
+
+def _gclean(name, font):
+    """Buang karakter yang tidak ada di font (emoji, CJK, Arab, dsb) agar tidak muncul kotak 'NO GLYPH'."""
+    try:
+        notdef = _gglyph(font, "\U0010FFFF")      # bitmap glyph .notdef milik font
+    except Exception:
+        notdef = None
+    out = []
+    for ch in str(name):
+        if unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Co", "Cn"):
+            continue
+        if notdef is not None and not ch.isspace():
+            try:
+                if _gglyph(font, ch) == notdef:
+                    continue
+            except Exception:
+                pass
+        out.append(ch)
+    clean = re.sub(r"\s+", " ", "".join(out)).strip()
+    return clean or "Booster"
+
+
+def _gfit(text, start, wmax, wght):
+    s = start
+    while s > 22:
+        f = _gsans(s, wght)
+        if f.getlength(text) <= _sc(wmax):
+            return f, text
+        s -= 2
+    f = _gsans(22, wght)
+    while text and f.getlength(text + "…") > _sc(wmax):
+        text = text[:-1]
+    return f, text + "…"
+
+
+def _gsparkle(x, y, s):
+    q = s * 0.22
+    return [(x, y - s), (x + q, y - q), (x + s, y), (x + q, y + q),
+            (x, y + s), (x - q, y + q), (x - s, y), (x - q, y - q)]
+
+
+def _grrmask(w, h, box, r):
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).rounded_rectangle([_sc(v) for v in box], radius=_sc(r), fill=255)
+    return m
+
+
+def _ghgrad(w, h, c0, c1):
+    g = Image.linear_gradient("L").resize((h, w)).rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
+    return Image.composite(Image.new("RGBA", (w, h), (*c1, 255)), Image.new("RGBA", (w, h), (*c0, 255)), g)
+
+
+def _gavatar(avatar_bytes, size):
+    av = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA").resize((size, size), Image.LANCZOS)
+    m = Image.new("L", (size * 2, size * 2), 0)
+    ImageDraw.Draw(m).ellipse((0, 0, size * 2 - 1, size * 2 - 1), fill=255)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(av, (0, 0), m.resize((size, size), Image.LANCZOS))
+    return out
+
+
+def _gbackground(P):
+    w, h = W * _SS, H * _SS
+    img = Image.new("RGBA", (w, h), (*P["base"], 255))
+    for fx, fy, r, c in P["corner"]:
+        m = Image.new("L", (w, h), 0)
+        x, y, R = fx * w, fy * h, _sc(r)
+        ImageDraw.Draw(m).ellipse([x - R, y - R, x + R, y + R], fill=215)
+        img.paste(Image.new("RGBA", (w, h), (*c, 255)), (0, 0), m.filter(ImageFilter.GaussianBlur(R * 0.38)))
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).ellipse([_sc(640 - 170), _sc(170 - 150), _sc(640 + 170), _sc(170 + 150)], fill=120)
+    img.paste(Image.new("RGBA", (w, h), (*P["glow"], 255)), (0, 0), m.filter(ImageFilter.GaussianBlur(_sc(46))))
+    ov = _gl(w, h)
+    d = ImageDraw.Draw(ov)
+    for y in range(30, H - 14, 22):          # garis buku tulis (motif sekolah)
+        for x in range(34, 470, 2):
+            a = int(40 * max(0, 1 - (x - 34) / 436) ** 1.3)
+            if a > 0:
+                d.line([(_sc(x), _sc(y)), (_sc(x + 2), _sc(y))], fill=(*P["rule"], a), width=_SS)
+    d.line([(_sc(40), _sc(12)), (_sc(40), _sc(H - 12))], fill=(240, 120, 200, 46), width=_SS)
+    return Image.alpha_composite(img, ov)
+
+
+def _gvignette(img, P):
+    w, h = img.size
+    yy, xx = np.mgrid[0:h, 0:w]
+    d = np.sqrt(((xx - w * 0.55) / (w * 0.62)) ** 2 + ((yy - h * 0.5) / (h * 0.78)) ** 2)
+    a = np.clip((d - 0.75) / 0.75, 0, 1) ** 1.6 * 46
+    v = np.dstack([np.full((h, w), c) for c in P["vig"]] + [a]).astype(np.uint8)
+    img.alpha_composite(Image.fromarray(v, "RGBA"))
+
+
+def _ghexagon(img, cx, cy, R, color, alpha, width=1.2):
+    pts = [(cx + R * math.cos(math.radians(60 * i)), cy + R * math.sin(math.radians(60 * i))) for i in range(6)]
+    l = _gl(*img.size)
+    ImageDraw.Draw(l).line([(_sc(x), _sc(y)) for x, y in pts + [pts[0]]], fill=(*color, alpha),
+                           width=_sc(width), joint="curve")
+    img.alpha_composite(l)
+
+
+def _glight_sweep(img):
+    w, h = img.size
+    l = _gl(w, h)
+    ImageDraw.Draw(l).polygon([(_sc(430), 0), (_sc(486), 0), (_sc(398), _sc(H)), (_sc(342), _sc(H))],
+                              fill=(255, 255, 255, 70))
+    img.alpha_composite(l.filter(ImageFilter.GaussianBlur(_sc(16))))
+
+
+def _gbokeh(img, P, seed=5, n=16):
+    rng = random.Random(seed)
+    w, h = img.size
+    l = _gl(w, h)
+    d = ImageDraw.Draw(l)
+    for _ in range(n):
+        x, y = rng.uniform(440, 790), rng.uniform(14, 330)
+        r = rng.choice([2, 2.5, 3, 4, 6])
+        a = rng.randint(40, 100)
+        col = rng.choice([(255, 255, 255), P["acc2"], P["acc"], (255, 255, 255)])
+        d.ellipse([_sc(x - r), _sc(y - r), _sc(x + r), _sc(y + r)], fill=(*col, a))
+        if r >= 4:
+            d.ellipse([_sc(x - r), _sc(y - r), _sc(x + r), _sc(y + r)],
+                      outline=(255, 255, 255, min(180, a + 60)), width=_SS)
+    img.alpha_composite(l.filter(ImageFilter.GaussianBlur(0.8)))
+
+
+def _gsphere(r, c_dark, c_light, spec=1.0):
+    n = _sc(r) * 2 + 4
+    yy, xx = np.mgrid[0:n, 0:n]
+    c = n / 2
+    R = _sc(r)
+    dx = (xx - c) / R
+    dy = (yy - c) / R
+    rr = dx ** 2 + dy ** 2
+    inside = rr <= 1
+    dz = np.sqrt(np.clip(1 - rr, 0, 1))
+    Lv = np.array([-0.45, -0.55, 0.70])
+    Lv /= np.linalg.norm(Lv)
+    diff = np.clip(dx * Lv[0] + dy * Lv[1] + dz * Lv[2], 0, 1)
+    spc = np.clip(diff, 0, 1) ** 28 * spec
+    rim = np.clip(1 - dz, 0, 1) ** 2.2 * 0.35
+    t = np.clip(diff * 0.95 + rim * 0.4, 0, 1)
+    out = np.zeros((n, n, 4), np.float32)
+    for i in range(3):
+        out[..., i] = c_dark[i] + (c_light[i] - c_dark[i]) * t + 255 * spc * 0.7
+    out[..., 3] = 255 * np.clip((1 - np.sqrt(rr)) * R, 0, 1) * inside
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGBA")
+
+
+def _gput_sphere(img, x, y, r, P, key="sph"):
+    s = _gsphere(r, *P[key])
+    sh = _gl(*img.size)
+    sh.paste((*P["acc"], 110), (_sc(x) - s.width // 2 + _sc(2), _sc(y) - s.height // 2 + _sc(r * 0.9)),
+             s.getchannel("A").point(lambda v: v * 3 // 4))
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(r * 0.6))))
+    img.alpha_composite(s, (_sc(x) - s.width // 2, _sc(y) - s.height // 2))
+
+
+def _gglass_tile(img, cx, cy, size, rot, P):
+    w, h = img.size
+    half = size / 2
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).rounded_rectangle([_sc(cx - half), _sc(cy - half), _sc(cx + half), _sc(cy + half)],
+                                        radius=_sc(size * 0.24), fill=255)
+    m = m.rotate(rot, center=(_sc(cx), _sc(cy)), resample=Image.BICUBIC)
+    sh = _gl(w, h)
+    sh.paste((*P["acc"], 70), (0, _sc(9)), m)
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(9))))
+    img.paste(img.filter(ImageFilter.GaussianBlur(_sc(8))), (0, 0), m)
+    gr = Image.linear_gradient("L").resize((w, h)).rotate(45, resample=Image.BICUBIC)
+    top = Image.new("RGBA", (w, h), (255, 255, 255, 150))
+    bot = Image.new("RGBA", (w, h), (*P["acc2"], 70))
+    body = Image.composite(bot, top, gr)
+    body.putalpha(ImageChops.multiply(body.getchannel("A"), m))
+    img.alpha_composite(body)
+    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 2 + 1)))
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 215)), (0, 0), edge)
+    sheen = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(sheen).ellipse([_sc(cx - half), _sc(cy - half - size * 0.35),
+                                   _sc(cx + half * 0.3), _sc(cy - half * 0.05)], fill=110)
+    sheen = ImageChops.multiply(
+        sheen.rotate(rot, center=(_sc(cx), _sc(cy)), resample=Image.BICUBIC).filter(ImageFilter.GaussianBlur(_sc(4))), m)
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 255)), (0, 0), sheen)
+
+
+def _grot(cx, cy, rot):
+    c, s = math.cos(math.radians(-rot)), math.sin(math.radians(-rot))
+    return lambda p: (cx + p[0] * c - p[1] * s, cy + p[0] * s + p[1] * c)
+
+
+def _gicon_book(img, cx, cy, size, rot, P):
+    g = size * 0.34
+    rp = _grot(cx, cy, rot)
+    ic = _gl(*img.size)
+    d = ImageDraw.Draw(ic)
+    poly = lambda pts, fill: d.polygon([(_sc(a), _sc(b)) for a, b in map(rp, pts)], fill=fill)
+    cl, cr = P["book"]
+    poly([(-1.05 * g, -0.55 * g), (-0.04 * g, -0.30 * g), (-0.04 * g, 0.78 * g), (-1.05 * g, 0.50 * g)], (*cl, 240))
+    poly([(1.05 * g, -0.55 * g), (0.04 * g, -0.30 * g), (0.04 * g, 0.78 * g), (1.05 * g, 0.50 * g)], (*cr, 240))
+    for k in range(3):
+        y0 = -0.08 * g + 0.2 * g * k
+        poly([(-0.86 * g, y0 - 0.12 * g), (-0.24 * g, y0 + 0.04 * g), (-0.24 * g, y0 + 0.08 * g), (-0.86 * g, y0 - 0.08 * g)], (255, 255, 255, 150))
+        poly([(0.86 * g, y0 - 0.12 * g), (0.24 * g, y0 + 0.04 * g), (0.24 * g, y0 + 0.08 * g), (0.86 * g, y0 - 0.08 * g)], (255, 255, 255, 150))
+    poly([(-1.05 * g, -0.55 * g), (-0.04 * g, -0.30 * g), (-0.04 * g, -0.24 * g), (-1.05 * g, -0.49 * g)], (255, 255, 255, 120))
+    img.alpha_composite(ic)
+
+
+def _gicon_cap(img, cx, cy, size, rot, P):
+    g = size * 0.34
+    rp = _grot(cx, cy, rot)
+    ic = _gl(*img.size)
+    d = ImageDraw.Draw(ic)
+    poly = lambda pts, fill: d.polygon([(_sc(a), _sc(b)) for a, b in map(rp, pts)], fill=fill)
+    top, base = P["cap"]
+    poly([(-0.58 * g, 0.10 * g), (-0.58 * g, 0.66 * g), (0, 0.92 * g), (0.58 * g, 0.66 * g), (0.58 * g, 0.10 * g), (0, 0.40 * g)], (*base, 235))
+    poly([(0, -0.70 * g), (1.12 * g, -0.12 * g), (0, 0.46 * g), (-1.12 * g, -0.12 * g)], (*top, 245))
+    poly([(0, -0.70 * g), (1.12 * g, -0.12 * g), (0, -0.12 * g)], (255, 255, 255, 70))
+    x0, y0 = rp((1.0 * g, -0.10 * g))
+    x1, y1 = rp((1.0 * g, 0.62 * g))
+    d.line([(_sc(x0), _sc(y0)), (_sc(x1), _sc(y1))], fill=(*base, 255), width=_sc(1.6))
+    d.ellipse([_sc(x1 - 2.2), _sc(y1 - 2.2), _sc(x1 + 2.2), _sc(y1 + 3.4)], fill=(*base, 255))
+    img.alpha_composite(ic)
+
+
+def _gpen_image(Lp, Wd, c0, c1, nibc):
+    Lc = _sc(Lp) + 8
+    Wc = _sc(Wd) + 8
+    yy, xx = np.mgrid[0:Wc, 0:Lc].astype(np.float32)
+    cy = Wc / 2
+    R = _sc(Wd) / 2
+    xs = 4
+    bl = _sc(Lp * 0.72) + xs
+    cw = _sc(3.4)
+    nl = _sc(Lp) + xs
+    dy = yy - cy
+    hw_body = np.where(xx < xs + R, np.sqrt(np.clip(R ** 2 - (xx - (xs + R)) ** 2, 0, None)), R)
+    hw = np.where(xx <= bl, hw_body, 0).astype(np.float32)
+    col = (xx > bl) & (xx <= bl + cw)
+    hw = np.where(col, R * 0.94, hw)
+    nb = (xx > bl + cw) & (xx <= nl)
+    t = np.clip((xx - (bl + cw)) / max(1, (nl - (bl + cw))), 0, 1)
+    hw = np.where(nb, R * 0.82 * (1 - t ** 1.3), hw)
+    ring = (xx > xs + _sc(Lp * 0.46)) & (xx < xs + _sc(Lp * 0.46) + _sc(2.4))
+    alpha = np.clip(hw - np.abs(dy) + 0.6, 0, 1) * (hw > 0.3)
+    v = np.clip(dy / np.maximum(hw, 1), -1, 1)
+    shade = 0.60 + 0.40 * np.clip(1 - ((v + 0.38) / 1.38) ** 2, 0, 1)
+    edge = 1 - 0.32 * np.abs(v) ** 3
+    spec = np.exp(-((v + 0.46) / 0.13) ** 2) * 0.55 + np.exp(-((v - 0.62) / 0.10) ** 2) * 0.12
+    tt = np.clip((xx - xs) / (bl - xs), 0, 1)[..., None]
+    base = np.array(c0, np.float32) * (1 - tt) + np.array(c1, np.float32) * tt
+    silver = np.array([216, 223, 242], np.float32)
+    base = np.where((col | ring)[..., None], silver, base)
+    base = np.where(nb[..., None], np.array(nibc, np.float32), base)
+    rgb = base * shade[..., None] * edge[..., None] + 255 * spec[..., None]
+    slit = nb & (np.abs(dy) < _sc(0.5)) & (t > 0.22)
+    rgb = np.where(slit[..., None], rgb * 0.35, rgb)
+    return Image.fromarray(np.dstack([np.clip(rgb, 0, 255), alpha * 255]).astype(np.uint8), "RGBA")
+
+
+def _gput_pen(img, cx, cy, Lp, Wd, ang, P):
+    pen = _gpen_image(Lp, Wd, *P["pen"], P["nib"]).rotate(ang, resample=Image.BICUBIC, expand=True)
+    sh = _gl(*img.size)
+    sh.paste((*P["acc"], 120), (_sc(cx) - pen.width // 2 + _sc(3), _sc(cy) - pen.height // 2 + _sc(9)), pen.getchannel("A"))
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(7))))
+    img.alpha_composite(pen, (_sc(cx) - pen.width // 2, _sc(cy) - pen.height // 2))
+
+
+def _gorbit(img, cx, cy, rx, ry, tilt, P, part="all", width=2.2):
+    w, h = img.size
+    cols = P["orbit"]
+
+    def pt(t):
+        x, y = rx * math.cos(t), ry * math.sin(t)
+        a = math.radians(tilt)
+        return (cx + x * math.cos(a) - y * math.sin(a), cy + x * math.sin(a) + y * math.cos(a))
+
+    rng = (0, 2 * math.pi) if part == "all" else ((0, math.pi) if part == "front" else (math.pi, 2 * math.pi))
+    N = 240
+    ts = [rng[0] + (rng[1] - rng[0]) * i / N for i in range(N + 1)]
+    sharp, glow = _gl(w, h), _gl(w, h)
+    ds, dg = ImageDraw.Draw(sharp), ImageDraw.Draw(glow)
+    for i in range(N):
+        u = (ts[i] % (2 * math.pi)) / (2 * math.pi)
+        k = u * (len(cols) - 1)
+        j = min(int(k), len(cols) - 2)
+        c = _lerp3(cols[j], cols[j + 1], k - j)
+        fade = 0.35 + 0.65 * abs(math.sin(ts[i] - 0.4)) ** 0.8
+        p0, p1 = pt(ts[i]), pt(ts[i + 1])
+        seg = [(_sc(p0[0]), _sc(p0[1])), (_sc(p1[0]), _sc(p1[1]))]
+        ds.line(seg, fill=(*c, int(255 * fade)), width=_sc(width * (0.5 + 0.8 * fade)))
+        dg.line(seg, fill=(*c, int(210 * fade)), width=_sc(7))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(_sc(6))))
+    img.alpha_composite(sharp)
+
+
+def _gconic_ring(img, cx, cy, r_out, r_in, stops):
+    n = _sc(r_out) * 2 + 6
+    yy, xx = np.mgrid[0:n, 0:n]
+    c = n / 2
+    dx, dy = xx - c, yy - c
+    r = np.sqrt(dx ** 2 + dy ** 2)
+    th = (np.arctan2(dy, dx) + math.pi) / (2 * math.pi)
+    k = th * len(stops)
+    i0 = np.floor(k).astype(int) % len(stops)
+    i1 = (i0 + 1) % len(stops)
+    f = k - np.floor(k)
+    f = f * f * (3 - 2 * f)
+    arr = np.array(stops, np.float32)
+    col = arr[i0] * (1 - f[..., None]) + arr[i1] * f[..., None]
+    a = np.clip(_sc(r_out) - r, 0, 1) * np.clip(r - _sc(r_in), 0, 1)
+    im = Image.fromarray(np.dstack([col, a * 255]).astype(np.uint8), "RGBA")
+    img.alpha_composite(im, (_sc(cx) - n // 2, _sc(cy) - n // 2))
+
+
+def _gflare(img, x, y, P, size=34):
+    w, h = img.size
+    l = _gl(w, h)
+    d = ImageDraw.Draw(l)
+    for ang in (0, 90):
+        for t in range(-_sc(size), _sc(size)):
+            a = int(230 * (1 - abs(t) / _sc(size)) ** 2.2)
+            px = _sc(x) + int(t * math.cos(math.radians(ang)))
+            py = _sc(y) + int(t * math.sin(math.radians(ang)))
+            d.ellipse([px - 1, py - 1, px + 1, py + 1], fill=(255, 255, 255, a))
+    for ang in (45, 135):
+        for t in range(-_sc(size * 0.45), _sc(size * 0.45)):
+            a = int(120 * (1 - abs(t) / _sc(size * 0.45)) ** 2)
+            px = _sc(x) + int(t * math.cos(math.radians(ang)))
+            py = _sc(y) + int(t * math.sin(math.radians(ang)))
+            d.point((px, py), fill=(255, 255, 255, a))
+    g = _gl(w, h)
+    ImageDraw.Draw(g).ellipse([_sc(x - 9), _sc(y - 9), _sc(x + 9), _sc(y + 9)], fill=(*P["glow"], 200))
+    img.alpha_composite(g.filter(ImageFilter.GaussianBlur(_sc(7))))
+    img.alpha_composite(l.filter(ImageFilter.GaussianBlur(0.6)))
+    ImageDraw.Draw(img).ellipse([_sc(x - 2.5), _sc(y - 2.5), _sc(x + 2.5), _sc(y + 2.5)], fill=(255, 255, 255, 255))
+
+
+def _gfoil_pill(img, box, P):
+    w, h = img.size
+    m = _grrmask(w, h, box, (box[3] - box[1]) / 2)
+    s = _gl(w, h)
+    s.paste((*P["acc"], 120), (0, _sc(5)), m)
+    img.alpha_composite(s.filter(ImageFilter.GaussianBlur(_sc(7))))
+    img.paste(_ghgrad(w, h, P["acc"], P["acc2"]), (0, 0), m)
+    gl = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(gl).rounded_rectangle([_sc(box[0] + 2), _sc(box[1] + 1.5), _sc(box[2] - 2), _sc((box[1] + box[3]) / 2)],
+                                         radius=_sc(6), fill=70)
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 255)), (0, 0), ImageChops.multiply(gl.filter(ImageFilter.GaussianBlur(1)), m))
+    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 2 + 1)))
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 200)), (0, 0), edge)
+
+
+def _glogo_tile(img, x, y, T, P):
+    w, h = img.size
+    m = _grrmask(w, h, (x, y, x + T, y + T), T * 0.27)
+    s1 = _gl(w, h)
+    s1.paste((*P["acc"], 150), (0, _sc(10)), m)
+    img.alpha_composite(s1.filter(ImageFilter.GaussianBlur(_sc(10))))
+    s2 = _gl(w, h)
+    s2.paste((10, 8, 40, 150), (0, _sc(3)), m)
+    img.alpha_composite(s2.filter(ImageFilter.GaussianBlur(_sc(3))))
+    gr = Image.linear_gradient("L").resize((w, h)).rotate(30, resample=Image.BICUBIC)
+    t0, t1 = P["tile"]
+    body = Image.composite(Image.new("RGBA", (w, h), (*t1, 255)), Image.new("RGBA", (w, h), (*t0, 255)), gr)
+    img.paste(body, (0, 0), m)
+    inner = m.filter(ImageFilter.MinFilter(_SS * 2 + 1))
+    top = ImageChops.subtract(m, ImageChops.offset(inner, 0, _sc(2)))
+    band = Image.linear_gradient("L").resize((w, h)).transpose(Image.FLIP_TOP_BOTTOM).point(lambda v: 255 if v > 200 else 0)
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 70)), (0, 0), ImageChops.multiply(top, band))
+    sheen = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(sheen).ellipse([_sc(x - T * 0.35), _sc(y - T * 0.55), _sc(x + T * 0.75), _sc(y + T * 0.38)], fill=46)
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 255)), (0, 0),
+              ImageChops.multiply(sheen.filter(ImageFilter.GaussianBlur(_sc(5))), m))
+    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 2 + 1)))
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 60)), (0, 0), edge)
+    lg = _glogo(_sc(T * 0.74))
+    if lg is not None:
+        lx, ly = _sc(x + T / 2) - lg.width // 2, _sc(y + T / 2) - lg.height // 2 + _sc(1)
+        gl = _gl(w, h)
+        gl.paste((90, 140, 255, 120), (lx, ly), lg.getchannel("A"))
+        img.alpha_composite(gl.filter(ImageFilter.GaussianBlur(_sc(6))))
+        img.alpha_composite(lg, (lx, ly))
+    else:
+        ImageDraw.Draw(img).polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(x + T / 2, y + T / 2, 18)], fill=(255, 255, 255, 255))
+    # border gradien tipis (identitas biru -> ungu)
+    m2 = _grrmask(w, h, (x + 1.4, y + 1.4, x + T - 1.4, y + T - 1.4), T * 0.27 - 1.4)
+    g = _ghgrad(w, h, P["acc2"], P["acc"])
+    g.putalpha(ImageChops.subtract(m, m2).point(lambda v: v * 210 // 255))
+    img.alpha_composite(g)
+
+
+def _gtracked(d, xy, text, f, fill, track):
+    ws = [f.getlength(c) for c in text]
+    total = sum(ws) + track * _sc(1) * (len(text) - 1)
+    x = xy[0] - total
+    for c, wc in zip(text, ws):
+        d.text((x, xy[1]), c, font=f, fill=fill, anchor="lm")
+        x += wc + track * _sc(1)
+
+
+def _gpill(img, box, tint, ta, P, border=245, sh=48, blur=8):
+    """Pill kaca (backdrop blur) — dikerjakan pada crop kecil agar cepat."""
+    x0, y0, x1, y1 = box
+    pad = 40
+    cx0, cy0 = max(0, _sc(x0 - pad)), max(0, _sc(y0 - pad))
+    cx1, cy1 = min(img.width, _sc(x1 + pad)), min(img.height, _sc(y1 + pad))
+    crop = img.crop((cx0, cy0, cx1, cy1))
+    w, h = crop.size
+    ox, oy = cx0 / _SS, cy0 / _SS
+    m = _grrmask(w, h, (x0 - ox, y0 - oy, x1 - ox, y1 - oy), (y1 - y0) / 2)
+    s = _gl(w, h)
+    s.paste((*P["acc"], sh), (0, _sc(4)), m)
+    crop.alpha_composite(s.filter(ImageFilter.GaussianBlur(_sc(7))))
+    crop.paste(crop.filter(ImageFilter.GaussianBlur(_sc(blur))), (0, 0), m)
+    crop.alpha_composite(Image.composite(Image.new("RGBA", (w, h), (*tint, ta)), _gl(w, h), m))
+    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 2 + 1)))
+    crop.paste(Image.new("RGBA", (w, h), (255, 255, 255, border)), (0, 0), edge)
+    img.paste(crop, (cx0, cy0))
+
+
+def _gdraw_name(img, P, nm, fn, tx0):
+    """Nama: bayangan lembut + teks gradien (navy -> ungu logo)."""
+    x0, y0, x1, y1 = _sc(tx0 - 20), _sc(150), _sc(tx0 + 420), _sc(228)
+    w, h = x1 - x0, y1 - y0
+    lx, ly = _sc(tx0) - x0, _sc(186) - y0
+    crop = img.crop((x0, y0, x1, y1))
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).text((lx, ly), nm, font=fn, fill=255, anchor="lm")
+    m3 = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m3).text((lx, ly + _sc(3)), nm, font=fn, fill=255, anchor="lm")
+    sh = _gl(w, h)
+    sh.paste((*P["acc"], 75), (0, 0), m3.filter(ImageFilter.GaussianBlur(_sc(5))))
+    crop.alpha_composite(sh)
+    bb = m.getbbox()
+    if bb:
+        g = _gl(w, h)
+        gd = ImageDraw.Draw(g)
+        for x in range(bb[0], bb[2] + 1):
+            gd.line([(x, bb[1]), (x, bb[3])],
+                    fill=(*_lerp3(P["ink"], P["ink2"], (x - bb[0]) / max(1, bb[2] - bb[0])), 255))
+        crop.paste(g, (0, 0), m)
+    img.paste(crop, (x0, y0))
+
+
+def _gframe_layer(key):
+    if key in _FRAME_CACHE:
+        return _FRAME_CACHE[key]
+    P = _GP[key]
+    w, h = W * _SS, H * _SS
+    o = _grrmask(w, h, (9, 9, W - 9, H - 9), 16)
+    i = _grrmask(w, h, (10.6, 10.6, W - 10.6, H - 10.6), 14.6)
+    g = _ghgrad(w, h, P["acc2"], P["acc"])
+    g.putalpha(ImageChops.subtract(o, i).point(lambda v: v * 150 // 255))
+    o2 = _grrmask(w, h, (11.6, 11.6, W - 11.6, H - 11.6), 14)
+    i2 = _grrmask(w, h, (12.6, 12.6, W - 12.6, H - 12.6), 13)
+    hl = Image.new("RGBA", (w, h), (255, 255, 255, 0))
+    hl.putalpha(ImageChops.subtract(o2, i2).point(lambda v: v * 170 // 255))
+    layer = Image.alpha_composite(g, hl)
+    _FRAME_CACHE[key] = layer
+    return layer
+
+
+def _gnoise():
+    if "n" not in _NOISE_CACHE:
+        n = Image.effect_noise((W * _SS, H * _SS), 20).convert("L").point(lambda v: (v - 128) // 9 + 128)
+        _NOISE_CACHE["n"] = Image.merge("RGB", (n, n, n))
+    return _NOISE_CACHE["n"]
+
+
+_TX0 = 52          # margin kiri kolom teks
+_AV_CX, _AV_CY, _AV = 642, 172, 160
+
+
+def _gstatic_layer(key):
+    """Semua elemen yang TIDAK bergantung pada user (di-cache per tier)."""
+    if key in _STATIC_CACHE:
+        return _STATIC_CACHE[key]
+    elite = key == "elite"
+    P = _GP[key]
+    img = _gbackground(P)
+    w, h = img.size
+    cx, cy, AV = _AV_CX, _AV_CY, _AV
+    _gvignette(img, P)
+    _ghexagon(img, cx, cy, 238, P["acc"], 34)
+    _ghexagon(img, cx, cy, 196, P["acc2"], 40, 1.0)
+    _glight_sweep(img)
+    _gbokeh(img, P)
+    _gglass_tile(img, 744, 48, 58, 14, P)
+    _gicon_book(img, 744, 48, 58, 14, P)
+    _gglass_tile(img, 520, 296, 46, -12, P)
+    _gicon_cap(img, 520, 296, 46, -12, P)
+    _gput_sphere(img, 478, 52, 7, P)
+    _gput_sphere(img, 452, 168, 4, P)
+    _gorbit(img, cx, cy, 150, 58, -22, P, "back")
+    sh = _gl(w, h)
+    ImageDraw.Draw(sh).ellipse([_sc(cx - AV / 2 - 4), _sc(cy - AV / 2 + 14), _sc(cx + AV / 2 + 4), _sc(cy + AV / 2 + 14)],
+                               fill=(*P["acc"], 130))
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(16))))
+    ha = _gl(w, h)
+    ImageDraw.Draw(ha).ellipse([_sc(cx - AV / 2 - 13), _sc(cy - AV / 2 - 13), _sc(cx + AV / 2 + 13), _sc(cy + AV / 2 + 13)],
+                               fill=(255, 255, 255, 255))
+    img.alpha_composite(ha)
+    _gconic_ring(img, cx, cy, AV / 2 + 10, AV / 2 + 3.5, P["stops"])
+    _gput_pen(img, 754, 268, 100, 12.5, 225, P)
+
+    tx0, T, ty = _TX0, 78, 26
+    _glogo_tile(img, tx0, ty, T, P)
+    d = ImageDraw.Draw(img)
+    lab = "ELITE BOOST" if elite else "PRIME BOOST"
+    fp = _gsans(12.5, 700)
+    pw = fp.getlength(lab) / _SS + 48
+    px, pcy = tx0 + T + 16, ty + T / 2
+    _gfoil_pill(img, (px, pcy - 15, px + pw, pcy + 15), P)
+    d = ImageDraw.Draw(img)
+    d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(px + 21, pcy, 6)], fill=(255, 255, 255, 255))
+    d.text((_sc(px + 35), _sc(pcy)), lab, font=fp, fill=(255, 255, 255, 255), anchor="lm")
+    kt = "Terima kasih banyak," if elite else "Terima kasih,"
+    d.text((_sc(tx0), _sc(142)), kt, font=_gserif(29), fill=(*P["ink2"], 255), anchor="lm")
+    ul = _gl(w, h)
+    u = ImageDraw.Draw(ul)
+    x0, x1 = tx0 + 12, tx0 + 210
+    for x in range(_sc(x0), _sc(x1)):
+        t = (x - _sc(x0)) / _sc(x1 - x0)
+        u.line([(x, _sc(214)), (x, _sc(214.8))], fill=(*_lerp3(P["acc"], P["acc2"], t), int(255 * (1 - t) ** 0.8)))
+    dm = 6
+    u.polygon([(_sc(tx0 + 3), _sc(214.4 - dm / 1.4)), (_sc(tx0 + 3 + dm / 1.4), _sc(214.4)),
+               (_sc(tx0 + 3), _sc(214.4 + dm / 1.4)), (_sc(tx0 + 3 - dm / 1.4), _sc(214.4))],
+              fill=(*P["acc"], 255), outline=(255, 255, 255, 255))
+    img.alpha_composite(ul)
+    d = ImageDraw.Draw(img)
+    if elite:
+        lines = ["Dua boost sekaligus! Kamu bener-bener bikin", "sekolah nanZ naik level, kamu luar biasa!"]
+    else:
+        lines = ["Boost kamu bikin sekolah nanZ makin keren,", "makasih udah jadi murid yang peduli sama sekolah!"]
+    fb = _gsans(14, 450)
+    if max(fb.getlength(t) for t in lines) > _sc(396):
+        fb = _gsans(13, 450)
+    d.text((_sc(tx0), _sc(240)), lines[0], font=fb, fill=(*P["mute"], 255), anchor="lm")
+    d.text((_sc(tx0), _sc(262)), lines[1], font=fb, fill=(*P["mute"], 255), anchor="lm")
+    _gtracked(d, (_sc(W - 26), _sc(H - 21)), "nanZ  ·  SERVER", _gsans(8.5, 600), (*P["mute"], 150), 2.2)
+    _STATIC_CACHE[key] = img
+    return img
+
+
+def _render_card_v2(avatar_bytes, name, tier, total, boosts):
+    elite = boosts >= 2
+    key = "elite" if elite else "prime"
+    P = _GP[key]
+    with _RENDER_LOCK:
+        img = _gstatic_layer(key).copy()
+        w, h = img.size
+        cx, cy, AV = _AV_CX, _AV_CY, _AV
+        img.alpha_composite(_gavatar(avatar_bytes, _sc(AV)), (_sc(cx - AV / 2), _sc(cy - AV / 2)))
+        inner = _gl(w, h)
+        ImageDraw.Draw(inner).ellipse([_sc(cx - AV / 2), _sc(cy - AV / 2), _sc(cx + AV / 2), _sc(cy + AV / 2)],
+                                      outline=(255, 255, 255, 90), width=_SS)
+        img.alpha_composite(inner)
+        _gorbit(img, cx, cy, 150, 58, -22, P, "front")
+        _gflare(img, cx - 139, cy + 56, P)
+        bx, by = cx + 58, cy + 62
+        _gput_sphere(img, bx, by, 17, P, key="bsph")
+        d = ImageDraw.Draw(img)
+        if elite:
+            d.text((_sc(bx), _sc(by)), "x2", font=_gsans(14, 700), fill=(255, 255, 255, 255), anchor="mm")
+        else:
+            d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(bx, by, 10)], fill=(255, 255, 255, 255))
+        for sx, sy, s in ((cx - 128, cy - 98, 6), (cx + 62, cy - 112, 7)):
+            d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(sx, sy, s)], fill=(255, 255, 255, 240))
+
+        # nama (bersihkan karakter yang tidak didukung font, lalu fit ke lebar)
+        clean = _gclean(name, _gsans(44, 700))
+        fn, nm = _gfit(clean, 44, 388, 700)
+        _gdraw_name(img, P, nm, fn, _TX0)
+
+        # chip Level / Total
+        fc = _gsans(12.5, 600)
+        x, cy2 = _TX0, 303
+        for txt, col in ((f"Level {tier}", P["acc2"]), (f"Total {total} Boost", P["acc"])):
+            cw = fc.getlength(txt) / _SS + 44
+            _gpill(img, (x, cy2 - 15, x + cw, cy2 + 15), (255, 255, 255), 135, P)
+            dot = _gsphere(5.5, tuple(int(c * 0.62) for c in col), tuple(min(255, int(c * 0.5 + 130)) for c in col))
+            img.alpha_composite(dot, (_sc(x + 16) - dot.width // 2, _sc(cy2) - dot.height // 2))
+            ImageDraw.Draw(img).text((_sc(x + 30), _sc(cy2)), txt, font=fc, fill=(*P["ink"], 255), anchor="lm")
+            x += cw + 10
+
+        img.alpha_composite(_gframe_layer(key))
+        out = img.convert("RGB")
+        out = Image.blend(out, ImageChops.overlay(out, _gnoise()), 0.2)
+        out = out.resize((W, H), Image.LANCZOS)
+    buf = io.BytesIO()
+    out.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def render_booster_card(avatar_bytes: bytes, name: str, tier: int, total: int, boosts: int = 1) -> bytes:
+    """boosts == 1 -> Prime Boost; boosts >= 2 -> Elite Boost. Mengembalikan bytes PNG 800x340."""
+    if np is None:
+        print("[Booster] numpy belum terpasang (pip install numpy); memakai desain lama.")
+        return _render_booster_card_legacy(avatar_bytes, name, tier, total, boosts)
+    try:
+        return _render_card_v2(avatar_bytes, name, tier, total, boosts)
+    except Exception as e:
+        # Jangan sampai notifikasi boost gagal: kembali ke desain lama.
+        print(f"[Booster] Desain baru gagal ({e!r}); memakai desain lama.")
+        return _render_booster_card_legacy(avatar_bytes, name, tier, total, boosts)
 
 
 # Hanya pesan boost individual, bukan pesan pencapaian tier server.
