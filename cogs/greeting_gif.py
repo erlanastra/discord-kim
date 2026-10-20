@@ -1246,7 +1246,10 @@ def generate_greeting_gif(session, jam_str, hari, tanggal, cuaca, quote, server_
 # -- Tes cepat: python greeting_gif.py --
 if __name__ == "__main__":
     from datetime import datetime
-    from zoneinfo import ZoneInfo
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
 
     now = datetime.now(ZoneInfo("Asia/Jakarta"))
     for s in ("pagi", "siang", "sore", "malam"):
