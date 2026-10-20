@@ -1,20 +1,3 @@
-"""nanZ welcome card (PNG) + entry buttons for the verification flow.
-
-Cog ini hanya mengurus pesan sambutan beserta tombolnya.
-Status aplikasi, reminder, keputusan staff, dan notifikasi kedatangan voice
-tetap dimiliki oleh cogs.verifysystem.
-
-Kartu sambutan memakai gaya yang sama dengan kartu Booster (glass / 3D / tema sekolah,
-palet biru-ungu dari logo nanZ) dengan layout berbeda. Renderer berdiri sendiri,
-tidak mengimpor cogs.booster.
-
-File yang dibutuhkan (sama seperti booster):
-    fonts/Inter.ttf
-    fonts/InstrumentSerif-Italic.ttf
-    assets/nanz_logo.png   (atau nanz_logo.png / fonts/nanz_logo.png)
-Paket: pillow, numpy  (pip install pillow numpy)
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -65,7 +48,7 @@ LOGO_PATHS = ("assets/nanz_logo.png", "nanz_logo.png", "fonts/nanz_logo.png")
 _FALLBACKS = ("DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arial.ttf")
 FONT_BOLD = _FALLBACKS[0]   # dipakai _gsans bila Inter tidak ditemukan
 
-W, H = 800, 420
+W, H = 800, 340
 _SS = 2                      # supersampling (render 2x lalu diperkecil)
 _RENDER_LOCK = threading.Lock()
 _STATIC_CACHE: dict = {}     # layer statis (tidak bergantung pada user)
@@ -91,17 +74,6 @@ _GP = {
     ),
 }
 P = _GP["prime"]
-
-TX0 = 52                              # margin kiri (watermark kiri atas, sama seperti booster)
-AV_CX, AV_CY, AV = 604, 140, 148      # avatar
-DISC_R = 118                          # cakram gelap di belakang avatar
-ARC_TEXT = "·  WELCOME  TO  nanZ  SERVER  ·"
-
-STEPS = [
-    ("Data Verif", ["Klik tombol Data Verif", "lalu isi data dirimu."]),
-    ("Join Voice", ["Masuk voice verif", "untuk dicek staff."]),
-    ("Selesai", ["Staff konfirmasi,", "kamu resmi Murid nanZ."]),
-]
 
 
 # ============================================================
@@ -590,9 +562,23 @@ def _gnoise():
     return _NOISE_CACHE["n"]
 
 
+
+
 # ============================================================
-# CARD RENDERER — layout khusus greeting
+# CARD RENDERER — layout greeting (gaya ID card murid)
 # ============================================================
+
+TX0 = 52
+CARD = (507, 18, 727, 322)           # kartu ID utama
+CARD_R = 30
+AV_CX, AV_CY, AV = 618, 138, 152     # avatar di kartu ID
+
+STEPS = [
+    ("Data Verif", "Klik tombol Data Verif lalu isi data dirimu."),
+    ("Join Voice", "Masuk voice verif untuk dicek staff."),
+    ("Selesai", "Staff konfirmasi, kamu resmi Murid nanZ."),
+]
+
 
 def _tracked(d, x, y, text, font, fill, track):
     for ch in text:
@@ -601,244 +587,235 @@ def _tracked(d, x, y, text, font, fill, track):
     return x
 
 
-def _fit_lines(lines, start, wmax, wght=500):
-    s = start
-    while s > 8:
-        f = _gsans(s, wght)
-        if max(f.getlength(t) for t in lines) <= _sc(wmax):
-            return f
-        s -= 0.5
-    return _gsans(8, wght)
+def _soft_glow(img, cx, cy, r, col, a, mask=None):
+    w, h = img.size
+    gm = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(gm).ellipse([_sc(cx - r), _sc(cy - r), _sc(cx + r), _sc(cy + r)], fill=a)
+    gm = gm.filter(ImageFilter.GaussianBlur(_sc(r * 0.42)))
+    if mask is not None:
+        gm = ImageChops.multiply(gm, mask)
+    img.paste(Image.new("RGBA", (w, h), (*col, 255)), (0, 0), gm)
 
 
-def _band_y(x):
-    """Tepi atas band gelap di bawah: miring, lebih tinggi di kanan."""
-    return 284 - 24 * x / W
+def _background():
+    w, h = W * _SS, H * _SS
+    img = Image.new("RGBA", (w, h), (247, 247, 254, 255))
+    _soft_glow(img, -10, H + 40, 190, (60, 150, 255), 150)
+    _soft_glow(img, 230, H + 70, 150, (90, 215, 255), 120)
+    _soft_glow(img, W + 10, -20, 210, (170, 95, 240), 150)
+    _soft_glow(img, 520, -40, 120, (196, 176, 255), 70)
+    ov = _gl(w, h)
+    d = ImageDraw.Draw(ov)
+    for y in range(30, H - 14, 22):
+        for x in range(34, 470, 2):
+            a = int(26 * max(0, 1 - (x - 34) / 436) ** 1.3)
+            if a > 0:
+                d.line([(_sc(x), _sc(y)), (_sc(x + 2), _sc(y))], fill=(*P["rule"], a), width=_SS)
+    d.line([(_sc(40), _sc(12)), (_sc(40), _sc(H - 12))], fill=(240, 120, 200, 40), width=_SS)
+    return Image.alpha_composite(img, ov)
 
 
-def _band_mask(w, h):
+def _frame_layer(key="prime"):
+    if key in _FRAME_CACHE:
+        return _FRAME_CACHE[key]
+    w, h = W * _SS, H * _SS
+    o = _grrmask(w, h, (8, 8, W - 8, H - 8), 16)
+    i = _grrmask(w, h, (9.4, 9.4, W - 9.4, H - 9.4), 14.6)
+    g = _ghgrad(w, h, P["acc2"], P["acc"])
+    g.putalpha(ImageChops.subtract(o, i).point(lambda v: v * 95 // 255))
+    _FRAME_CACHE[key] = g
+    return g
+
+
+def _back_card(img):
+    """Kartu kedua (kaca) di belakang kartu ID, lengkap dengan topi wisuda."""
+    w, h = img.size
+    cx, cy, bw, bh, rot = 780, 176, 150, 262, -5
     m = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(m).polygon([(0, _sc(_band_y(0))), (w, _sc(_band_y(W))), (w, h), (0, h)], fill=255)
-    return m
+    ImageDraw.Draw(m).rounded_rectangle([_sc(cx - bw / 2), _sc(cy - bh / 2), _sc(cx + bw / 2), _sc(cy + bh / 2)],
+                                        radius=_sc(26), fill=255)
+    m = m.rotate(rot, center=(_sc(cx), _sc(cy)), resample=Image.BICUBIC)
+    sh = _gl(w, h)
+    sh.paste((120, 80, 220, 110), (0, _sc(10)), m)
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(12))))
+    gr = Image.linear_gradient("L").resize((w, h)).rotate(60, resample=Image.BICUBIC)
+    body = Image.composite(Image.new("RGBA", (w, h), (214, 204, 250, 235)),
+                           Image.new("RGBA", (w, h), (248, 245, 255, 235)), gr)
+    img.paste(body, (0, 0), m)
+    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 2 + 1)))
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 230)), (0, 0), edge)
+    _gicon_cap(img, 750, 96, 44, 10, P)
 
 
-def _disc_mask(w, h, r=DISC_R):
-    m = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(m).ellipse([_sc(AV_CX - r), _sc(AV_CY - r), _sc(AV_CX + r), _sc(AV_CY + r)], fill=255)
-    return m
+def _lanyard_and_card(img):
+    w, h = img.size
+    x0, y0, x1, y1 = CARD
+    m = _grrmask(w, h, CARD, CARD_R)
 
+    # strap di belakang kartu
+    sx0, sx1 = 602, 626
+    st = _gl(w, h)
+    sd = ImageDraw.Draw(st)
+    for yy in range(_sc(-4), _sc(34)):
+        t = (yy - _sc(-4)) / _sc(38)
+        sd.line([(_sc(sx0), yy), (_sc(sx1), yy)], fill=(*_lerp3((70, 160, 252), (112, 120, 246), t), 255))
+    sd.rectangle([_sc(sx0), _sc(-4), _sc(sx0 + 6), _sc(34)], fill=(255, 255, 255, 70))
+    sd.rectangle([_sc(sx1 - 5), _sc(-4), _sc(sx1), _sc(34)], fill=(20, 20, 120, 60))
 
-def _dark_body(w, h, glows):
-    g = Image.linear_gradient("L").resize((w, h))
-    body = Image.composite(Image.new("RGBA", (w, h), (*P["dk1"], 255)),
-                           Image.new("RGBA", (w, h), (*P["dk0"], 255)), g)
-    for gx, gy, r, col, a in glows:
-        gm = Image.new("L", (w, h), 0)
-        ImageDraw.Draw(gm).ellipse([_sc(gx - r), _sc(gy - r), _sc(gx + r), _sc(gy + r)], fill=int(a * P["dgk"]))
-        body.paste(Image.new("RGBA", (w, h), (*col, 255)), (0, 0),
-                   gm.filter(ImageFilter.GaussianBlur(_sc(r * 0.45))))
-    return body
+    # bayangan kartu
+    sh = _gl(w, h)
+    sh.paste((70, 40, 170, 150), (0, _sc(14)), m)
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(16))))
+    img.alpha_composite(st)
 
+    # bingkai kaca tipis
+    mo = _grrmask(w, h, (x0 - 2.4, y0 - 2.4, x1 + 2.4, y1 + 2.4), CARD_R + 2.4)
+    bd = _ghgrad(w, h, (96, 190, 255), (170, 120, 248))
+    bd.putalpha(mo.point(lambda v: v * 235 // 255))
+    img.alpha_composite(bd)
 
-def _dot_grid(w, h, x0, x1, y0, y1):
+    # badan kartu: gradien biru-ungu ke indigo gelap
+    yy = np.linspace(0, 1, h, dtype=np.float32)[:, None]
+    top, mid, bot = np.array((50, 56, 186)), np.array((76, 44, 174)), np.array((20, 10, 68))
+    col = np.where(yy < 0.5, top + (mid - top) * (yy / 0.5), mid + (bot - mid) * ((yy - 0.5) / 0.5))
+    arr = np.dstack([np.broadcast_to(col[:, i][:, None], (h, w)) for i in range(3)] + [np.full((h, w), 255)])
+    body = Image.fromarray(arr.astype(np.uint8), "RGBA")
+    _soft_glow(body, 617, 130, 120, (150, 110, 255), 170)
+    _soft_glow(body, 700, 50, 80, (70, 150, 255), 110)
+    _soft_glow(body, 600, 330, 140, (120, 70, 230), 120)
     dots = _gl(w, h)
     dd = ImageDraw.Draw(dots)
-    for yy in range(y0, y1, 16):
-        for xx in range(x0, x1, 16):
-            dd.ellipse([_sc(xx - 0.9), _sc(yy - 0.9), _sc(xx + 0.9), _sc(yy + 0.9)], fill=(*P["dgrid"], 40))
-    return dots
-
-
-def _draw_band(img):
-    """Band gelap miring di bawah (tempat tahapan verifikasi)."""
-    w, h = img.size
-    m = _band_mask(w, h)
-    sh = _gl(w, h)
-    sh.paste((*P["dsh"], 120), (0, _sc(-7)), m)
-    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(11))))
-    body = _dark_body(w, h, ((90, 420, 190, P["dglow"], 200), (760, 300, 170, P["acc2"], 110),
-                             (430, 440, 150, P["acc"], 100)))
-    body.alpha_composite(_dot_grid(w, h, 8, W, 270, H))
+    for py in range(int(y0) + 6, int(y1), 14):
+        for px in range(int(x0) + 6, int(x1), 14):
+            dd.ellipse([_sc(px - 0.8), _sc(py - 0.8), _sc(px + 0.8), _sc(py + 0.8)], fill=(*P["dgrid"], 44))
+    body.alpha_composite(dots)
     img.paste(body, (0, 0), m)
-    pts = [(_sc(x), _sc(_band_y(x))) for x in range(0, W + 1, 10)]
-    for width, blur in ((3, 5), (1.6, 0)):
-        l = _gl(w, h)
-        ld = ImageDraw.Draw(l)
-        for i in range(len(pts) - 1):
-            ld.line([pts[i], pts[i + 1]], fill=(*_lerp3(P["acc2"], P["acc"], i / (len(pts) - 1)), 255),
-                    width=_sc(width))
-        img.alpha_composite(l.filter(ImageFilter.GaussianBlur(_sc(blur))) if blur else l)
-    hl = _gl(w, h)
-    hd = ImageDraw.Draw(hl)
-    for i in range(len(pts) - 1):
-        hd.line([(pts[i][0], pts[i][1] + _sc(2)), (pts[i + 1][0], pts[i + 1][1] + _sc(2))],
-                fill=(255, 255, 255, 70), width=_SS)
-    img.alpha_composite(hl)
-    rng = random.Random(21)
-    sl = _gl(w, h)
-    sd = ImageDraw.Draw(sl)
-    for _ in range(50):
-        x = rng.uniform(10, W - 10)
-        y = rng.uniform(_band_y(x) + 10, H - 10)
-        r = rng.choice([0.7, 0.9, 1.1, 1.4])
-        sd.ellipse([_sc(x - r), _sc(y - r), _sc(x + r), _sc(y + r)], fill=(255, 255, 255, rng.randint(60, 170)))
-    img.alpha_composite(sl)
+
+    # kilau atas + rim
+    sheen = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(sheen).ellipse([_sc(x0 - 40), _sc(y0 - 120), _sc(x1 + 10), _sc(y0 + 60)], fill=46)
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 255)), (0, 0),
+              ImageChops.multiply(sheen.filter(ImageFilter.GaussianBlur(_sc(12))), m))
+    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 2 + 1)))
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 120)), (0, 0), edge)
+
+    # klip lanyard
+    cl = _gl(w, h)
+    cd = ImageDraw.Draw(cl)
+    cd.rounded_rectangle([_sc(599), _sc(27), _sc(629), _sc(41)], radius=_sc(6), fill=(0, 0, 40, 90))
+    img.alpha_composite(cl.filter(ImageFilter.GaussianBlur(_sc(3))))
+    cm = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(cm).rounded_rectangle([_sc(599), _sc(25), _sc(629), _sc(39)], radius=_sc(6), fill=255)
+    gcl = Image.composite(Image.new("RGBA", (w, h), (186, 192, 226, 255)),
+                          Image.new("RGBA", (w, h), (242, 244, 252, 255)),
+                          Image.linear_gradient("L").resize((w, h)))
+    img.paste(gcl, (0, 0), cm)
+    ImageDraw.Draw(img).rounded_rectangle([_sc(607), _sc(29.5), _sc(621), _sc(34.5)], radius=_sc(2.5),
+                                          fill=(52, 44, 140, 255))
 
 
-def _draw_disc(img):
-    """Cakram gelap tempat avatar duduk, melayang di atas sisi terang."""
+def _draw_pill(img):
     w, h = img.size
-    m = _disc_mask(w, h)
+    box = (550, 229, 684, 257)
+    m = _grrmask(w, h, box, 14)
     sh = _gl(w, h)
-    sh.paste((*P["dsh"], 150), (0, _sc(10)), m)
-    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(14))))
-    body = _dark_body(w, h, ((AV_CX, AV_CY, 120, P["dglow"], 215), (AV_CX + 90, AV_CY - 90, 70, P["acc2"], 110)))
-    body.alpha_composite(_dot_grid(w, h, AV_CX - DISC_R, AV_CX + DISC_R, AV_CY - DISC_R, AV_CY + DISC_R))
-    img.paste(body, (0, 0), m)
-    for R, col, a, wd in ((100, P["dgrid"], 46, 1.2), (78, P["acc2"], 90, 1.0)):
-        pts = [(AV_CX + R * math.cos(math.radians(60 * i + 30)),
-                AV_CY + R * math.sin(math.radians(60 * i + 30))) for i in range(6)]
-        l = _gl(w, h)
-        ImageDraw.Draw(l).line([(_sc(x), _sc(y)) for x, y in pts + [pts[0]]], fill=(*col, a),
-                               width=_sc(wd), joint="curve")
-        l.putalpha(ImageChops.multiply(l.getchannel("A"), m))
-        img.alpha_composite(l)
-    rng = random.Random(7)
+    sh.paste((40, 20, 140, 130), (0, _sc(5)), m)
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(6))))
+    img.paste(_ghgrad(w, h, (122, 94, 236), (176, 140, 250)), (0, 0), m)
+    gl = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(gl).rounded_rectangle([_sc(box[0] + 2), _sc(box[1] + 1.5), _sc(box[2] - 2), _sc(243)],
+                                         radius=_sc(8), fill=80)
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 255)), (0, 0),
+              ImageChops.multiply(gl.filter(ImageFilter.GaussianBlur(1)), m))
+    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 3 + 1)))
+    img.paste(Image.new("RGBA", (w, h), (255, 255, 255, 235)), (0, 0), edge)
+    d = ImageDraw.Draw(img)
+    d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(570, 243, 6)], fill=(255, 255, 255, 255))
+    _tracked(d, 584, 243, "MURID BARU", _gsans(12, 700), (255, 255, 255, 255), 0.6)
+
+
+def _draw_barcode(img):
+    w, h = img.size
+    rng = random.Random(11)
     l = _gl(w, h)
     d = ImageDraw.Draw(l)
-    for _ in range(26):
-        a = rng.uniform(0, math.tau)
-        rr = rng.uniform(20, DISC_R - 6)
-        x, y = AV_CX + rr * math.cos(a), AV_CY + rr * math.sin(a)
-        r = rng.choice([0.7, 0.9, 1.1, 1.4])
-        d.ellipse([_sc(x - r), _sc(y - r), _sc(x + r), _sc(y + r)], fill=(255, 255, 255, rng.randint(70, 190)))
-    l.putalpha(ImageChops.multiply(l.getchannel("A"), m))
+    x, xa, xb = 541.0, 541.0, 694.0
+    while x < xb:
+        bw = rng.choice([1, 1, 1.5, 2, 3])
+        t = (x - xa) / (xb - xa)
+        d.rectangle([_sc(x), _sc(283), _sc(x + bw), _sc(303)], fill=(*_lerp3((96, 196, 255), (196, 118, 246), t), 235))
+        x += bw + rng.choice([1.2, 1.8, 2.4])
     img.alpha_composite(l)
-    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 2 + 1)))
-    ring = _ghgrad(w, h, P["acc2"], P["acc"])
-    ring.putalpha(edge)
-    img.alpha_composite(ring)
-
-
-def _glass_dark(img, box, r=16):
-    """Kartu kaca gelap (backdrop blur) untuk langkah verifikasi."""
-    x0, y0, x1, y1 = box
-    pad = 40
-    cx0, cy0 = max(0, _sc(x0 - pad)), max(0, _sc(y0 - pad))
-    cx1, cy1 = min(img.width, _sc(x1 + pad)), min(img.height, _sc(y1 + pad))
-    crop = img.crop((cx0, cy0, cx1, cy1))
-    w, h = crop.size
-    ox, oy = cx0 / _SS, cy0 / _SS
-    m = _grrmask(w, h, (x0 - ox, y0 - oy, x1 - ox, y1 - oy), r)
-    s = _gl(w, h)
-    s.paste((0, 0, 30, 110), (0, _sc(4)), m)
-    crop.alpha_composite(s.filter(ImageFilter.GaussianBlur(_sc(7))))
-    crop.paste(crop.filter(ImageFilter.GaussianBlur(_sc(6))), (0, 0), m)
-    gr = Image.linear_gradient("L").resize((w, h)).rotate(35, resample=Image.BICUBIC)
-    body = Image.composite(Image.new("RGBA", (w, h), (*P["acc2"], 46)),
-                           Image.new("RGBA", (w, h), (255, 255, 255, 62)), gr)
-    body.putalpha(ImageChops.multiply(body.getchannel("A"), m))
-    crop.alpha_composite(body)
-    sheen = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(sheen).rounded_rectangle(
-        [_sc(x0 - ox + 3), _sc(y0 - oy + 2), _sc(x1 - ox - 3), _sc((y0 + y1) / 2 - oy - 6)],
-        radius=_sc(r - 3), fill=46)
-    crop.paste(Image.new("RGBA", (w, h), (255, 255, 255, 255)), (0, 0),
-               ImageChops.multiply(sheen.filter(ImageFilter.GaussianBlur(_sc(2))), m))
-    edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(_SS * 2 + 1)))
-    crop.paste(Image.new("RGBA", (w, h), (255, 255, 255, 150)), (0, 0), edge)
-    img.paste(crop, (cx0, cy0))
 
 
 def _static_layer():
     """Semua elemen yang TIDAK bergantung pada user (di-cache)."""
     if "prime" in _STATIC_CACHE:
         return _STATIC_CACHE["prime"]
-    img = _gbackground(P)
+    img = _background()
     w, h = img.size
-    _gvignette(img, P)
-    _gglass_ruler(img, 330, 92, 120, 24, -8, P)
-    _draw_band(img)
-    _draw_disc(img)
-    _ghexagon(img, AV_CX, AV_CY, DISC_R + 22, P["acc2"], 70, 1.0)
-    _glight_sweep(img)
 
-    # ornamen sekolah
-    _gglass_tile(img, 478, 58, 46, -12, P)
-    _gicon_book(img, 478, 58, 46, -12, P)
-    _gglass_tile(img, 752, 168, 48, 12, P)
-    _gicon_cap(img, 752, 168, 48, 12, P)
-    for sx, sy, r, key in ((440, 200, 4.5, "sph"), (700, 36, 4, "sph"),
-                           (354, 228, 3.5, "sph"), (750, 252, 4.5, "sph")):
-        _gput_sphere(img, sx, sy, r, P, key)
-    _gribbon(img, P, x0=706, wd=22, y0=-6, y1=70)
-
-    # glow + halo + ring avatar + teks melengkung
-    sh = _gl(w, h)
-    ImageDraw.Draw(sh).ellipse([_sc(AV_CX - AV / 2 - 6), _sc(AV_CY - AV / 2 + 6),
-                                _sc(AV_CX + AV / 2 + 6), _sc(AV_CY + AV / 2 + 22)], fill=(*P["dglow"], 190))
-    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(20))))
-    ha = _gl(w, h)
-    ImageDraw.Draw(ha).ellipse([_sc(AV_CX - AV / 2 - 13), _sc(AV_CY - AV / 2 - 13),
-                                _sc(AV_CX + AV / 2 + 13), _sc(AV_CY + AV / 2 + 13)], fill=(255, 255, 255, 255))
-    img.alpha_composite(ha)
-    _gconic_ring(img, AV_CX, AV_CY, AV / 2 + 10, AV / 2 + 3.5, P["stops"])
-    _garc_text(img, AV_CX, AV_CY, AV / 2 + 25, ARC_TEXT, _gsans(8.5, 700), (*P["dtxt"], 240), 2.2)
-
-    # brand (posisi sama seperti booster: kiri atas) + pill + sapaan
+    # watermark kiri atas: UKURAN & POSISI TIDAK DIUBAH
     _gbrand(img, TX0, 44, P)
-    lab = "MURID BARU"
-    fp = _gsans(13, 700)
-    pw = fp.getlength(lab) / _SS + 50
-    pcy = 104
-    _gfoil_pill(img, (TX0, pcy - 16, TX0 + pw, pcy + 16), P)
+
     d = ImageDraw.Draw(img)
-    d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(TX0 + 22, pcy, 6.5)], fill=(255, 255, 255, 255))
-    d.text((_sc(TX0 + 37), _sc(pcy)), lab, font=fp, fill=(255, 255, 255, 255), anchor="lm")
-    d.text((_sc(TX0), _sc(156)), "Selamat datang,", font=_gserif(42), fill=(*P["ink2"], 255), anchor="lm")
+    d.text((_sc(TX0), _sc(104)), "Selamat datang,", font=_gserif(36), fill=(*P["ink2"], 255), anchor="lm")
 
     # garis aksen + diamond
     ul = _gl(w, h)
     u = ImageDraw.Draw(ul)
-    x0, x1 = TX0 + 12, TX0 + 210
+    x0, x1 = TX0 + 8, TX0 + 224
     for x in range(_sc(x0), _sc(x1)):
         t = (x - _sc(x0)) / _sc(x1 - x0)
-        u.line([(x, _sc(246)), (x, _sc(246.8))], fill=(*_lerp3(P["acc"], P["acc2"], t), int(255 * (1 - t) ** 0.8)))
+        u.line([(x, _sc(187)), (x, _sc(187.9))], fill=(*_lerp3(P["acc"], P["acc2"], t), int(255 * (1 - t) ** 0.9)))
     dm = 6
-    u.polygon([(_sc(TX0 + 3), _sc(246.4 - dm / 1.4)), (_sc(TX0 + 3 + dm / 1.4), _sc(246.4)),
-               (_sc(TX0 + 3), _sc(246.4 + dm / 1.4)), (_sc(TX0 + 3 - dm / 1.4), _sc(246.4))],
+    u.polygon([(_sc(TX0 + 3), _sc(187.4 - dm / 1.4)), (_sc(TX0 + 3 + dm / 1.4), _sc(187.4)),
+               (_sc(TX0 + 3), _sc(187.4 + dm / 1.4)), (_sc(TX0 + 3 - dm / 1.4), _sc(187.4))],
               fill=(*P["acc"], 255), outline=(255, 255, 255, 255))
     img.alpha_composite(ul)
 
-    # band bawah: tahapan verifikasi
-    d = ImageDraw.Draw(img)
-    ex = _tracked(d, TX0, 308, "VERIFIKASI CUMA 3 LANGKAH", _gsans(10, 700), (*P["dtxt"], 235), 2.2)
-    ln = _gl(w, h)
-    ld = ImageDraw.Draw(ln)
-    for xx in range(_sc(ex + 6), _sc(ex + 6 + 80)):
-        t = (xx - _sc(ex + 6)) / _sc(80)
-        ld.line([(xx, _sc(308)), (xx, _sc(308.8))], fill=(*_lerp3(P["acc2"], P["acc"], t), int(220 * (1 - t))))
-    img.alpha_composite(ln)
-    d = ImageDraw.Draw(img)
-    d.text((_sc(748), _sc(308)), "Mulai dari tombol Data Verif ya", font=_gsans(10.5, 500),
-           fill=(*P["dtxt"], 190), anchor="rm")
-
-    cw, gap, cy0, ch = 216, 24, 324, 72
-    sub_font = _fit_lines([t for _, ls in STEPS for t in ls], 10.5, cw - 66)
-    for i, (title, lines) in enumerate(STEPS):
-        x = TX0 + i * (cw + gap)
-        _glass_dark(img, (x, cy0, x + cw, cy0 + ch))
-        nx, ny = x + 28, cy0 + ch / 2
-        _gput_sphere(img, nx, ny, 14, P, key="bsph" if i < 2 else "sph")
+    # langkah verifikasi (3 baris)
+    ys = (220, 261, 301)
+    dl = _gl(w, h)
+    dd = ImageDraw.Draw(dl)
+    for a, b in ((ys[0], ys[1]), (ys[1], ys[2])):
+        yy = a + 16
+        while yy < b - 14:
+            dd.ellipse([_sc(66 - 1), _sc(yy - 1), _sc(66 + 1), _sc(yy + 1)], fill=(*P["acc"], 150))
+            yy += 5
+    img.alpha_composite(dl)
+    for i, (title, desc) in enumerate(STEPS):
+        cy = ys[i]
+        _gput_sphere(img, 66, cy, 11, P, key="bsph" if i < 2 else "sph")
         d = ImageDraw.Draw(img)
-        d.text((_sc(nx), _sc(ny)), str(i + 1), font=_gsans(14, 700), fill=(255, 255, 255, 255), anchor="mm")
-        d.text((_sc(x + 54), _sc(cy0 + 22)), title, font=_gsans(14.5, 700), fill=(255, 255, 255, 255), anchor="lm")
-        for j, t in enumerate(lines):
-            d.text((_sc(x + 54), _sc(cy0 + 41 + j * 14)), t, font=sub_font, fill=(*P["dtxt"], 205), anchor="lm")
-        if i < 2:
-            gx, gy = x + cw + gap / 2, cy0 + ch / 2
-            d.polygon([(_sc(gx - 3), _sc(gy - 5)), (_sc(gx + 3.5), _sc(gy)), (_sc(gx - 3), _sc(gy + 5))],
-                      fill=(*P["dglow"], 255))
+        d.text((_sc(66), _sc(cy)), str(i + 1), font=_gsans(12, 700), fill=(255, 255, 255, 255), anchor="mm")
+        d.text((_sc(92), _sc(cy)), title, font=_gsans(13.5, 700), fill=(*P["ink"], 255), anchor="lm")
+        d.text((_sc(184), _sc(cy)), desc, font=_gsans(11.5, 500), fill=(64, 66, 112, 255), anchor="lm")
+
+    # ornamen mengambang
+    _gglass_tile(img, 491, 68, 40, -12, P)
+    _gicon_book(img, 491, 68, 40, -12, P)
+    _gput_sphere(img, 456, 36, 3.6, P)
+    _gput_sphere(img, 470, 213, 3.2, P)
+    _gput_sphere(img, 771, 291, 4.6, P)
+
+    # kartu belakang + kartu ID
+    _back_card(img)
+    _lanyard_and_card(img)
+
+    # glow + ring avatar
+    sh = _gl(w, h)
+    ImageDraw.Draw(sh).ellipse([_sc(AV_CX - AV / 2 - 4), _sc(AV_CY - AV / 2 + 6),
+                                _sc(AV_CX + AV / 2 + 4), _sc(AV_CY + AV / 2 + 20)], fill=(*P["dglow"], 170))
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(18))))
+    ha = _gl(w, h)
+    ImageDraw.Draw(ha).ellipse([_sc(AV_CX - AV / 2 - 12), _sc(AV_CY - AV / 2 - 12),
+                                _sc(AV_CX + AV / 2 + 12), _sc(AV_CY + AV / 2 + 12)], fill=(255, 255, 255, 40))
+    img.alpha_composite(ha)
+    _gconic_ring(img, AV_CX, AV_CY, AV / 2 + 7, AV / 2 + 2, P["stops"])
+
+    _draw_pill(img)
+    _draw_barcode(img)
     _STATIC_CACHE["prime"] = img
     return img
 
@@ -853,20 +830,20 @@ def _render_card(avatar_bytes: bytes, name: str) -> bytes:
                                        _sc(AV_CX + AV / 2), _sc(AV_CY + AV / 2)],
                                       outline=(255, 255, 255, 90), width=_SS)
         img.alpha_composite(inner)
-        bx, by = AV_CX + 54, AV_CY + 58
-        _gput_sphere(img, bx, by, 16, P, key="bsph")
+        bx, by = AV_CX + 47, AV_CY + 47
+        _gput_sphere(img, bx, by, 14, P, key="bsph")
         d = ImageDraw.Draw(img)
-        d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(bx, by, 9.5)], fill=(255, 255, 255, 255))
-        for sx, sy, s in ((AV_CX + 70, AV_CY - 92, 6), (AV_CX - 96, AV_CY - 66, 5)):
-            d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(sx, sy, s)], fill=(255, 255, 255, 240))
+        d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(bx, by, 8.5)], fill=(255, 255, 255, 255))
+        for sx, sy, s in ((AV_CX + 80, AV_CY - 62, 5.5), (AV_CX + 70, AV_CY + 70, 4)):
+            d.polygon([(_sc(a), _sc(b)) for a, b in _gsparkle(sx, sy, s)], fill=(255, 255, 255, 235))
 
         clean = _gclean(name, _gsans(46, 700))
-        fn, nm = _gfit(clean, 54, 396, 700)
-        _gdraw_name(img, P, nm, fn, TX0, 208)
+        fn, nm = _gfit(clean, 50, 380, 700)
+        _gdraw_name(img, P, nm, fn, TX0, 153)
 
-        img.alpha_composite(_gframe_layer("prime"))
+        img.alpha_composite(_frame_layer())
         out = img.convert("RGB")
-        out = Image.blend(out, ImageChops.overlay(out, _gnoise()), 0.2)
+        out = Image.blend(out, ImageChops.overlay(out, _gnoise()), 0.12)
         out = out.resize((W, H), Image.LANCZOS)
     buf = io.BytesIO()
     out.save(buf, format="PNG", optimize=True)
@@ -874,11 +851,10 @@ def _render_card(avatar_bytes: bytes, name: str) -> bytes:
 
 
 def generate_verify_card(avatar_bytes: bytes, name: str) -> bytes:
-    """Render kartu sambutan PNG (800x420). Panggil di executor thread."""
+    """Render kartu sambutan PNG (800x340). Panggil di executor thread."""
     if np is None:
         raise RuntimeError("numpy belum terpasang (pip install numpy)")
     return _render_card(avatar_bytes, name)
-
 
 
 # ============================================================
