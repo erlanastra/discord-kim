@@ -1,6 +1,8 @@
+import asyncio
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime
+from functools import partial
 from typing import Optional
 
 try:
@@ -140,15 +142,20 @@ class Greeting(commands.Cog):
         quote    = random.choice(self.QUOTES)
         srv_name = self.config.get("server_name", "nanZ Server")
 
-        # Generate image bytes
-        img_bytes = generate_greeting_gif(
-            session=session,
-            jam_str=jam_str,
-            hari=hari,
-            tanggal=tanggal,
-            cuaca=cuaca,
-            quote=quote,
-            server_name=srv_name,
+        # Generate GIF di thread terpisah (render ~5 detik) agar bot tidak macet/lag
+        loop = asyncio.get_running_loop()
+        img_bytes = await loop.run_in_executor(
+            None,
+            partial(
+                generate_greeting_gif,
+                session=session,
+                jam_str=jam_str,
+                hari=hari,
+                tanggal=tanggal,
+                cuaca=cuaca,
+                quote=quote,
+                server_name=srv_name,
+            ),
         )
 
         # Kirim sebagai Discord attachment
