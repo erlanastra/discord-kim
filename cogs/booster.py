@@ -282,6 +282,7 @@ _RENDER_LOCK = threading.Lock()
 _STATIC_CACHE = {}           # layer statis per tier (tidak bergantung user)
 _FRAME_CACHE = {}
 _NOISE_CACHE = {}
+RENDER_INFO = {"engine": None, "error": None}   # diisi tiap render; dipakai !test_boost
 
 # Warna biru/ungu Prime diambil dari logo nanZ; Elite = gold.
 _GP = {
@@ -474,7 +475,7 @@ def _gvignette(img, P):
     d = np.sqrt(((xx - w * 0.55) / (w * 0.62)) ** 2 + ((yy - h * 0.5) / (h * 0.78)) ** 2)
     a = np.clip((d - 0.75) / 0.75, 0, 1) ** 1.6 * 46
     v = np.dstack([np.full((h, w), c) for c in P["vig"]] + [a]).astype(np.uint8)
-    img.alpha_composite(Image.fromarray(v, "RGBA"))
+    img.alpha_composite(Image.fromarray(v))
 
 
 def _ghexagon(img, cx, cy, R, color, alpha, width=1.2):
@@ -530,7 +531,7 @@ def _gsphere(r, c_dark, c_light, spec=1.0):
     for i in range(3):
         out[..., i] = c_dark[i] + (c_light[i] - c_dark[i]) * t + 255 * spc * 0.7
     out[..., 3] = 255 * np.clip((1 - np.sqrt(rr)) * R, 0, 1) * inside
-    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGBA")
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
 
 
 def _gput_sphere(img, x, y, r, P, key="sph"):
@@ -640,7 +641,7 @@ def _gpen_image(Lp, Wd, c0, c1, nibc):
     rgb = base * shade[..., None] * edge[..., None] + 255 * spec[..., None]
     slit = nb & (np.abs(dy) < _sc(0.5)) & (t > 0.22)
     rgb = np.where(slit[..., None], rgb * 0.35, rgb)
-    return Image.fromarray(np.dstack([np.clip(rgb, 0, 255), alpha * 255]).astype(np.uint8), "RGBA")
+    return Image.fromarray(np.dstack([np.clip(rgb, 0, 255), alpha * 255]).astype(np.uint8))
 
 
 def _gput_pen(img, cx, cy, Lp, Wd, ang, P):
@@ -694,7 +695,7 @@ def _gconic_ring(img, cx, cy, r_out, r_in, stops):
     arr = np.array(stops, np.float32)
     col = arr[i0] * (1 - f[..., None]) + arr[i1] * f[..., None]
     a = np.clip(_sc(r_out) - r, 0, 1) * np.clip(r - _sc(r_in), 0, 1)
-    im = Image.fromarray(np.dstack([col, a * 255]).astype(np.uint8), "RGBA")
+    im = Image.fromarray(np.dstack([col, a * 255]).astype(np.uint8))
     img.alpha_composite(im, (_sc(cx) - n // 2, _sc(cy) - n // 2))
 
 
@@ -981,12 +982,16 @@ def _render_card_v2(avatar_bytes, name, tier, total, boosts):
 def render_booster_card(avatar_bytes: bytes, name: str, tier: int, total: int, boosts: int = 1) -> bytes:
     """boosts == 1 -> Prime Boost; boosts >= 2 -> Elite Boost. Mengembalikan bytes PNG 800x340."""
     if np is None:
+        RENDER_INFO.update(engine="legacy", error="numpy belum terpasang (pip install numpy)")
         print("[Booster] numpy belum terpasang (pip install numpy); memakai desain lama.")
         return _render_booster_card_legacy(avatar_bytes, name, tier, total, boosts)
     try:
-        return _render_card_v2(avatar_bytes, name, tier, total, boosts)
+        png = _render_card_v2(avatar_bytes, name, tier, total, boosts)
+        RENDER_INFO.update(engine="v2", error=None)
+        return png
     except Exception as e:
         # Jangan sampai notifikasi boost gagal: kembali ke desain lama.
+        RENDER_INFO.update(engine="legacy", error=repr(e))
         print(f"[Booster] Desain baru gagal ({e!r}); memakai desain lama.")
         return _render_booster_card_legacy(avatar_bytes, name, tier, total, boosts)
 
@@ -1408,7 +1413,13 @@ class Booster(commands.Cog):
             return
         try:
             await self.send_boost_embed(member or ctx.author, jumlah)
-            await ctx.send("Tes notifikasi boost selesai.",
+            if RENDER_INFO["engine"] == "v2":
+                info = "Renderer: **desain baru (v2)** ✅"
+            elif RENDER_INFO["engine"] == "legacy":
+                info = f"Renderer: **desain LAMA** ⚠️ Alasan: `{str(RENDER_INFO['error'])[:300]}`"
+            else:
+                info = "Renderer: belum berjalan (kartu gagal dibuat, cek log bot)."
+            await ctx.send(f"Tes notifikasi boost selesai.\n{info}",
                            allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException as e:
             await ctx.send(f"Tes notifikasi gagal: {e}",
