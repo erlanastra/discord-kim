@@ -24,7 +24,7 @@ LOGO_PATHS = ("assets/nanz_logo.png", "nanz_logo.png", "fonts/nanz_logo.png")
 _FALLBACKS = ("DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arial.ttf")
 
 W, H = 900, 480
-_SS = 2
+_SS = 1
 TOTAL_FRAMES = 48
 FRAME_MS = 80
 RENDER_INFO = {"engine": None, "error": None}   # diisi tiap render (untuk debugging)
@@ -1017,42 +1017,46 @@ def _sweep_sprite():
     return l.filter(ImageFilter.GaussianBlur(_sc(8))).resize((w, H), Image.LANCZOS)
 
 
+def _render_frame(P, st, elements, f, ring, sat, sweep):
+    """Render satu frame saja agar memori tidak menampung seluruh frame RGB."""
+    img = st.copy()
+    _draw_rays(img, P, f)
+    rot = -360.0 * f / TOTAL_FRAMES
+    rr = ring.rotate(rot, resample=Image.BICUBIC)
+    img.alpha_composite(rr, (HERO[0] - rr.width // 2, HERO[1] - rr.height // 2))
+    for k in range(2):
+        u = 2 * math.pi * (f / TOTAL_FRAMES) + k * math.pi
+        px, py = _orbit_pt(u)
+        back = math.sin(u) < 0
+        if back and math.hypot(px - HERO[0], py - HERO[1]) < HERO_R + 14:
+            continue
+        img.alpha_composite(sat, (int(round(px - sat.width / 2)), int(round(py - sat.height / 2))))
+    _draw_sparkles(img, f)
+    sx = int(-150 + (W + 300) * f / TOTAL_FRAMES)
+    _paste_clip(img, sweep, sx, 0)
+
+    out_k = 1.0 if f < TOTAL_FRAMES - 5 else max(0.0, (TOTAL_FRAMES - 1 - f) / 5)
+    for spr, (ex, ey), start in elements:
+        p = _ease_out((f - start) / 7.0)
+        k = p * out_k
+        if k <= 0.01:
+            continue
+        dy = int(round(14 * (1 - p)))
+        s2 = spr
+        if k < 0.995:
+            s2 = spr.copy()
+            s2.putalpha(s2.getchannel("A").point(lambda v, k=k: int(v * k)))
+        _paste_clip(img, s2, ex, ey + dy)
+    return img.convert("RGB")
+
+
 def _render_frames(P, st, elements):
+    """Generator hemat memori; tidak mengumpulkan frame RGB dalam list."""
     ring = _conic_sprite(HERO_R + 10, HERO_R + 3.5, P["stops"])
     sat = _sprite_sphere(P, 4.6)
     sweep = _sweep_sprite()
-    frames = []
     for f in range(TOTAL_FRAMES):
-        img = st.copy()
-        _draw_rays(img, P, f)
-        rot = -360.0 * f / TOTAL_FRAMES
-        rr = ring.rotate(rot, resample=Image.BICUBIC)
-        img.alpha_composite(rr, (HERO[0] - rr.width // 2, HERO[1] - rr.height // 2))
-        for k in range(2):
-            u = 2 * math.pi * (f / TOTAL_FRAMES) + k * math.pi
-            px, py = _orbit_pt(u)
-            back = math.sin(u) < 0
-            if back and math.hypot(px - HERO[0], py - HERO[1]) < HERO_R + 14:
-                continue
-            img.alpha_composite(sat, (int(round(px - sat.width / 2)), int(round(py - sat.height / 2))))
-        _draw_sparkles(img, f)
-        sx = int(-150 + (W + 300) * f / TOTAL_FRAMES)
-        _paste_clip(img, sweep, sx, 0)
-
-        out_k = 1.0 if f < TOTAL_FRAMES - 5 else max(0.0, (TOTAL_FRAMES - 1 - f) / 5)
-        for spr, (ex, ey), start in elements:
-            p = _ease_out((f - start) / 7.0)
-            k = p * out_k
-            if k <= 0.01:
-                continue
-            dy = int(round(14 * (1 - p)))
-            s2 = spr
-            if k < 0.995:
-                s2 = spr.copy()
-                s2.putalpha(s2.getchannel("A").point(lambda v, k=k: int(v * k)))
-            _paste_clip(img, s2, ex, ey + dy)
-        frames.append(img.convert("RGB"))
-    return frames
+        yield _render_frame(P, st, elements, f, ring, sat, sweep)
 
 
 def _paste_clip(img, spr, x, y):
@@ -1068,20 +1072,37 @@ def _generate_v2(session, jam_str, hari, tanggal, cuaca, quote, server_name="nan
         raise RuntimeError("numpy belum terpasang (pip install numpy)")
     key = session if session in THEMES else "pagi"
     P = THEMES[key]
+    # Supersampling 1x pada server RAM kecil; render frame satu per satu.
+    # Lock tetap melindungi cache gambar statis dari render bersamaan.
     with _LOCK:
         st = _gstatic(key)
         elements = _build_elements(P, jam_str, hari, tanggal, cuaca, quote, server_name)
-        frames = _render_frames(P, st, elements)
+        ring = _conic_sprite(HERO_R + 10, HERO_R + 3.5, P["stops"])
+        sat = _sprite_sphere(P, 4.6)
+        sweep = _sweep_sprite()
 
-    # Dither dengan noise TETAP (sama di semua frame) + palet global:
-    # gradasi halus tanpa banding, area diam identik antar frame -> ukuran GIF kecil.
-    noise = (np.random.default_rng(3).random((H, W, 1)) - 0.5) * 5.0
-    noised = [Image.fromarray(np.clip(np.asarray(f, np.float32) + noise, 0, 255).astype(np.uint8)) for f in frames]
-    sheet = Image.new("RGB", (W // 2, (H // 2) * 4))
-    for i, k in enumerate((0, 14, 26, 40)):
-        sheet.paste(noised[k].resize((W // 2, H // 2)), (0, i * (H // 2)))
-    pal = sheet.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
-    out_frames = [f.quantize(palette=pal, dither=Image.Dither.NONE) for f in noised]
+        # Palet global diambil dari 4 sampel; frame sampel tidak disimpan semua di RAM.
+        noise = (np.random.default_rng(3).random((H, W, 1)) - 0.5) * 5.0
+        sheet = Image.new("RGB", (W // 2, (H // 2) * 4))
+        for i, frame_index in enumerate((0, 14, 26, 40)):
+            sample = _render_frame(P, st, elements, frame_index, ring, sat, sweep)
+            arr = np.asarray(sample, dtype=np.float32)
+            arr += noise
+            noised_sample = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+            sheet.paste(noised_sample.resize((W // 2, H // 2)), (0, i * (H // 2)))
+            del sample, arr, noised_sample
+        pal = sheet.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
+        del sheet
+
+        # Simpan hanya frame GIF terkuantisasi; hindari list frame RGB dan list noised.
+        out_frames = []
+        for frame_index in range(TOTAL_FRAMES):
+            frame = _render_frame(P, st, elements, frame_index, ring, sat, sweep)
+            arr = np.asarray(frame, dtype=np.float32)
+            arr += noise
+            noised_frame = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+            out_frames.append(noised_frame.quantize(palette=pal, dither=Image.Dither.NONE))
+            del frame, arr, noised_frame
 
     buf = io.BytesIO()
     out_frames[0].save(buf, format="GIF", save_all=True, append_images=out_frames[1:], loop=0,
@@ -1220,10 +1241,12 @@ def _l_render_frame(frame_idx, theme, jam_str, hari, tanggal, cuaca, quote, serv
 def _generate_legacy(session, jam_str, hari, tanggal, cuaca, quote, server_name="nanZ"):
     theme = _L_THEMES.get(session, _L_THEMES["pagi"])
     particles = _l_particles(seed=sum(map(ord, session)) % 9999, n=55)
+    # Simpan hanya frame indexed (GIF), jangan menyimpan semua frame RGB.
     frames = []
     for i in range(_L_FRAMES):
         fr = _l_render_frame(i, theme, jam_str, hari, tanggal, cuaca, quote, server_name, particles)
         frames.append(fr.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=1))
+        del fr
     out = io.BytesIO()
     frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:], loop=0,
                    duration=_L_DELAY * 10, optimize=True, disposal=2)
