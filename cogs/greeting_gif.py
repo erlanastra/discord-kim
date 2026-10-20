@@ -6,8 +6,12 @@ import threading
 import unicodedata
 from functools import lru_cache
 
-import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+
+try:
+    import numpy as np  # dipakai desain baru (pip install numpy)
+except ImportError:  # pragma: no cover
+    np = None
 
 # =========================================================
 # nanZ GREETING GIF V2 — gaya sama dengan kartu Booster:
@@ -1060,6 +1064,8 @@ def _paste_clip(img, spr, x, y):
 
 def _generate_v2(session, jam_str, hari, tanggal, cuaca, quote, server_name="nanZ"):
     """Desain baru (glass / 3D, gelap-terang). Mengembalikan bytes GIF 900x480."""
+    if np is None:
+        raise RuntimeError("numpy belum terpasang (pip install numpy)")
     key = session if session in THEMES else "pagi"
     P = THEMES[key]
     with _LOCK:
