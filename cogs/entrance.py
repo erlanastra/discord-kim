@@ -1883,7 +1883,7 @@ _CARD = (24, 24, 336, 316)   # kartu gelap (inset)
 _AVC = (180, 198)            # pusat kartu pelajar
 _AVS = 88                    # ukuran foto profil pada kartu pelajar
 _RX, _RW = 372, 390          # kolom teks sisi terang: margin kiri & lebar
-_BRAND_X, _BRAND_Y = 52, 44  # posisi watermark (sama dengan kartu Booster)
+_CHIP_X, _CHIP_Y = 18, 18    # watermark chip: pojok kiri-atas seluruh kartu
 
 _GP = {
     "welcome": dict(
@@ -1939,8 +1939,8 @@ def _gl(w, h):
 
 
 @lru_cache(maxsize=96)
-def _gsans(size, wght=500):
-    px = _sc(size)
+def _gsans(size, wght=500, k=None):
+    px = int(round(size * (k or _SS)))
     for p in (FONT_SANS, FONT_BOLD, *_FALLBACKS):
         try:
             f = ImageFont.truetype(p, px)
@@ -2442,36 +2442,86 @@ def _gcard_dark(img, P):
     img.alpha_composite(l.filter(ImageFilter.GaussianBlur(0.8)))
 
 
-def _gbrand_dark(img, x, cy, P):
-    """Watermark kecil: logo nanZ + tulisan 'nanZ SERVER' (varian untuk latar gelap; ukuran sama dengan Booster)."""
-    w, h = img.size
-    lg = _glogo(_sc(46))
-    if lg is not None:
-        lx, ly = _sc(x), _sc(cy) - lg.height // 2
-        gl = _gl(w, h)
-        gl.paste((*P["dglow"], 150), (lx, ly + _sc(3)), lg.getchannel("A"))
-        img.alpha_composite(gl.filter(ImageFilter.GaussianBlur(_sc(5))))
-        img.alpha_composite(lg, (lx, ly))
-        tx = x + lg.width / _SS + 9
-    else:
-        tx = x
-    d = ImageDraw.Draw(img)
-    f1 = _gsans(23, 700)
-    d.text((_sc(tx), _sc(cy - 8)), "nan", font=f1, fill=(255, 255, 255, 255), anchor="lm")
-    zx = tx + f1.getlength("nan") / _SS
-    d.text((_sc(zx), _sc(cy - 8)), "Z", font=f1, fill=(*P["acc2"], 255), anchor="lm")
-    f2 = _gsans(9.5, 700)
-    cxp = tx + 1
-    for ch in "SERVER":
-        d.text((_sc(cxp), _sc(cy + 13)), ch, font=f2, fill=(*P["dtxt"], 215), anchor="lm")
-        cxp += f2.getlength(ch) / _SS + 3.4
-    ln = _gl(w, h)
-    ld = ImageDraw.Draw(ln)
-    x1 = cxp + 8
-    for xx in range(_sc(x1), _sc(x1 + 46)):
-        t = (xx - _sc(x1)) / _sc(46)
-        ld.line([(xx, _sc(cy + 13)), (xx, _sc(cy + 13.8))], fill=(*_lerp3(P["acc2"], P["acc"], t), int(200 * (1 - t))))
-    img.alpha_composite(ln)
+def _gbrand_chip(img, x, y, P, u=1.0):
+    """Watermark: chip kaca terang (logo nanZ + lockup "nanZ / SERVER"), sama untuk semua kartu nanZ.
+    x, y = pojok kiri-atas chip. u = faktor skala (1.0 = kanvas 800x340).
+    Dirender 4x pada canvas kecil lalu di-downscale supaya tepi dan teks kecil tetap tajam.
+    Baris SERVER di-justify selaras lebar "nanZ" -> lockup rapi, rata kiri-kanan."""
+    S, pad = 4, round(18 * u)
+    h = 38 * u
+    R = lambda v: int(round(v * S))
+    logo = _glogo_raw()
+    lh = 26 * u
+    lw = round(logo.width * lh / logo.height) if logo is not None else 0
+    f1, f2 = _gsans(18 * u, 700, S), _gsans(6.5 * u, 700, S)
+    t1, t2 = "nanZ", "SERVER"
+    w1 = f1.getlength(t1) / S
+    pl, gap, pr = 10 * u, 6 * u, 12 * u
+    cw = math.ceil(pl + (lw + gap if lw else 0) + w1 + pr)
+    W2, H2 = R(cw + 2 * pad), R(h + 2 * pad)
+    ox = oy = pad
+
+    def rr(box, r, fill=255):
+        m = Image.new("L", (W2, H2), 0)
+        ImageDraw.Draw(m).rounded_rectangle([R(v) for v in box], radius=R(r), fill=fill)
+        return m
+
+    m = rr((ox, oy, ox + cw, oy + h), h / 2)
+    cv = _gl(W2, H2)
+
+    # bayangan lembut + lip 3D tipis di bawah chip
+    sh = _gl(W2, H2)
+    sh.paste((*P["dsh"], 210), (0, R(5 * u)), m)
+    cv.alpha_composite(sh.filter(ImageFilter.GaussianBlur(R(5 * u))))
+    lip = _gl(W2, H2)
+    lip.paste((*tuple(int(c * 0.55) for c in P["acc"]), 255), (0, R(2.4 * u)), m)
+    cv.alpha_composite(lip)
+
+    # badan kaca: putih -> lavender tipis
+    g = Image.linear_gradient("L").resize((W2, H2))
+    body = Image.composite(Image.new("RGBA", (W2, H2), (232, 237, 255, 255)),
+                           Image.new("RGBA", (W2, H2), (255, 255, 255, 255)), g)
+    cv.paste(body, (0, 0), m)
+
+    # border gradien + highlight dalam
+    inner = rr((ox + 1.5 * u, oy + 1.5 * u, ox + cw - 1.5 * u, oy + h - 1.5 * u), h / 2 - 1.5 * u)
+    bd = Image.new("RGBA", (W2, H2))
+    gd = ImageDraw.Draw(bd)
+    for xx in range(W2):
+        gd.line([(xx, 0), (xx, H2)], fill=(*_lerp3(P["acc2"], P["acc"], xx / W2), 255))
+    bd.putalpha(ImageChops.subtract(m, inner))
+    cv.alpha_composite(bd)
+    inner2 = rr((ox + 2.8 * u, oy + 2.8 * u, ox + cw - 2.8 * u, oy + h - 2.8 * u), h / 2 - 2.8 * u)
+    hl = Image.new("RGBA", (W2, H2), (255, 255, 255, 0))
+    hl.putalpha(ImageChops.subtract(inner, inner2).point(lambda v: v * 170 // 255))
+    cv.alpha_composite(hl)
+
+    # logo (sejajar tengah chip)
+    tx = ox + pl
+    if logo is not None:
+        lg = logo.resize((R(lw), R(lh)), Image.LANCZOS)
+        cv.alpha_composite(lg, (R(tx), R(oy + (h - lh) / 2)))
+        tx += lw + gap
+
+    # lockup teks: nanZ (navy, Z aksen) + SERVER (tracking di-justify ke lebar nanZ)
+    cap1 = -f1.getbbox("Z", anchor="ls")[1] / S
+    cap2 = -f2.getbbox("E", anchor="ls")[1] / S
+    gap_t = 4.4 * u
+    top = oy + (h - (cap1 + gap_t + cap2)) / 2
+    b1, b2 = top + cap1, top + cap1 + gap_t + cap2
+    d = ImageDraw.Draw(cv)
+    zx = f1.getlength(t1) - f1.getlength("Z")
+    d.text((R(tx), R(b1)), "nan", font=f1, fill=(*P["ink"], 255), anchor="ls")
+    d.text((R(tx) + zx, R(b1)), "Z", font=f1, fill=(*P["acc2"], 255), anchor="ls")
+    adv = [f2.getlength(c) for c in t2]
+    trk = (f1.getlength(t1) - sum(adv)) / (len(t2) - 1)
+    cx_ = R(tx)
+    for c, a in zip(t2, adv):
+        d.text((cx_, R(b2)), c, font=f2, fill=(*P["mute"], 255), anchor="ls")
+        cx_ += a + trk
+
+    small = cv.resize((round((cw + 2 * pad) * _SS), round((h + 2 * pad) * _SS)), Image.LANCZOS)
+    img.alpha_composite(small, (_sc(x - pad), _sc(y - pad)))
 
 
 def _gstamp(img, cx, cy, P, text, rot):
@@ -2802,7 +2852,7 @@ def _gstatic_layer(key):
     ImageDraw.Draw(sh).ellipse([_sc(cx - 92), _sc(cy - 70), _sc(cx + 92), _sc(cy + 120)], fill=(*P["dglow"], 150))
     img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(_sc(26))))
 
-    _gbrand_dark(img, _BRAND_X, _BRAND_Y, P)
+    _gbrand_chip(img, _CHIP_X, _CHIP_Y, P)
 
     # ── teks statis kolom terang ──
     fp = _gsans(13, 700)
