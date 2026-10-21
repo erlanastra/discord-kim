@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import io
 import math
 import random
 import re
 import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from typing import Optional
 
@@ -49,11 +51,13 @@ _FALLBACKS = ("DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSan
 FONT_BOLD = _FALLBACKS[0]   # dipakai _gsans bila Inter tidak ditemukan
 
 W, H = 800, 340
-_SS = 2                      # supersampling (render 2x lalu diperkecil)
+_SS = 1                      # resolusi akhir langsung untuk menekan penggunaan RAM
 _RENDER_LOCK = threading.Lock()
 _STATIC_CACHE: dict = {}     # layer statis (tidak bergantung pada user)
 _FRAME_CACHE: dict = {}
 _NOISE_CACHE: dict = {}
+_RENDER_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nanz-verify-card")
+atexit.register(lambda: _RENDER_EXECUTOR.shutdown(wait=False, cancel_futures=True))
 
 # Palet biru/ungu diambil dari logo nanZ.
 _GP = {
@@ -1021,12 +1025,11 @@ class VerifyGreeting(commands.Cog):
                 avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
                 loop = asyncio.get_running_loop()
                 png_bytes = await loop.run_in_executor(
-                    None, generate_verify_card, avatar_bytes, member.display_name
+                    _RENDER_EXECUTOR, generate_verify_card, avatar_bytes, member.display_name
                 )
             except Exception as exc:
                 print(f"[VerifyGreeting][user={member.id}] gagal membuat kartu PNG: {exc}")
-                self._greeted_this_session.discard(key)
-                return
+                png_bytes = None
 
             # Keep the small delay from the original welcome behavior.
             await asyncio.sleep(2)
@@ -1038,12 +1041,16 @@ class VerifyGreeting(commands.Cog):
                 f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||"
             )
             try:
-                await message.channel.send(
-                    content=content,
-                    file=discord.File(io.BytesIO(png_bytes), filename="verify_welcome.png"),
-                    view=WelcomeActionView(self.bot),
-                    allowed_mentions=discord.AllowedMentions(users=True, roles=True),
-                )
+                kwargs = {
+                    "content": content,
+                    "view": WelcomeActionView(self.bot),
+                    "allowed_mentions": discord.AllowedMentions(users=True, roles=True),
+                }
+                if png_bytes:
+                    kwargs["file"] = discord.File(
+                        io.BytesIO(png_bytes), filename="verify_welcome.png"
+                    )
+                await message.channel.send(**kwargs)
             except discord.HTTPException as exc:
                 print(f"[VerifyGreeting][user={member.id}] gagal mengirim welcome: {exc}")
                 self._greeted_this_session.discard(key)
@@ -1072,7 +1079,7 @@ class VerifyGreeting(commands.Cog):
                 avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
                 loop = asyncio.get_running_loop()
                 png_bytes = await loop.run_in_executor(
-                    None, generate_verify_card, avatar_bytes, member.display_name
+                    _RENDER_EXECUTOR, generate_verify_card, avatar_bytes, member.display_name
                 )
             except Exception as exc:
                 print(f"[VerifyGreeting][user={member.id}] gagal membuat kartu PNG saat join: {exc}")

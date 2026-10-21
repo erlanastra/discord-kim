@@ -23,17 +23,18 @@ FONT_SERIF = "fonts/InstrumentSerif-Italic.ttf"
 LOGO_PATHS = ("assets/nanz_logo.png", "nanz_logo.png", "fonts/nanz_logo.png")
 _FALLBACKS = ("DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arial.ttf")
 
-W, H = 900, 480
+W, H = 900, 480  # kanvas desain internal
+OUTPUT_W, OUTPUT_H = 720, 384  # ukuran GIF akhir yang lebih ringan
 _SS = 1
-TOTAL_FRAMES = 48
-FRAME_MS = 80
+TOTAL_FRAMES = 30  # lebih sedikit frame untuk mengurangi CPU/RAM
+FRAME_MS = 100  # durasi total animasi sekitar 3 detik
 RENDER_INFO = {"engine": None, "error": None}   # diisi tiap render (untuk debugging)
 HERO = (168, 206)          # pusat matahari/bulan
 HERO_R = 76
 
-_LOCK = threading.Lock()
-_STATIC = {}
-_FRAME_CACHE = {}
+_LOCK = threading.Lock()  # melindungi cache/render V2
+_RENDER_LOCK = threading.Lock()  # hanya satu render GIF pada satu waktu
+_STATIC = {}  # dibatasi satu tema agar cache tidak terus menahan banyak gambar
 
 
 def _stops(a, b, c, d):
@@ -645,6 +646,8 @@ def _hero_sphere(P):
 def _gstatic(session):
     if session in _STATIC:
         return _STATIC[session]
+    # Simpan hanya satu tema; empat gambar RGBA penuh bisa menahan memori yang tidak perlu.
+    _STATIC.clear()
     P = THEMES[session]
     w, h = W * _SS, H * _SS
     img = _gbackground(P)
@@ -1067,7 +1070,7 @@ def _paste_clip(img, spr, x, y):
 
 
 def _generate_v2(session, jam_str, hari, tanggal, cuaca, quote, server_name="nanZ"):
-    """Desain baru (glass / 3D, gelap-terang). Mengembalikan bytes GIF 900x480."""
+    """Desain baru (glass / 3D, gelap-terang). Mengembalikan bytes GIF 720x384."""
     if np is None:
         raise RuntimeError("numpy belum terpasang (pip install numpy)")
     key = session if session in THEMES else "pagi"
@@ -1082,15 +1085,17 @@ def _generate_v2(session, jam_str, hari, tanggal, cuaca, quote, server_name="nan
         sweep = _sweep_sprite()
 
         # Palet global diambil dari 4 sampel; frame sampel tidak disimpan semua di RAM.
-        noise = (np.random.default_rng(3).random((H, W, 1)) - 0.5) * 5.0
-        sheet = Image.new("RGB", (W // 2, (H // 2) * 4))
+        noise = (np.random.default_rng(3).random((OUTPUT_H, OUTPUT_W, 1)) - 0.5) * 3.0
+        sheet = Image.new("RGB", (OUTPUT_W // 2, (OUTPUT_H // 2) * 4))
         for i, frame_index in enumerate((0, 14, 26, 40)):
             sample = _render_frame(P, st, elements, frame_index, ring, sat, sweep)
-            arr = np.asarray(sample, dtype=np.float32)
+            small_sample = sample.resize((OUTPUT_W, OUTPUT_H), Image.LANCZOS)
+            arr = np.asarray(small_sample, dtype=np.float32)
             arr += noise
             noised_sample = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
-            sheet.paste(noised_sample.resize((W // 2, H // 2)), (0, i * (H // 2)))
-            del sample, arr, noised_sample
+            sheet.paste(noised_sample.resize((OUTPUT_W // 2, OUTPUT_H // 2), Image.LANCZOS),
+                        (0, i * (OUTPUT_H // 2)))
+            del sample, small_sample, arr, noised_sample
         pal = sheet.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
         del sheet
 
@@ -1098,11 +1103,12 @@ def _generate_v2(session, jam_str, hari, tanggal, cuaca, quote, server_name="nan
         out_frames = []
         for frame_index in range(TOTAL_FRAMES):
             frame = _render_frame(P, st, elements, frame_index, ring, sat, sweep)
-            arr = np.asarray(frame, dtype=np.float32)
+            small_frame = frame.resize((OUTPUT_W, OUTPUT_H), Image.LANCZOS)
+            arr = np.asarray(small_frame, dtype=np.float32)
             arr += noise
             noised_frame = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
             out_frames.append(noised_frame.quantize(palette=pal, dither=Image.Dither.NONE))
-            del frame, arr, noised_frame
+            del frame, small_frame, arr, noised_frame
 
     buf = io.BytesIO()
     out_frames[0].save(buf, format="GIF", save_all=True, append_images=out_frames[1:], loop=0,
@@ -1245,8 +1251,9 @@ def _generate_legacy(session, jam_str, hari, tanggal, cuaca, quote, server_name=
     frames = []
     for i in range(_L_FRAMES):
         fr = _l_render_frame(i, theme, jam_str, hari, tanggal, cuaca, quote, server_name, particles)
-        frames.append(fr.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=1))
-        del fr
+        small = fr.resize((OUTPUT_W, OUTPUT_H), Image.LANCZOS)
+        frames.append(small.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE))
+        del fr, small
     out = io.BytesIO()
     frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:], loop=0,
                    duration=_L_DELAY * 10, optimize=True, disposal=2)
@@ -1254,16 +1261,26 @@ def _generate_legacy(session, jam_str, hari, tanggal, cuaca, quote, server_name=
 
 
 def generate_greeting_gif(session, jam_str, hari, tanggal, cuaca, quote, server_name="nanZ"):
-    """Entry point (dipakai cogs/greeting.py). Mengembalikan bytes GIF 900x480."""
-    try:
-        data = _generate_v2(session, jam_str, hari, tanggal, cuaca, quote, server_name)
-        RENDER_INFO.update(engine="v2", error=None)
-        return data
-    except Exception as e:
-        # Jangan sampai greeting terjadwal gagal terkirim: kembali ke desain lama.
-        RENDER_INFO.update(engine="legacy", error=repr(e))
-        print(f"[Greeting] Desain baru gagal ({e!r}); memakai desain lama.")
-        return _generate_legacy(session, jam_str, hari, tanggal, cuaca, quote, server_name)
+    """Entry point untuk cogs/greeting.py; menghasilkan GIF 720x384.
+
+    Render diserialisasi sampai proses encoding selesai supaya beberapa pemanggilan
+    bersamaan tidak menahan banyak kumpulan frame di RAM sekaligus.
+    """
+    with _RENDER_LOCK:
+        try:
+            data = _generate_v2(session, jam_str, hari, tanggal, cuaca, quote, server_name)
+            RENDER_INFO.update(engine="v2", error=None)
+            return data
+        except MemoryError as e:
+            # Jangan menjalankan renderer cadangan yang juga berat saat RAM kritis.
+            RENDER_INFO.update(engine=None, error="MemoryError: RAM tidak cukup untuk render GIF")
+            print("[Greeting] Render dihentikan: RAM tidak cukup. Coba lagi setelah beban VPS turun.")
+            raise
+        except Exception as e:
+            # Fallback lama tetap tersedia untuk error desain/dependensi, bukan OOM.
+            RENDER_INFO.update(engine="legacy", error=repr(e))
+            print(f"[Greeting] Desain baru gagal ({e!r}); memakai desain lama.")
+            return _generate_legacy(session, jam_str, hari, tanggal, cuaca, quote, server_name)
 
 
 # -- Tes cepat: python greeting_gif.py --

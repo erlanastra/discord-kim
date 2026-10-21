@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import math
@@ -277,8 +278,10 @@ def _render_booster_card_legacy(avatar_bytes: bytes, name: str, tier: int, total
 # NANZ CARD V2 — glass / 3D minimal / tema sekolah
 # Renderer baru. Signature publik tetap: render_booster_card(...)
 # =========================================================
-_SS = 2                      # supersampling (render 2x lalu diperkecil)
+_SS = 1                      # hemat RAM: render langsung pada ukuran output 800x340
 _RENDER_LOCK = threading.Lock()
+# Satu worker khusus agar beberapa event boost tidak membuat banyak render PNG serentak.
+_BOOST_RENDER_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nanz-booster-render")
 _STATIC_CACHE = {}           # layer statis per tier (tidak bergantung user)
 _FRAME_CACHE = {}
 _NOISE_CACHE = {}
@@ -1149,16 +1152,23 @@ def render_booster_card(avatar_bytes: bytes, name: str, tier: int, total: int, b
     if np is None:
         RENDER_INFO.update(engine="legacy", error="numpy belum terpasang (pip install numpy)")
         print("[Booster] numpy belum terpasang (pip install numpy); memakai desain lama.")
-        return _render_booster_card_legacy(avatar_bytes, name, tier, total, boosts)
+        with _RENDER_LOCK:
+            return _render_booster_card_legacy(avatar_bytes, name, tier, total, boosts)
     try:
         png = _render_card_v2(avatar_bytes, name, tier, total, boosts)
         RENDER_INFO.update(engine="v2", error=None)
         return png
+    except MemoryError as e:
+        # Jangan mencoba renderer legacy saat RAM sudah kritis; biarkan notifikasi teks tetap terkirim.
+        RENDER_INFO.update(engine="failed", error="MemoryError")
+        print("[Booster] RAM tidak cukup untuk membuat kartu PNG; lewati gambar untuk mencegah OOM.")
+        raise
     except Exception as e:
-        # Jangan sampai notifikasi boost gagal: kembali ke desain lama.
+        # Render legacy juga diserialkan supaya fallback tidak menambah beban RAM bersamaan.
         RENDER_INFO.update(engine="legacy", error=repr(e))
         print(f"[Booster] Desain baru gagal ({e!r}); memakai desain lama.")
-        return _render_booster_card_legacy(avatar_bytes, name, tier, total, boosts)
+        with _RENDER_LOCK:
+            return _render_booster_card_legacy(avatar_bytes, name, tier, total, boosts)
 
 
 # Hanya pesan boost individual, bukan pesan pencapaian tier server.
@@ -1308,7 +1318,8 @@ class Booster(commands.Cog):
             avatar = await member.display_avatar.replace(size=256, format="png").read()
             loop = asyncio.get_running_loop()
             png = await loop.run_in_executor(
-                None, render_booster_card, avatar, member.display_name, tier, total, boosts
+                _BOOST_RENDER_EXECUTOR, render_booster_card,
+                avatar, member.display_name, tier, total, boosts
             )
             file = discord.File(io.BytesIO(png), filename="booster.png")
         except Exception as e:
