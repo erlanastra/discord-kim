@@ -25,6 +25,8 @@ logger = logging.getLogger("nanZ.nZLoyalist")
 class NZLoyalist(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # Lock diberi reference count agar entry dihapus setelah tidak dipakai.
+        # Format: user_id -> [asyncio.Lock, jumlah pemakai/penunggu].
         self._user_locks = {}
         self._startup_task = None
         logger.info("[nZ Loyalist] Cog loaded.")
@@ -32,14 +34,14 @@ class NZLoyalist(commands.Cog):
     # --------------------------------------------------------
     # LOCK PER MEMBER
     # --------------------------------------------------------
-    def get_user_lock(self, user_id: int):
-        lock = self._user_locks.get(user_id)
-
-        if lock is None:
-            lock = asyncio.Lock()
-            self._user_locks[user_id] = lock
-
-        return lock
+    def get_user_lock_entry(self, user_id: int):
+        """Ambil entry lock dan hitung juga task yang masih menunggu lock."""
+        entry = self._user_locks.get(user_id)
+        if entry is None:
+            entry = [asyncio.Lock(), 0]
+            self._user_locks[user_id] = entry
+        entry[1] += 1
+        return entry
 
     # --------------------------------------------------------
     # GUILD DAN ROLE
@@ -223,30 +225,31 @@ class NZLoyalist(commands.Cog):
         if member.guild.id != NZ_GUILD_ID or member.bot:
             return
 
-        lock = self.get_user_lock(member.id)
+        entry = self.get_user_lock_entry(member.id)
+        lock = entry[0]
 
-        async with lock:
-            guild = member.guild
-            role = self.get_loyalist_role(guild)
+        try:
+            async with lock:
+                guild = member.guild
+                role = self.get_loyalist_role(guild)
 
-            if role is None:
-                return
+                if role is None:
+                    return
 
-            user = (
-                user_override
-                if user_override is not None
-                else member
-            )
+                user = user_override if user_override is not None else member
+                has_tag = self.has_nz_server_tag(user)
+                has_role = role in member.roles
 
-            has_tag = self.has_nz_server_tag(user)
-            has_role = role in member.roles
-
-            # Log hanya muncul ketika role benar-benar berubah.
-            if has_tag and not has_role:
-                await self.add_loyalist_role(member, role)
-
-            elif not has_tag and has_role:
-                await self.remove_loyalist_role(member, role)
+                # Log hanya muncul ketika role benar-benar berubah.
+                if has_tag and not has_role:
+                    await self.add_loyalist_role(member, role)
+                elif not has_tag and has_role:
+                    await self.remove_loyalist_role(member, role)
+        finally:
+            # Tidak menghapus lock yang masih dipakai/ditunggu task lain.
+            entry[1] -= 1
+            if entry[1] <= 0 and self._user_locks.get(member.id) is entry:
+                self._user_locks.pop(member.id, None)
 
     # --------------------------------------------------------
     # USER UPDATE
@@ -326,72 +329,56 @@ class NZLoyalist(commands.Cog):
     async def startup_sync(self):
         await self.bot.wait_until_ready()
 
-        logger.info(
-            "[nZ Loyalist] Memulai startup synchronization."
-        )
-
+        logger.info("[nZ Loyalist] Memulai startup synchronization.")
         guild = self.get_nanz_guild()
-
         if guild is None:
             return
 
         role = self.get_loyalist_role(guild)
-
         if role is None:
             return
-
-        members = list(guild.members)
-
-        if not members:
-            try:
-                members = [
-                    member
-                    async for member in guild.fetch_members(limit=None)
-                ]
-
-                logger.info(
-                    "[nZ Loyalist] Fetch members selesai: %s member.",
-                    len(members),
-                )
-
-            except discord.HTTPException:
-                logger.exception(
-                    "[nZ Loyalist] Gagal fetch members."
-                )
-                return
 
         processed = 0
         errors = 0
 
-        for member in members:
+        async def process_member(member):
+            nonlocal processed, errors
             if member.bot:
-                continue
-
+                return
             try:
                 await self.sync_member(member)
-
             except asyncio.CancelledError:
                 raise
-
             except Exception:
                 errors += 1
-
                 logger.exception(
                     "[nZ Loyalist] Error startup sync %s (%s)",
                     member,
                     member.id,
                 )
-
             processed += 1
-
             await asyncio.sleep(SYNC_DELAY)
-
             if processed % SYNC_BATCH_SIZE == 0:
                 await asyncio.sleep(2)
 
+        # Iterasi cache langsung tanpa membuat salinan list tambahan.
+        if guild.members:
+            for member in guild.members:
+                await process_member(member)
+        else:
+            # Stream member dari Discord satu per satu, jangan menampung seluruh
+            # anggota server ke list besar di RAM.
+            try:
+                async for member in guild.fetch_members(limit=None):
+                    await process_member(member)
+            except asyncio.CancelledError:
+                raise
+            except discord.HTTPException:
+                logger.exception("[nZ Loyalist] Gagal fetch members.")
+                return
+
         logger.info(
-            "[nZ Loyalist] Startup sync selesai | "
-            "Diproses: %s | Error: %s",
+            "[nZ Loyalist] Startup sync selesai | Diproses: %s | Error: %s",
             processed,
             errors,
         )
@@ -416,7 +403,7 @@ class NZLoyalist(commands.Cog):
 
         # Hanya member yang sudah memiliki role Loyalist
         # diperiksa pada siklus ini.
-        for member in list(guild.members):
+        for member in guild.members:
             if member.bot or role not in member.roles:
                 continue
 
@@ -478,8 +465,8 @@ class NZLoyalist(commands.Cog):
             self._startup_task.cancel()
 
         self.periodic_sync.cancel()
-        self._user_locks.clear()
-
+        # Jangan clear lock dictionary saat operasi mungkin masih berjalan;
+        # setiap sync_member membersihkan entry sendiri secara aman.
         logger.info("[nZ Loyalist] Cog unloaded.")
 
 
