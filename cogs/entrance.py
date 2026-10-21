@@ -1,10 +1,12 @@
 import asyncio
+import atexit
 import io
 import math
 import random
 import re
 import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from functools import lru_cache
 
@@ -55,7 +57,7 @@ WHITE = (255, 255, 255)
 MUTED = (165, 160, 195)
 
 W, H = 800, 340
-SS = 4
+SS = 2  # fallback legacy: supersampling lebih rendah untuk menghemat RAM
 
 CX, CY, R = 646, 170, 90
 HR = 130
@@ -1868,8 +1870,10 @@ FONT_SANS = "fonts/Inter.ttf"                      # Inter (variable font)
 FONT_SERIF = "fonts/InstrumentSerif-Italic.ttf"    # Instrument Serif Italic
 LOGO_PATHS = ("assets/nanz_logo.png", "nanz_logo.png", "fonts/nanz_logo.png")
 
-_SS = 2                      # supersampling (render 2x lalu diperkecil)
+_SS = 1                      # render pada resolusi target untuk membatasi penggunaan RAM
 _RENDER_LOCK = threading.Lock()
+_RENDER_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nanz-entrance-render")
+atexit.register(lambda: _RENDER_EXECUTOR.shutdown(wait=False, cancel_futures=True))
 _STATIC_CACHE = {}           # layer statis per mode (tidak bergantung user)
 _FRAME_CACHE = {}
 _NOISE_CACHE = {}
@@ -3029,8 +3033,10 @@ class Entrance(commands.Cog):
 
             loop = asyncio.get_running_loop()
 
+            # Renderer memakai banyak layer gambar; satu worker mencegah render
+            # welcome/leave berjalan bersamaan dan melonjakkan pemakaian RAM.
             png = await loop.run_in_executor(
-                None,
+                _RENDER_EXECUTOR,
                 render_entrance_card,
                 avatar_bytes,
                 member.display_name,
