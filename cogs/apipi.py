@@ -371,8 +371,11 @@ class Apipi(commands.Cog):
         self.bot = bot
 
         self.session_lock = asyncio.Lock()
-
         self.initialized = False
+
+        # Simpan referensi task supaya bisa dihentikan saat cog di-unload.
+        self._initialize_panels_task = None
+        self._reconcile_task = None
 
         self.heartbeat.start()
         self.weekly_checker.start()
@@ -395,23 +398,31 @@ class Apipi(commands.Cog):
             ApipiManagementPanel(self)
         )
 
-        self.bot.loop.create_task(
-            self.initialize_panels()
-        )
+        if self._initialize_panels_task is None or self._initialize_panels_task.done():
+            self._initialize_panels_task = asyncio.create_task(
+                self.initialize_panels(),
+                name="apipi_initialize_panels",
+            )
 
-        self.bot.loop.create_task(
-            self.reconcile_after_restart()
-        )
+        if self._reconcile_task is None or self._reconcile_task.done():
+            self._reconcile_task = asyncio.create_task(
+                self.reconcile_after_restart(),
+                name="apipi_reconcile_after_restart",
+            )
 
     # ========================================================
     # COG UNLOAD
     # ========================================================
 
     def cog_unload(self):
-
+        self.initialized = False
         self.heartbeat.cancel()
-
         self.weekly_checker.cancel()
+
+        # Hindari task latar belakang tetap hidup setelah cog di-reload.
+        for task in (self._initialize_panels_task, self._reconcile_task):
+            if task is not None and not task.done():
+                task.cancel()
 
     # ========================================================
     # PANEL INITIALIZATION
@@ -2184,12 +2195,16 @@ class Apipi(commands.Cog):
 
     async def sync_pair_voice(
         self,
-        pair
+        pair,
+        *,
+        checked_channel=None,
+        channel_was_checked=False,
     ):
-
-        channel = await self.get_shared_channel(
-            pair
-        )
+        """Sinkronkan sesi voice; dapat memakai hasil pemeriksaan yang sudah ada."""
+        if channel_was_checked:
+            channel = checked_channel
+        else:
+            channel = await self.get_shared_channel(pair)
 
         live = await db.fetchone(
             """
@@ -2256,12 +2271,12 @@ class Apipi(commands.Cog):
         for pair in pairs:
             try:
                 channel = await self.get_shared_channel(pair)
-                print(
-                    f"[APIPI] DISCOVERY | pair={pair['id']} "
-                    f"status={pair['status']} "
-                    f"shared_vc={channel.id if channel else None}"
+                # Gunakan hasil yang sama agar tidak melakukan fetch/check VC dua kali.
+                await self.sync_pair_voice(
+                    pair,
+                    checked_channel=channel,
+                    channel_was_checked=True,
                 )
-                await self.sync_pair_voice(pair)
             except Exception as e:
                 import traceback
                 print(f"[APIPI] Pair discovery error pair={pair.get('id')}: {e}")
@@ -2350,16 +2365,8 @@ class Apipi(commands.Cog):
                             pair["id"]
                     )
 
-                    elapsed = max(
-                        0,
-                        int((heartbeat_now - from_db_datetime(live["started_at"])).total_seconds())
-                    )
-
-                    print(
-                        f"[APIPI] HEARTBEAT | pair={pair['id']} "
-                        f"vc={channel.id} elapsed={elapsed}s"
-                    )
-
+                    # Tidak mencetak satu baris log per pasangan setiap 30 detik;
+                    # mengurangi volume log tanpa mengubah perhitungan durasi.
                     await self.check_eligibility(
                         pair
                     )
