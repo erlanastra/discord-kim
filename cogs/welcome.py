@@ -995,9 +995,7 @@ WELCOME_STICKERS = [
 class WaveView(discord.ui.View):
 
     def __init__(self, member: discord.Member):
-        # View ini menyimpan target member per pesan, jadi bukan persistent-view
-        # lintas restart. Timeout terbatas mencegah view hidup tanpa batas.
-        super().__init__(timeout=86400)
+        super().__init__(timeout=None)
         self.member = member
         self.cooldowns = {}          # user_id -> waktu terakhir klik
 
@@ -1033,12 +1031,8 @@ class WaveView(discord.ui.View):
                 f"🥳 Selamat datang {m}! Welcome dari {u} 💖",
             ]
 
-            if interaction.channel is None:
-                return await interaction.response.send_message(
-                    "❌ Channel tidak tersedia untuk mengirim sapaan.", ephemeral=True
-                )
-            await interaction.response.defer(thinking=False)
             await interaction.channel.send(content=random.choice(messages), stickers=[sticker])
+            await interaction.response.defer()
 
         except Exception as e:
             print("Sticker error:", e)
@@ -1054,23 +1048,8 @@ class Welcome(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                self.config = json.load(f)
-            if not isinstance(self.config, dict):
-                raise ValueError("config.json harus berisi object JSON")
-        except FileNotFoundError:
-            # Fallback ke working directory agar kompatibel dengan struktur bot lama.
-            try:
-                with open("config.json", "r", encoding="utf-8") as f:
-                    self.config = json.load(f)
-                if not isinstance(self.config, dict):
-                    raise ValueError("config.json harus berisi object JSON")
-            except Exception as exc:
-                raise RuntimeError(f"[Welcome] config.json tidak bisa dibaca: {exc}") from exc
-        except (json.JSONDecodeError, OSError, ValueError) as exc:
-            raise RuntimeError(f"[Welcome] config.json tidak valid: {exc}") from exc
+        with open("config.json") as f:
+            self.config = json.load(f)
 
         # ROLE MEMBER
         self.MEMBER_ROLE_ID = 1453095603008442510
@@ -1088,7 +1067,7 @@ class Welcome(commands.Cog):
         before_roles = {r.id for r in before.roles}
         after_roles = {r.id for r in after.roles}
 
-        if before_roles != after_roles and self.MEMBER_ROLE_ID not in before_roles and self.MEMBER_ROLE_ID in after_roles:
+        if self.MEMBER_ROLE_ID not in before_roles and self.MEMBER_ROLE_ID in after_roles:
             await self.send_welcome(after)
 
     # ── test command ──
@@ -1099,21 +1078,13 @@ class Welcome(commands.Cog):
     # ── kirim welcome ──
     async def send_welcome(self, member: discord.Member):
         channel_id = self.config.get("welcome_channel")
-        try:
-            channel_id = int(channel_id)
-        except (TypeError, ValueError):
-            print("[Welcome] config welcome_channel kosong atau bukan ID angka.")
+        if not channel_id:
+            print("Config welcome_channel tidak ditemukan!")
             return
 
         channel = self.bot.get_channel(channel_id)
-        if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
-                print(f"[Welcome] channel {channel_id} tidak bisa diakses: {exc}")
-                return
-        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
-            print(f"[Welcome] channel {channel_id} bukan channel teks/thread.")
+        if not channel:
+            print(f"Channel dengan ID {channel_id} tidak ditemukan!")
             return
 
         mentions = discord.AllowedMentions(users=True)
