@@ -199,24 +199,40 @@ async def setup_verification_database():
     """)
 
 async def claim_new_application(guild_id: int, user_id: int):
-    """Atomic claim using a token; only one concurrent submission can win."""
+    """
+    Izinkan member mengajukan ulang kapan saja.
+    Hanya pengiriman yang sedang berjalan yang mengunci submit bersamaan.
+    Pengajuan lama yang belum selesai ditandai KEDALUWARSA, bukan dihapus.
+    """
     await db.execute(
         "INSERT IGNORE INTO nanz_verification_active (guild_id,user_id,status) VALUES (%s,%s,'IDLE')",
         guild_id, user_id
     )
     token = uuid.uuid4().hex
+    # Status PROCESSING hanya dipakai sebagai lock sementara untuk submit bersamaan.
     await db.execute("""
         UPDATE nanz_verification_active
         SET status='PROCESSING', claim_token=%s, current_app_id=NULL
-        WHERE guild_id=%s AND user_id=%s
-          AND status IN ('IDLE','DENIED','FAILED','NOTIFICATION_FAILED','MENGISI_DATA','LEFT')
+        WHERE guild_id=%s AND user_id=%s AND status <> 'PROCESSING'
     """, token, guild_id, user_id)
     row = await db.fetchone(
-        "SELECT status, claim_token, current_app_id FROM nanz_verification_active WHERE guild_id=%s AND user_id=%s",
+        "SELECT status, claim_token FROM nanz_verification_active WHERE guild_id=%s AND user_id=%s LIMIT 1",
         guild_id, user_id
     )
-    if not row or row.get('claim_token') != token or row.get('status') != 'PROCESSING':
+    if not row or row.get("claim_token") != token or row.get("status") != "PROCESSING":
         return None
+
+    # Pengajuan pending sebelumnya menjadi kedaluwarsa. Riwayat tetap tersimpan,
+    # reminder dihentikan, dan tombol lama tidak bisa mengambil keputusan lagi.
+    await db.execute("""
+        UPDATE nanz_verification_applications
+        SET status='KEDALUWARSA', reminder_blocked=1,
+            next_reminder_at=NULL, reminder_claim=NULL,
+            decision_token=NULL
+        WHERE guild_id=%s AND user_id=%s
+          AND status IN ('MENGISI_DATA','MENUNGGU_VOICE','MENUNGGU_STAFF',
+                         'APPROVING','DENYING','APPROVAL_FAILED','NOTIFICATION_FAILED')
+    """, guild_id, user_id)
     return token
 
 async def create_application(guild_id, user_id, token, nama, asal, umur, gender, medsos, followers, link):
@@ -4053,15 +4069,13 @@ class VerifyView(
 
 
 
-        data_channel = (
-
-            interaction.client.get_channel(
-
-                DATA_MEMBER_CHANNEL_ID
-
-            )
-
-        )
+        data_channel = interaction.client.get_channel(DATA_MEMBER_CHANNEL_ID)
+        if data_channel is None:
+            try:
+                data_channel = await interaction.client.fetch_channel(DATA_MEMBER_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                print(f"[VERIFY][app={app_row['id']}][DATA_MEMBER] Channel tidak dapat diakses: {exc}")
+                data_channel = None
 
 
 
@@ -4321,6 +4335,15 @@ class VerifyView(
 
         # =================================================
 
+        else:
+            print(f"[VERIFY][app={app_row['id']}][DATA_MEMBER] Channel {DATA_MEMBER_CHANNEL_ID} tidak tersedia.")
+            await safe_followup(
+                interaction,
+                "Role sudah diberikan, tetapi data member belum terkirim karena channel data member tidak dapat diakses. Periksa ID channel dan izin bot.",
+                ephemeral=True,
+            )
+            return
+
         # UPDATE PANEL
 
         # =================================================
@@ -4376,16 +4399,13 @@ class VerifyView(
 
 
             except discord.HTTPException as e:
-
-
-
-                print(
-
-                    "[VERIFY] Gagal mengupdate "
-
-                    f"panel approve: {e}"
-
+                print(f"[VERIFY][app={app_row['id']}] Gagal mengupdate panel approve: {e}")
+                await safe_followup(
+                    interaction,
+                    "Data sudah diproses, tetapi pesan tombol gagal diperbarui. Periksa izin bot di channel verifikasi.",
+                    ephemeral=True,
                 )
+                return
 
 
 
