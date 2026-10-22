@@ -102,9 +102,37 @@ VOICE_VERIF_CHANNEL_IDS = [
 VERIFY_TABLE = "nanz_verification_applications"
 VERIFY_ACTIVE_TABLE = "nanz_verification_active"
 
+
+async def _verify_table_exists(table_name: str) -> bool:
+    """Periksa information_schema supaya startup tidak memicu warning tabel sudah ada."""
+    row = await db.fetchone(
+        """SELECT 1 AS found
+           FROM information_schema.tables
+           WHERE table_schema = DATABASE() AND table_name = %s
+           LIMIT 1""",
+        table_name,
+    )
+    return bool(row)
+
+
+async def _verify_column_exists(table_name: str, column_name: str) -> bool:
+    """Periksa kolom sebelum migrasi; menghindari warning Duplicate column name."""
+    row = await db.fetchone(
+        """SELECT 1 AS found
+           FROM information_schema.columns
+           WHERE table_schema = DATABASE()
+             AND table_name = %s AND column_name = %s
+           LIMIT 1""",
+        table_name,
+        column_name,
+    )
+    return bool(row)
+
+
 async def setup_verification_database():
-    """Membuat tabel yang diperlukan jika belum ada; tidak menghapus data lama."""
-    await db.execute("""
+    """Siapkan skema secara idempoten tanpa menghapus data verifikasi lama."""
+    if not await _verify_table_exists(VERIFY_TABLE):
+        await db.execute("""
         CREATE TABLE IF NOT EXISTS nanz_verification_applications (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             guild_id BIGINT UNSIGNED NOT NULL,
@@ -136,8 +164,10 @@ async def setup_verification_database():
             INDEX idx_verify_member (guild_id, user_id, id),
             UNIQUE KEY uq_verify_claim_token (claim_token)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    """)
-    await db.execute("""
+        """)
+
+    if not await _verify_table_exists(VERIFY_ACTIVE_TABLE):
+        await db.execute("""
         CREATE TABLE IF NOT EXISTS nanz_verification_active (
             guild_id BIGINT UNSIGNED NOT NULL,
             user_id BIGINT UNSIGNED NOT NULL,
@@ -148,9 +178,15 @@ async def setup_verification_database():
             PRIMARY KEY (guild_id, user_id),
             INDEX idx_verify_active_status (status, updated_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    """)
-    # MariaDB-safe additive migration for installations that ran an earlier draft.
-    await db.execute("ALTER TABLE nanz_verification_applications ADD COLUMN IF NOT EXISTS reminder_claim VARCHAR(64) NULL")
+        """)
+
+    # Additive migration for older installations. Check metadata first rather than
+    # relying on ADD COLUMN IF NOT EXISTS, whose support/diagnostics vary by server.
+    if not await _verify_column_exists(VERIFY_TABLE, "reminder_claim"):
+        await db.execute(
+            "ALTER TABLE nanz_verification_applications "
+            "ADD COLUMN reminder_claim VARCHAR(64) NULL"
+        )
     # Older versions stopped reminders after three total messages. Resume those
     # pending applications under the new recurring schedule (about every 8 hours).
     await db.execute("""
