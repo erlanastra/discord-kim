@@ -371,15 +371,17 @@ async def mark_voice_arrival(bot, member, target):
         return
     channel = bot.get_channel(ENGAGEMENT_CHANNEL_ID)
     if channel is None:
-        # Do not leave voice_notice_claim permanently locked if the channel is
-        # unavailable during startup/cache warm-up; a later voice event can retry.
-        await db.execute(
-            "UPDATE nanz_verification_applications "
-            "SET voice_notice_claim=NULL WHERE id=%s AND voice_notice_claim=%s AND voice_notice_sent=0",
-            app_id, token
-        )
-        print(f"[VERIFY][app={app_id}][MENUNGGU_STAFF] Engagement channel tidak ditemukan; claim dilepas untuk retry")
-        return
+        try:
+            channel = await bot.fetch_channel(ENGAGEMENT_CHANNEL_ID)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as fetch_exc:
+            # Jangan mengunci claim selamanya jika channel belum ada / tidak bisa diakses.
+            await db.execute(
+                "UPDATE nanz_verification_applications "
+                "SET voice_notice_claim=NULL WHERE id=%s AND voice_notice_claim=%s AND voice_notice_sent=0",
+                app_id, token
+            )
+            print(f"[VERIFY][app={app_id}][MENUNGGU_STAFF] Engagement channel gagal diambil: {fetch_exc}")
+            return
     embed = discord.Embed(
         title='Member Menunggu Verifikasi Voice',
         description=f'{NANZ_ARROW_BLUE} {member.mention} sudah masuk ke **{target.name}**.\n{NANZ_ARROW_PURPLE} Staff dapat masuk ke voice tersebut untuk melakukan konfirmasi data.',

@@ -1075,8 +1075,9 @@ class VerifyGreeting(commands.Cog):
                 )
             except Exception as exc:
                 print(f"[VerifyGreeting][user={member.id}] gagal membuat kartu PNG: {exc}")
-                self._greeted_this_session.discard(key)
-                return
+                # Kartu adalah fitur tambahan; kegagalan CDN/Pillow/numpy tidak
+                # boleh menghentikan pesan arahan verifikasi.
+                png_bytes = None
 
             # Keep the small delay from the original welcome behavior.
             await asyncio.sleep(2)
@@ -1088,12 +1089,17 @@ class VerifyGreeting(commands.Cog):
                 f"|| <@&{MOD_DC_ROLE_ID}> <@&{PEMBINA_OSIS_ROLE_ID}> <@&{OSIS_ROLE_ID}> ||"
             )
             try:
-                await message.channel.send(
-                    content=content,
-                    file=discord.File(io.BytesIO(png_bytes), filename="verify_welcome.png"),
-                    view=WelcomeActionView(self.bot),
-                    allowed_mentions=discord.AllowedMentions(users=True, roles=True),
-                )
+                kwargs = {
+                    "content": content,
+                    "view": WelcomeActionView(self.bot),
+                    # Role mention sengaja tidak diping massal pada setiap pesan.
+                    "allowed_mentions": discord.AllowedMentions(users=True, roles=False),
+                }
+                if png_bytes:
+                    kwargs["file"] = discord.File(
+                        io.BytesIO(png_bytes), filename="verify_welcome.png"
+                    )
+                await message.channel.send(**kwargs)
             except discord.HTTPException as exc:
                 print(f"[VerifyGreeting][user={member.id}] gagal mengirim welcome: {exc}")
                 self._greeted_this_session.discard(key)
