@@ -17,6 +17,7 @@ class AutoCommentThread(commands.Cog):
         1455173936089403518,
         1523950507545329675,
         1556603682793979965,
+        1508683781698224241,
     }
 
     THREAD_NAME = "💬 Komentar"
