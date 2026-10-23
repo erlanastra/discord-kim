@@ -150,6 +150,7 @@ async def setup_verification_database():
             reminder_claim VARCHAR(64) NULL,
             staff_message_id BIGINT UNSIGNED NULL,
             staff_channel_id BIGINT UNSIGNED NULL,
+            data_message_id BIGINT UNSIGNED NULL,
             voice_notice_claim VARCHAR(64) NULL,
             voice_notice_sent TINYINT(1) NOT NULL DEFAULT 0,
             voice_channel_id BIGINT UNSIGNED NULL,
@@ -186,6 +187,13 @@ async def setup_verification_database():
         await db.execute(
             "ALTER TABLE nanz_verification_applications "
             "ADD COLUMN reminder_claim VARCHAR(64) NULL"
+        )
+    # ID pesan data member untuk mencegah pengiriman duplikat saat proses approve
+    # pulih setelah restart atau penulisan status final mengalami kegagalan.
+    if not await _verify_column_exists(VERIFY_TABLE, "data_message_id"):
+        await db.execute(
+            "ALTER TABLE nanz_verification_applications "
+            "ADD COLUMN data_message_id BIGINT UNSIGNED NULL"
         )
     # Older versions stopped reminders after three total messages. Resume those
     # pending applications under the new recurring schedule (about every 8 hours).
@@ -2326,39 +2334,46 @@ class VerifyModal(
 
 
 
-        view = VoiceVerifyButtonView(
+        # Kirim DM konfirmasi setelah pengajuan dan pesan staff berhasil dibuat.
+        # Kegagalan DM tidak membatalkan pengajuan; sebagian member menutup DM server.
+        dm_sent = False
+        try:
+            await interaction.user.send(
+                "✅ **Data verifikasi nanZ kamu sudah kami terima.**\n\n"
+                "Data kamu sedang diproses oleh staff. Untuk sekarang, kamu cukup menunggu kabar.\n"
+                "Jika staff perlu melakukan voice verification, staff akan **men-tag kamu** untuk mengajakmu "
+                "ke voice channel verifikasi. Mohon perhatikan notifikasi Discord dan jangan mengirim ulang "
+                "formulir selama pengajuan ini masih diproses.\n\n"
+                "Terima kasih sudah menunggu!"
+            )
+            dm_sent = True
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            print(
+                f"[VERIFY][app={app_id}][DM_CONFIRMATION] Gagal mengirim DM konfirmasi "
+                f"ke user {interaction.user.id}: {exc}"
+            )
 
-            self.bot
-
+        view = VoiceVerifyButtonView(self.bot)
+        response_text = (
+            "✅ **Data verifikasi berhasil dikirim!**\n\n"
+            "Data kamu sedang diproses oleh staff. Kamu tidak perlu mengirim ulang formulir.\n"
+            "Silakan tunggu kabar; jika staff perlu melakukan voice verification, staff akan men-tag kamu "
+            "untuk mengajakmu ke voice channel verifikasi.\n\n"
+            "Tekan tombol **Join Voice Verif** di bawah hanya jika kamu siap mengikuti proses voice verification."
         )
-
-
+        if dm_sent:
+            response_text += "\n\n📩 Aku juga sudah mengirim konfirmasi ke DM kamu."
+        else:
+            response_text += (
+                "\n\n⚠️ Aku tidak bisa mengirim DM. Pastikan DM dari anggota server diizinkan; "
+                "informasi pengajuan tetap tercatat dan proses verifikasi tetap berjalan."
+            )
 
         await safe_followup(
-
             interaction,
-
-            (
-
-                "✅ **Data verifikasi berhasil dikirim!**\n\n"
-
-                "Langkah berikutnya wajib dilakukan:\n"
-
-                "1. Tekan tombol **Join Voice Verif** di bawah.\n"
-
-                "2. Masuk ke voice yang diarahkan dan tunggu staff.\n"
-
-                "3. Staff akan mengonfirmasi data kamu sebelum menyetujui verifikasi.\n\n"
-
-                "Pengajuanmu tetap tercatat selama menunggu. Jangan submit ulang; bot akan mengingatkan lewat DM "
-                "setiap sekitar 8 jam (maksimal 3 kali sehari) sampai pengajuan diproses."
-
-            ),
-
+            response_text,
             view=view,
-
             ephemeral=True,
-
         )
 
 
@@ -2696,33 +2711,23 @@ class VerifyButton(
 
 
         self.bot = bot
-
-        # Pilihan per pengguna agar panel bersama tidak mencampur data member.
+        # Tombol berdekorator dibuat oleh super().__init__ lebih dahulu.
+        # Pindahkan ke akhir supaya dropdown tampil di atas tombol.
         self.selections = {}
-
-        self.add_item(
-
-            PlatformSelect()
-
+        continue_button = next(
+            (item for item in self.children
+             if getattr(item, "custom_id", None) == "verify_continue_button"),
+            None,
         )
+        if continue_button is not None:
+            self.remove_item(continue_button)
 
+        self.add_item(PlatformSelect())
+        self.add_item(AgeSelect())
+        self.add_item(GenderSelect())
 
-
-        self.add_item(
-
-            AgeSelect()
-
-        )
-
-
-
-        self.add_item(
-
-            GenderSelect()
-
-        )
-
-
+        if continue_button is not None:
+            self.add_item(continue_button)
 
     def set_selection(self, user_id, key, value):
         self.selections.setdefault(int(user_id), {})[key] = value
@@ -4061,13 +4066,9 @@ class VerifyView(
                 await safe_followup(interaction, "Tidak bisa memastikan role member. Status belum diselesaikan; coba lagi setelah memeriksa bot.", ephemeral=True)
                 return
 
-            try:
-                await finalize_approval(app_row['id'], interaction.guild.id, target_user_id, decision_token)
-            except Exception as exc:
-                await release_approval_for_retry(app_row['id'], interaction.guild.id, target_user_id, decision_token)
-                print(f"[VERIFY][app={app_row['id']}][APPROVING] Gagal menyimpan status final: {exc}")
-                await safe_followup(interaction, "Role sudah diproses tetapi status database belum berhasil diselesaikan. Silakan coba Approve lagi; proses role aman diulang.", ephemeral=True)
-                return
+            # Status final sengaja belum disimpan di sini. Data member harus berhasil
+            # dikirim terlebih dahulu agar kegagalan channel tidak membuat aplikasi
+            # berstatus DISETUJUI sementara data member hilang.
 
             # -------------------------------------------------
 
@@ -4337,37 +4338,79 @@ class VerifyView(
 
 
 
+            # Marker stabil di footer agar retry dapat menemukan pesan yang mungkin
+            # sudah terkirim tepat sebelum bot restart/DB gagal menyimpan message ID.
+            app_marker = f"NANZ_VERIFY_APP:{int(app_row['id'])}"
+            data_embed.set_footer(text=app_marker)
+            data_message = None
+
+            # Jalur cepat: gunakan message ID yang sudah tersimpan di database.
             try:
-
-
-
-                await data_channel.send(
-
-                    content=(
-
-                        f"**Username:** "
-
-                        f"{username_display}"
-
-                    ),
-
-                    embed=data_embed,
-
+                saved_row = await db.fetchone(
+                    "SELECT data_message_id FROM nanz_verification_applications WHERE id=%s LIMIT 1",
+                    app_row['id'],
                 )
+                saved_message_id = (saved_row or {}).get('data_message_id')
+                if saved_message_id:
+                    try:
+                        data_message = await data_channel.fetch_message(int(saved_message_id))
+                    except discord.NotFound:
+                        data_message = None
+            except Exception as lookup_exc:
+                print(f"[VERIFY][app={app_row['id']}][DATA_MEMBER] Gagal membaca message ID tersimpan: {lookup_exc}")
 
+            # Recovery untuk crash di antara Discord send dan UPDATE database.
+            if data_message is None:
+                try:
+                    async for previous in data_channel.history(limit=200):
+                        if previous.author.id != interaction.client.user.id:
+                            continue
+                        if any(
+                            embed.footer and embed.footer.text == app_marker
+                            for embed in previous.embeds
+                        ):
+                            data_message = previous
+                            break
+                except (discord.Forbidden, discord.HTTPException) as history_exc:
+                    print(f"[VERIFY][app={app_row['id']}][DATA_MEMBER] Tidak dapat memeriksa riwayat untuk deduplikasi: {history_exc}")
 
-
-            except discord.HTTPException as e:
-
-
-
-                print(
-
-                    "[VERIFY] Gagal menyimpan "
-
-                    f"data member: {e}"
-
+            try:
+                if data_message is None:
+                    data_message = await data_channel.send(
+                        content=f"**Username:** {username_display}",
+                        embed=data_embed,
+                    )
+                await db.execute(
+                    "UPDATE nanz_verification_applications SET data_message_id=%s WHERE id=%s",
+                    int(data_message.id), app_row['id'],
                 )
+            except (discord.HTTPException, Exception) as e:
+                await release_approval_for_retry(
+                    app_row['id'], interaction.guild.id, target_user_id, decision_token
+                )
+                print(f"[VERIFY][app={app_row['id']}][DATA_MEMBER] Gagal mengirim data member: {e}")
+                await safe_followup(
+                    interaction,
+                    "Role sudah diproses, tetapi data member gagal dikirim. Status dikembalikan agar staff bisa mencoba Approve lagi.",
+                    ephemeral=True,
+                )
+                return
+
+            try:
+                await finalize_approval(
+                    app_row['id'], interaction.guild.id, target_user_id, decision_token
+                )
+            except Exception as exc:
+                await release_approval_for_retry(
+                    app_row['id'], interaction.guild.id, target_user_id, decision_token
+                )
+                print(f"[VERIFY][app={app_row['id']}][APPROVING] Gagal menyimpan status final: {exc}")
+                await safe_followup(
+                    interaction,
+                    "Data member sudah terkirim dan role sudah diproses, tetapi status database belum final. Coba Approve lagi; periksa channel data agar tidak mengirim duplikat.",
+                    ephemeral=True,
+                )
+                return
 
 
 
@@ -4375,9 +4418,12 @@ class VerifyView(
 
         else:
             print(f"[VERIFY][app={app_row['id']}][DATA_MEMBER] Channel {DATA_MEMBER_CHANNEL_ID} tidak tersedia.")
+            await release_approval_for_retry(
+                app_row['id'], interaction.guild.id, target_user_id, decision_token
+            )
             await safe_followup(
                 interaction,
-                "Role sudah diberikan, tetapi data member belum terkirim karena channel data member tidak dapat diakses. Periksa ID channel dan izin bot.",
+                "Role sudah diproses, tetapi data member belum terkirim karena channel tidak dapat diakses. Status dikembalikan agar bisa dicoba lagi setelah izin/channel diperbaiki.",
                 ephemeral=True,
             )
             return

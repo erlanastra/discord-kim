@@ -1046,6 +1046,9 @@ class VerifyGreeting(commands.Cog):
         self.bot = bot
         self._greeted_this_session: set[tuple[int, int]] = set()
         self._greeting_locks: dict[tuple[int, int], asyncio.Lock] = {}
+        # Batasi render kartu paralel agar beberapa join bersamaan tidak membuat
+        # lonjakan RAM/CPU yang bisa menggagalkan sebagian greeting.
+        self._render_semaphore = asyncio.Semaphore(2)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -1068,11 +1071,12 @@ class VerifyGreeting(commands.Cog):
             self._greeted_this_session.add(key)
 
             try:
-                avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
-                loop = asyncio.get_running_loop()
-                png_bytes = await loop.run_in_executor(
-                    None, generate_verify_card, avatar_bytes, member.display_name
-                )
+                async with self._render_semaphore:
+                    avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
+                    loop = asyncio.get_running_loop()
+                    png_bytes = await loop.run_in_executor(
+                        None, generate_verify_card, avatar_bytes, member.display_name
+                    )
             except Exception as exc:
                 print(f"[VerifyGreeting][user={member.id}] gagal membuat kartu PNG: {exc}")
                 # Kartu adalah fitur tambahan; kegagalan CDN/Pillow/numpy tidak
@@ -1111,10 +1115,19 @@ class VerifyGreeting(commands.Cog):
             return
 
         channel = member.guild.get_channel(VERIF_CHANNEL_ID)
-        if channel is None or not isinstance(channel, discord.TextChannel):
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(VERIF_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                print(
+                    f"[VerifyGreeting][user={member.id}] gagal mengambil channel verifikasi "
+                    f"{VERIF_CHANNEL_ID}: {exc}"
+                )
+                return
+        if not isinstance(channel, discord.TextChannel):
             print(
-                f"[VerifyGreeting][user={member.id}] channel verifikasi "
-                f"{VERIF_CHANNEL_ID} tidak ditemukan saat member join."
+                f"[VerifyGreeting][user={member.id}] ID channel {VERIF_CHANNEL_ID} "
+                "bukan text channel yang valid."
             )
             return
 
@@ -1125,11 +1138,12 @@ class VerifyGreeting(commands.Cog):
                 return
 
             try:
-                avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
-                loop = asyncio.get_running_loop()
-                png_bytes = await loop.run_in_executor(
-                    None, generate_verify_card, avatar_bytes, member.display_name
-                )
+                async with self._render_semaphore:
+                    avatar_bytes = await member.display_avatar.replace(size=256, format="png").read()
+                    loop = asyncio.get_running_loop()
+                    png_bytes = await loop.run_in_executor(
+                        None, generate_verify_card, avatar_bytes, member.display_name
+                    )
             except Exception as exc:
                 print(f"[VerifyGreeting][user={member.id}] gagal membuat kartu PNG saat join: {exc}")
                 png_bytes = None
