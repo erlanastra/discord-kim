@@ -1102,8 +1102,8 @@ class Welcome(commands.Cog):
         content = (
             "<:done:1553690488257908837> **Verifikasi berhasil!**\n"
             f"Selamat datang di **nanZ Server**, {member.mention}!\n"
-            f"<a:blue:1512787254312042496> `Baca rules:` <#{self.RULES_CHANNEL_ID}>\n"
-            f"<a:purple:1512787191234035803> `Pilih role:` <#{self.ROLES_CHANNEL_ID}>"
+            f"<a:blue:1512787254312042496> `Baca rules:` [KLIK INI](https://discord.com/channels/1406557880475320340/1406557882811682888)\n"
+            f"<a:purple:1512787191234035803> `Pilih role:` [KLIK INI](https://discord.com/channels/1406557880475320340/1510477047724773509)"
         )
 
         kwargs = {"file": card_file} if card_file else {}
