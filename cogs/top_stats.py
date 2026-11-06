@@ -2,6 +2,9 @@
 # cogs/topstats.py
 # NANZ TOP STATISTICS - UPDATED
 # Python 3.8+ | discord.py 2.x
+# LOW-MEMORY: no guild.chunk(cache=True), no full Member-object cache.
+# REQUIRED: intents.members=True in bot.py AND Server Members Intent enabled
+# in Discord Developer Portal for complete member/role event tracking.
 
 # Commands:
 # !topstat [all|YYYY-MM|YYYY-MM-DD]
@@ -160,8 +163,8 @@ class TopStats(commands.Cog):
             Tuple[int, int], dict
         ] = {}
 
-        # Cache anggota hasil sinkronisasi.
-        self._members_by_guild = {}
+        # Cache hanya untuk hasil ID pemegang role saat command berlangsung.
+        self._role_member_ids = {}
 
         # Penanda sinkronisasi awal.
         self._sync_complete = asyncio.Event()
@@ -342,249 +345,147 @@ class TopStats(commands.Cog):
                         pass
 
     # ========================================================
-    # MEMBER CACHE / SYNCHRONIZATION
+    # LOW-MEMORY MEMBER SYNCHRONIZATION
     # ========================================================
 
-    def remember_member(self, member):
-
-        if member.bot:
-            return
-
-        guild_id = member.guild.id
-
-        if guild_id not in self._members_by_guild:
-            self._members_by_guild[guild_id] = {}
-
-        self._members_by_guild[guild_id][member.id] = member
-
-    def forget_member(self, member):
-
-        guild_cache = self._members_by_guild.get(
-            member.guild.id,
-            {}
-        )
-
-        guild_cache.pop(member.id, None)
-
-    def get_all_members(self, guild):
-
-        cached = self._members_by_guild.get(
-            guild.id,
-            {}
-        )
-
-        result = dict(cached)
-
-        for member in guild.members:
-
-            if not member.bot:
-                result[member.id] = member
-
-        return list(result.values())
-
     async def synchronize_members(self, guild):
-
         """
-        Memuat anggota server ke cache.
-
-        Menggunakan guild.chunk terlebih dahulu.
-        Jika gagal, mencoba fetch_members.
+        Sinkronisasi bertahap melalui HTTP async iterator.
+        Tidak memakai guild.chunk(cache=True), tidak membuat list Member,
+        dan tidak menyimpan objek Member di dalam cog.
+        Data Member diproses satu per satu untuk baseline Casis.
         """
+        gd = self.guild_data(guild.id)
+        needs_casis_baseline = not gd.get("casis_initialized", False)
+        casis_count = 0
+        scanned = 0
 
-        members = {}
+        # Jika baseline sudah pernah dibuat, jangan scan seluruh server lagi.
+        if not needs_casis_baseline:
+            print(
+                f"[TopStats] Baseline Casis sudah ada: {guild.name}; "
+                "skip full member scan."
+            )
+            return 0
 
         try:
+            # fetch_members menghasilkan halaman bertahap; setiap objek
+            # diproses lalu dilepas, bukan dikumpulkan dalam dictionary.
+            async for member in guild.fetch_members(limit=None):
+                if member.bot:
+                    continue
 
-            chunked_members = await guild.chunk(
-                cache=True
-            )
+                scanned += 1
 
-            for member in chunked_members:
+                if member.get_role(CASIS_ROLE_ID):
+                    self.ensure_casis_user(gd, member.id, iso_now())
+                    casis_count += 1
 
-                if not member.bot:
-                    members[member.id] = member
+                # Beri kesempatan event loop memproses gateway/task lain.
+                if scanned % 250 == 0:
+                    await asyncio.sleep(0)
 
-            print(
-                f"[TopStats] Chunk berhasil: "
-                f"{guild.name} | "
-                f"{len(members)} anggota"
-            )
+            if needs_casis_baseline:
+                gd["casis_initialized"] = True
+                gd["casis_baseline_at"] = iso_now()
+                self.mark_dirty()
+                print(
+                    f"[TopStats] Baseline Casis: {casis_count} anggota "
+                    f"| scan {scanned} member (tanpa cache Member)"
+                )
+            return scanned
 
         except discord.Forbidden as exc:
-
             print(
-                f"[TopStats] Chunk forbidden "
-                f"{guild.name}: {exc}"
+                f"[TopStats] Fetch member ditolak di {guild.name}: {exc}. "
+                "Pastikan Server Members Intent aktif."
             )
-
         except discord.HTTPException as exc:
+            print(f"[TopStats] Fetch member gagal di {guild.name}: {exc}")
 
-            print(
-                f"[TopStats] Chunk gagal "
-                f"{guild.name}: {exc}"
+        return scanned
+
+    async def fetch_role_member_ids(self, guild, role):
+        """
+        Ambil ID pemegang role secara streaming.
+        Tidak menggunakan role.members karena cache bisa tidak lengkap.
+        """
+        ids = set()
+        scanned = 0
+
+        try:
+            async for member in guild.fetch_members(limit=None):
+                if not member.bot and member.get_role(role.id):
+                    ids.add(member.id)
+                scanned += 1
+                if scanned % 250 == 0:
+                    await asyncio.sleep(0)
+        except discord.Forbidden:
+            raise RuntimeError(
+                "Bot tidak memiliki akses membaca daftar anggota. "
+                "Aktifkan Server Members Intent di Developer Portal dan bot.py."
+            )
+        except discord.HTTPException as exc:
+            raise RuntimeError(
+                f"Gagal mengambil daftar anggota dari Discord: {exc}"
             )
 
-        # Fallback apabila chunk tidak berhasil.
-        if not members:
+        return ids
 
-            try:
-
-                async for member in guild.fetch_members(
-                    limit=None
-                ):
-
-                    if not member.bot:
-                        members[member.id] = member
-
-                print(
-                    f"[TopStats] Fetch fallback berhasil: "
-                    f"{guild.name} | "
-                    f"{len(members)} anggota"
-                )
-
-            except discord.Forbidden as exc:
-
-                print(
-                    f"[TopStats] Fetch forbidden "
-                    f"{guild.name}: {exc}"
-                )
-
-            except discord.HTTPException as exc:
-
-                print(
-                    f"[TopStats] Fetch gagal "
-                    f"{guild.name}: {exc}"
-                )
-
-        self._members_by_guild[guild.id] = members
-
-        return members
-
-    async def fetch_voice_member(
-        self,
-        guild,
-        user_id,
-        semaphore
-    ):
-
+    async def fetch_voice_member(self, guild, user_id, semaphore):
         member = guild.get_member(user_id)
-
         if member is not None:
             return member
 
         async with semaphore:
-
             try:
-
-                member = await guild.fetch_member(
-                    user_id
-                )
-
-                self.remember_member(member)
-
-                return member
-
-            except discord.NotFound:
-                return None
-
-            except discord.Forbidden as exc:
-
-                print(
-                    f"[TopStats] Tidak bisa mengambil "
-                    f"anggota {user_id}: {exc}"
-                )
-
-                return None
-
-            except discord.HTTPException as exc:
-
-                print(
-                    f"[TopStats] HTTP error anggota "
-                    f"{user_id}: {exc}"
-                )
-
+                return await guild.fetch_member(user_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 return None
 
     async def reconcile_voice_sessions(self):
-
         """
-        Sinkronisasi awal setelah bot siap.
-        Downtime bot tidak dihitung sebagai waktu voice.
-        Event sinkronisasi selalu dilepas meskipun terjadi error.
+        Startup sync: baseline Casis via streaming (tanpa cache Member),
+        lalu mengambil hanya member yang sedang berada di voice.
+        Downtime bot tidak dihitung.
         """
-
         try:
             await self.bot.wait_until_ready()
-            baseline = iso_now()
 
             for guild in self.bot.guilds:
                 try:
-                    print(
-                        f"[TopStats] Sinkronisasi server: {guild.name}"
-                    )
-
+                    print(f"[TopStats] Sinkronisasi server: {guild.name}")
                     gd = self.guild_data(guild.id)
-                    members = await self.synchronize_members(guild)
 
-                    if not gd.get("casis_initialized", False):
-                        casis_count = 0
+                    # Scan anggota hanya untuk baseline awal / ID kompak.
+                    await self.synchronize_members(guild)
 
-                        for member in members.values():
-                            if member.get_role(CASIS_ROLE_ID):
-                                self.ensure_casis_user(
-                                    gd, member.id, baseline
-                                )
-                                casis_count += 1
-
-                        gd["casis_initialized"] = True
-                        gd["casis_baseline_at"] = baseline
-                        self.mark_dirty()
-
-                        print(
-                            f"[TopStats] Baseline Casis: {casis_count} anggota"
-                        )
-
-                    voice_snapshot = [
-                        (user_id, state)
+                    voice_ids = [
+                        int(user_id)
                         for user_id, state in guild.voice_states.items()
                         if state.channel is not None
                     ]
 
                     semaphore = asyncio.Semaphore(FETCH_CONCURRENCY)
-                    tasks_list = [
-                        self.fetch_voice_member(
-                            guild, int(user_id), semaphore
-                        )
-                        for user_id, _ in voice_snapshot
-                    ]
-
                     results = await asyncio.gather(
-                        *tasks_list, return_exceptions=True
+                        *(
+                            self.fetch_voice_member(guild, uid, semaphore)
+                            for uid in voice_ids
+                        ),
+                        return_exceptions=True
                     )
 
                     started = 0
                     skipped = 0
 
-                    for (user_id, _), member in zip(
-                        voice_snapshot, results
-                    ):
+                    for user_id, member in zip(voice_ids, results):
                         if isinstance(member, BaseException):
                             skipped += 1
                             continue
-
                         if member is None or member.bot:
                             skipped += 1
                             continue
 
-                        current_state = guild.voice_states.get(int(user_id))
-                        if (
-                            current_state is None
-                            or current_state.channel is None
-                        ):
-                            skipped += 1
-                            continue
-
-                        self.remember_member(member)
                         self.start_voice_session(member)
                         started += 1
 
@@ -614,30 +515,18 @@ class TopStats(commands.Cog):
                 await self.save_data(force=True)
             except Exception as save_exc:
                 print(f"[TopStats] Gagal menyimpan data: {save_exc}")
-
         finally:
             self._sync_complete.set()
             print("[TopStats] Proses sinkronisasi awal selesai.")
 
     async def wait_for_sync(self):
-        """
-        Tunggu sinkronisasi awal maksimal 30 detik.
-        Command tidak boleh terkunci selamanya jika API Discord bermasalah.
-        """
         if self._sync_complete.is_set():
             return True
-
         try:
-            await asyncio.wait_for(
-                self._sync_complete.wait(),
-                timeout=30
-            )
+            await asyncio.wait_for(self._sync_complete.wait(), timeout=10)
             return True
         except asyncio.TimeoutError:
-            print(
-                "[TopStats] Command berjalan sebelum sinkronisasi "
-                "anggota selesai."
-            )
+            print("[TopStats] Command berjalan tanpa menunggu scan selesai.")
             return False
 
     # ========================================================
@@ -696,7 +585,6 @@ class TopStats(commands.Cog):
         if member.bot:
             return
 
-        self.remember_member(member)
 
         gd = self.guild_data(guild.id)
 
@@ -775,7 +663,6 @@ class TopStats(commands.Cog):
             )
         }
 
-        self.remember_member(member)
 
     def checkpoint_voice_session(
         self,
@@ -1001,11 +888,8 @@ class TopStats(commands.Cog):
                 period
             )
 
-        allowed = {
-            member.id
-            for member in self.get_all_members(guild)
-            if any(r.id == role.id for r in member.roles)
-        }
+        # allowed IDs diberikan oleh caller melalui scan streaming.
+        allowed = self._role_member_ids.get((guild.id, role.id), set())
 
         return {
             uid: value
@@ -1131,19 +1015,9 @@ class TopStats(commands.Cog):
     # ========================================================
 
     def get_member_name(self, guild, user_id):
-
         member = guild.get_member(user_id)
-
-        if member is None:
-
-            member = self._members_by_guild.get(
-                guild.id,
-                {}
-            ).get(user_id)
-
-        if member:
+        if member is not None:
             return member.display_name
-
         return f"User {user_id}"
 
     def leaderboard_embed(
@@ -1282,11 +1156,16 @@ class TopStats(commands.Cog):
         await self.wait_for_sync()
 
         if not self.parse_period_or_error(period):
-
             return await ctx.send(
-                "Format periode: "
-                "`all`, `YYYY-MM`, atau `YYYY-MM-DD`."
+                "Format periode: `all`, `YYYY-MM`, atau `YYYY-MM-DD`."
             )
+
+        try:
+            self._role_member_ids[(ctx.guild.id, role.id)] = (
+                await self.fetch_role_member_ids(ctx.guild, role)
+            )
+        except RuntimeError as exc:
+            return await ctx.send(str(exc))
 
         chat = self.aggregate_role(
             ctx.guild,
@@ -1301,6 +1180,8 @@ class TopStats(commands.Cog):
             "voice_seconds",
             period
         )
+
+        self._role_member_ids.pop((ctx.guild.id, role.id), None)
 
         suffix = (
             " • sejak mendapat role"
@@ -1389,18 +1270,10 @@ class TopStats(commands.Cog):
                 period
             )
 
-            cohort = [
-                m.id
-                for m in self.get_all_members(ctx.guild)
-                if m.get_role(CASIS_ROLE_ID)
-            ]
+            casis_store = self.guild_data(ctx.guild.id).get("casis", {})
+            cohort = {int(uid) for uid in casis_store.keys()}
 
-            casis_data = self.guild_data(
-                ctx.guild.id
-            ).get(
-                "casis",
-                {}
-            ).get(
+            casis_data = casis_store.get(
                 str(member.id),
                 {}
             )
@@ -1435,10 +1308,7 @@ class TopStats(commands.Cog):
                 period
             )
 
-            cohort = [
-                m.id
-                for m in self.get_all_members(ctx.guild)
-            ]
+            cohort = set(chat.keys()) | set(voice.keys())
 
             scope_text = (
                 "Statistik keseluruhan akun"
@@ -1611,14 +1481,12 @@ class TopStats(commands.Cog):
                 "`all`, `YYYY-MM`, atau `YYYY-MM-DD`."
             )
 
-        members = [
-            member
-            for member in self.get_all_members(ctx.guild)
-            if any(
-                r.id == role.id
-                for r in member.roles
-            )
-        ]
+        try:
+            role_member_ids = await self.fetch_role_member_ids(ctx.guild, role)
+        except RuntimeError as exc:
+            return await ctx.send(str(exc))
+
+        self._role_member_ids[(ctx.guild.id, role.id)] = role_member_ids
 
         chat = self.aggregate_role(
             ctx.guild,
@@ -1634,6 +1502,8 @@ class TopStats(commands.Cog):
             period
         )
 
+        self._role_member_ids.pop((ctx.guild.id, role.id), None)
+
         active_ids = {
             uid
             for uid in set(chat) | set(voice)
@@ -1647,7 +1517,7 @@ class TopStats(commands.Cog):
         total_voice = sum(voice.values())
 
         active_count = len(active_ids)
-        total_count = len(members)
+        total_count = len(role_member_ids)
 
         embed = discord.Embed(
             title=f"Staff Statistics • {role.name}",
@@ -1861,7 +1731,6 @@ class TopStats(commands.Cog):
         if member.bot:
             return
 
-        self.remember_member(member)
 
         key = (
             member.guild.id,
@@ -1920,7 +1789,6 @@ class TopStats(commands.Cog):
         after
     ):
 
-        self.remember_member(after)
 
         before_has = (
             before.get_role(CASIS_ROLE_ID) is not None
@@ -1978,12 +1846,18 @@ class TopStats(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member):
 
-        self.remember_member(member)
+
+        if not member.bot and member.get_role(CASIS_ROLE_ID):
+            gd = self.guild_data(member.guild.id)
+            self.ensure_casis_user(gd, member.id, iso_now())
+            self.mark_dirty()
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
 
-        self.forget_member(member)
+        self.checkpoint_voice_session(member.guild.id, member.id)
+        self._active_voice.pop((member.guild.id, member.id), None)
+        self.mark_dirty()
 
     # ========================================================
     # BACKGROUND TASKS
@@ -2080,6 +1954,13 @@ async def setup(bot):
         raise commands.CommandRegistrationError(
             next(iter(conflicts)),
             alias_conflict=False
+        )
+
+    if not bot.intents.members:
+        print(
+            "[TopStats] PERINGATAN: intents.members=False. "
+            "Aktifkan Server Members Intent di bot.py dan Discord Developer Portal "
+            "agar join/leave/role update dan streaming anggota berjalan real-time."
         )
 
     cog = TopStats(bot)
