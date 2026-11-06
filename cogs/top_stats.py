@@ -16,7 +16,7 @@ import tempfile
 
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import discord
 from discord.ext import commands, tasks
@@ -509,149 +509,136 @@ class TopStats(commands.Cog):
 
         """
         Sinkronisasi awal setelah bot siap.
-
-        Bot downtime tidak dihitung.
-        Semua anggota yang masih berada di VC
-        dimulai dari waktu sinkronisasi.
+        Downtime bot tidak dihitung sebagai waktu voice.
+        Event sinkronisasi selalu dilepas meskipun terjadi error.
         """
 
-        await self.bot.wait_until_ready()
+        try:
+            await self.bot.wait_until_ready()
+            baseline = iso_now()
 
-        baseline = iso_now()
+            for guild in self.bot.guilds:
+                try:
+                    print(
+                        f"[TopStats] Sinkronisasi server: {guild.name}"
+                    )
 
-        for guild in self.bot.guilds:
+                    gd = self.guild_data(guild.id)
+                    members = await self.synchronize_members(guild)
 
-            print(
-                f"[TopStats] Sinkronisasi server: "
-                f"{guild.name}"
-            )
+                    if not gd.get("casis_initialized", False):
+                        casis_count = 0
 
-            gd = self.guild_data(guild.id)
+                        for member in members.values():
+                            if member.get_role(CASIS_ROLE_ID):
+                                self.ensure_casis_user(
+                                    gd, member.id, baseline
+                                )
+                                casis_count += 1
 
-            # 1. Sinkronisasi seluruh anggota.
-            members = await self.synchronize_members(
-                guild
-            )
+                        gd["casis_initialized"] = True
+                        gd["casis_baseline_at"] = baseline
+                        self.mark_dirty()
 
-            # 2. Baseline Casis untuk anggota yang
-            # sudah memiliki role saat instalasi.
-            if not gd.get("casis_initialized", False):
-
-                casis_count = 0
-
-                for member in members.values():
-
-                    if member.get_role(CASIS_ROLE_ID):
-
-                        self.ensure_casis_user(
-                            gd,
-                            member.id,
-                            baseline
+                        print(
+                            f"[TopStats] Baseline Casis: {casis_count} anggota"
                         )
 
-                        casis_count += 1
+                    voice_snapshot = [
+                        (user_id, state)
+                        for user_id, state in guild.voice_states.items()
+                        if state.channel is not None
+                    ]
 
-                gd["casis_initialized"] = True
+                    semaphore = asyncio.Semaphore(FETCH_CONCURRENCY)
+                    tasks_list = [
+                        self.fetch_voice_member(
+                            guild, int(user_id), semaphore
+                        )
+                        for user_id, _ in voice_snapshot
+                    ]
 
-                gd["casis_baseline_at"] = baseline
-
-                self.mark_dirty()
-
-                print(
-                    f"[TopStats] Baseline Casis: "
-                    f"{casis_count} anggota"
-                )
-
-            # 3. Ambil seluruh voice state.
-            voice_snapshot = list(
-                guild.voice_states.items()
-            )
-
-            semaphore = asyncio.Semaphore(
-                FETCH_CONCURRENCY
-            )
-
-            # 4. Cari semua anggota yang sedang VC.
-            tasks_list = []
-
-            for user_id, voice_state in voice_snapshot:
-
-                if voice_state.channel is None:
-                    continue
-
-                tasks_list.append(
-                    self.fetch_voice_member(
-                        guild,
-                        int(user_id),
-                        semaphore
+                    results = await asyncio.gather(
+                        *tasks_list, return_exceptions=True
                     )
-                )
 
-            results = await asyncio.gather(
-                *tasks_list,
-                return_exceptions=True
-            )
+                    started = 0
+                    skipped = 0
 
-            # 5. Mulai sesi voice.
-            started = 0
-            skipped = 0
+                    for (user_id, _), member in zip(
+                        voice_snapshot, results
+                    ):
+                        if isinstance(member, BaseException):
+                            skipped += 1
+                            continue
 
-            index = 0
+                        if member is None or member.bot:
+                            skipped += 1
+                            continue
 
-            for user_id, voice_state in voice_snapshot:
+                        current_state = guild.voice_states.get(int(user_id))
+                        if (
+                            current_state is None
+                            or current_state.channel is None
+                        ):
+                            skipped += 1
+                            continue
 
-                if voice_state.channel is None:
-                    continue
+                        self.remember_member(member)
+                        self.start_voice_session(member)
+                        started += 1
 
-                member = results[index]
-                index += 1
+                    print(
+                        f"[TopStats] Voice sync selesai: {guild.name} | "
+                        f"Berhasil: {started} | Dilewati: {skipped}"
+                    )
 
-                if isinstance(member, BaseException):
-                    skipped += 1
-                    continue
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    print(
+                        f"[TopStats] Sinkronisasi {guild.name} gagal: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
 
-                if member is None or member.bot:
-                    skipped += 1
-                    continue
+            await self.save_data(force=True)
 
-                # Pastikan masih terhubung.
-                current_state = guild.voice_states.get(
-                    int(user_id)
-                )
-
-                if (
-                    current_state is None
-                    or current_state.channel is None
-                ):
-                    skipped += 1
-                    continue
-
-                self.remember_member(member)
-
-                self.start_voice_session(member)
-
-                started += 1
-
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
             print(
-                f"[TopStats] Voice sync selesai: "
-                f"{guild.name} | "
-                f"Berhasil: {started} | "
-                f"Dilewati: {skipped}"
+                f"[TopStats] Sinkronisasi awal gagal: "
+                f"{type(exc).__name__}: {exc}"
             )
+            try:
+                await self.save_data(force=True)
+            except Exception as save_exc:
+                print(f"[TopStats] Gagal menyimpan data: {save_exc}")
 
-        await self.save_data(force=True)
-
-        self._sync_complete.set()
-
-        print(
-            "[TopStats] SELURUH SINKRONISASI SELESAI."
-        )
+        finally:
+            self._sync_complete.set()
+            print("[TopStats] Proses sinkronisasi awal selesai.")
 
     async def wait_for_sync(self):
+        """
+        Tunggu sinkronisasi awal maksimal 30 detik.
+        Command tidak boleh terkunci selamanya jika API Discord bermasalah.
+        """
+        if self._sync_complete.is_set():
+            return True
 
-        if not self._sync_complete.is_set():
-
-            await self._sync_complete.wait()
+        try:
+            await asyncio.wait_for(
+                self._sync_complete.wait(),
+                timeout=30
+            )
+            return True
+        except asyncio.TimeoutError:
+            print(
+                "[TopStats] Command berjalan sebelum sinkronisasi "
+                "anggota selesai."
+            )
+            return False
 
     # ========================================================
     # DAILY DATA
@@ -1233,10 +1220,7 @@ class TopStats(commands.Cog):
     # COMMAND: TOPSTAT
     # ========================================================
 
-    @commands.command(
-        name="topstat",
-        aliases=["topstats", "top"]
-    )
+    @commands.command(name="topstat")
     @commands.guild_only()
     async def topstat(
         self,
@@ -1286,10 +1270,7 @@ class TopStats(commands.Cog):
     # COMMAND: TOPROLE
     # ========================================================
 
-    @commands.command(
-        name="toprole",
-        aliases=["toprolestat"]
-    )
+    @commands.command(name="toprole")
     @commands.guild_only()
     async def toprole(
         self,
@@ -1350,21 +1331,38 @@ class TopStats(commands.Cog):
     # COMMAND: CEKUSER
     # ========================================================
 
-    @commands.command(
-        name="cekuser",
-        aliases=["userstat", "mystat"]
-    )
+    @commands.command(name="cekuser")
     @commands.guild_only()
-    async def cekuser(
-        self,
-        ctx,
-        member: Optional[discord.Member] = None,
-        period="all"
-    ):
+    async def cekuser(self, ctx, *args):
 
         await self.wait_for_sync()
 
-        member = member or ctx.author
+        member = ctx.author
+        period = "all"
+        member_converter = commands.MemberConverter()
+        member_was_set = False
+        period_was_set = False
+
+        for argument in args:
+            if not period_was_set and self.parse_period_or_error(argument):
+                period = argument
+                period_was_set = True
+                continue
+
+            if not member_was_set:
+                try:
+                    member = await member_converter.convert(ctx, argument)
+                    member_was_set = True
+                    continue
+                except commands.MemberNotFound:
+                    pass
+
+            return await ctx.send(
+                "Argumen `cekuser` tidak dikenali. Gunakan "
+                "`!cekuser`, `!cekuser all`, "
+                "`!cekuser 2026-10`, atau "
+                "`!cekuser @Member 2026-10`."
+            )
 
         if not self.parse_period_or_error(period):
 
@@ -1595,10 +1593,7 @@ class TopStats(commands.Cog):
     # COMMAND: STAFFSTATS
     # ========================================================
 
-    @commands.command(
-        name="staffstats",
-        aliases=["rolestats"]
-    )
+    @commands.command(name="staffstats")
     @commands.guild_only()
     async def staffstats(
         self,
@@ -1785,6 +1780,48 @@ class TopStats(commands.Cog):
         await ctx.send(
             embed=embed
         )
+
+    async def cog_command_error(self, ctx, error):
+
+        error = getattr(error, "original", error)
+
+        if isinstance(error, commands.MissingRequiredArgument):
+            if ctx.command and ctx.command.name in ("toprole", "staffstats"):
+                return await ctx.send(
+                    f"Format: `!{ctx.command.name} @Role [all|YYYY-MM|YYYY-MM-DD]`"
+                )
+
+            return await ctx.send(
+                "Argumen command belum lengkap. Periksa format command."
+            )
+
+        if isinstance(error, commands.BadArgument):
+            if ctx.command and ctx.command.name in ("toprole", "staffstats"):
+                return await ctx.send(
+                    "Role tidak ditemukan. Gunakan mention role, "
+                    "contoh: `!toprole @Staff`."
+                )
+
+            return await ctx.send(
+                "Argumen tidak valid. Periksa kembali format command."
+            )
+
+        if isinstance(error, commands.NoPrivateMessage):
+            return
+
+        print(
+            f"[TopStats] Error command "
+            f"{getattr(ctx.command, 'qualified_name', 'unknown')}: "
+            f"{type(error).__name__}: {error}"
+        )
+
+        try:
+            await ctx.send(
+                "Terjadi kesalahan saat menjalankan statistik. "
+                "Silakan coba lagi atau hubungi pengelola bot."
+            )
+        except discord.HTTPException:
+            pass
 
     # ========================================================
     # DISCORD EVENTS
@@ -2031,7 +2068,24 @@ class TopStats(commands.Cog):
 # ============================================================
 
 async def setup(bot):
+    existing = {
+        command.name
+        for command in bot.commands
+    }
 
-    await bot.add_cog(
-        TopStats(bot)
+    required = {"topstat", "toprole", "cekuser", "staffstats"}
+    conflicts = required.intersection(existing)
+
+    if conflicts:
+        raise commands.CommandRegistrationError(
+            next(iter(conflicts)),
+            alias_conflict=False
+        )
+
+    cog = TopStats(bot)
+    await bot.add_cog(cog)
+
+    print(
+        "[TopStats] Cog berhasil dimuat. Commands: "
+        "!topstat, !toprole, !cekuser, !staffstats"
     )
