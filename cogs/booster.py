@@ -23,6 +23,7 @@ except ImportError:  # pragma: no cover
 # KONFIGURASI — booster_data.json lama tetap digunakan
 # =========================================================
 BOOST_CHANNEL_ID = 1554100419637149838
+BOOSTER_PANEL_CHANNEL_ID = 1568365418316304556
 ROLE_REQ_CHANNEL_ID = 1515029186530771077
 ROLE_PRIME_ID = 1561383676019736596
 ROLE_ELITE_ID = 1561384548158152744
@@ -1432,6 +1433,7 @@ class Booster(commands.Cog):
             await self.send_boost_embed(member, new_count)
         except discord.HTTPException as e:
             print(f"[Booster] Gagal mengirim notifikasi: {e}")
+        await self.refresh_booster_panel(member.guild)
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
@@ -1444,6 +1446,10 @@ class Booster(commands.Cog):
                 self._set(after.guild.id, after.id, 0)
             await self.apply_roles(after, 0)
             await self.sync_benefit_roles(after.guild)
+            # Kuota gift diperbarui untuk siklus boost berikutnya.
+            self._booster_meta()["gift_usage"].setdefault(str(after.guild.id), {}).pop(str(after.id), None)
+            self._save()
+            await self.refresh_booster_panel(after.guild)
             return
 
         # Fallback untuk boost baru jika pesan sistem tidak diterima.
@@ -1464,6 +1470,7 @@ class Booster(commands.Cog):
                     await self.send_boost_embed(after, 1)
                 except discord.HTTPException as e:
                     print(f"[Booster] Gagal mengirim notifikasi fallback: {e}")
+                await self.refresh_booster_panel(after.guild)
             finally:
                 self._pending_fallback.discard(key)
 
@@ -1500,6 +1507,7 @@ class Booster(commands.Cog):
             for uid in list(group):
                 if str(uid).isdigit() and int(uid) not in active:
                     group.pop(uid, None)
+                    self._booster_meta()["gift_usage"].setdefault(str(guild_id), {}).pop(str(uid), None)
             for uid in active:
                 group.setdefault(str(uid), 1)
             self._save()
@@ -1513,6 +1521,7 @@ class Booster(commands.Cog):
             print(f"[Booster] Rekonsiliasi {guild.name}: total boost server={actual}, jumlah tercatat={tracked}. "
                   "Tidak mengubah hitungan individual tanpa bukti yang cukup.")
         await self.sync_benefit_roles(guild)
+        await self.refresh_booster_panel(guild)
 
     # -------------------- STARTUP SYNC: NO NOTIFICATIONS --------------------
     @commands.Cog.listener()
@@ -1533,6 +1542,7 @@ class Booster(commands.Cog):
                 for uid in list(group):
                     if str(uid).isdigit() and int(uid) not in active:
                         group.pop(uid, None)
+                        self._booster_meta()["gift_usage"].setdefault(str(guild.id), {}).pop(str(uid), None)
                 # Pertahankan hitungan JSON yang sudah ada.
                 # Booster lama yang belum tercatat diberi default 1.
                 for uid in active:
@@ -1552,8 +1562,129 @@ class Booster(commands.Cog):
                             await self.apply_roles(member, 0)
 
             await self.sync_benefit_roles(guild)
+            await self.refresh_booster_panel(guild)
             self._ready_synced.add(guild.id)
             print(f"[Booster] Sync {guild.name} selesai; {len(active)} booster aktif; tanpa notifikasi.")
+
+
+    # -------------------- BOOSTER MANAGEMENT PANEL --------------------
+    def _booster_meta(self):
+        meta = self.data.setdefault("_meta", {})
+        meta.setdefault("panel_message_ids", {})
+        meta.setdefault("req_role_ids", {})
+        meta.setdefault("gift_usage", {})
+        return meta
+
+    def _req_role_ids(self, guild_id):
+        raw = self._booster_meta()["req_role_ids"].get(str(guild_id), [])
+        return [int(x) for x in raw if str(x).isdigit()]
+
+    def _set_req_role(self, guild_id, role_id):
+        meta = self._booster_meta()
+        values = set(self._req_role_ids(guild_id))
+        values.add(int(role_id))
+        meta["req_role_ids"][str(guild_id)] = sorted(values)
+        self._save()
+
+    def _gift_used(self, guild_id, booster_id):
+        raw = self._booster_meta()["gift_usage"].setdefault(str(guild_id), {})
+        return int(raw.get(str(booster_id), 0))
+
+    def _set_gift_used(self, guild_id, booster_id, amount):
+        raw = self._booster_meta()["gift_usage"].setdefault(str(guild_id), {})
+        raw[str(booster_id)] = int(amount)
+        self._save()
+
+    def _gift_limit(self, boosts):
+        return 3 if int(boosts) >= 2 else 1
+
+    async def build_booster_panel(self, guild):
+        try:
+            active_members = list(guild.premium_subscribers)
+        except Exception:
+            active_members = [
+                m for m in guild.members
+                if self._get(guild.id, m.id) > 0 and m.premium_since is not None
+            ]
+
+        prime, elite = [], []
+        # Role yang didaftarkan lewat !boost_reqrole juga dihitung sebagai Req Role.
+        req_ids = set(self._req_role_ids(guild.id)) | set(self._benefit_roles(guild.id))
+        for member in active_members:
+            boosts = max(1, self._get(guild.id, member.id))
+            roles = {r.id for r in member.roles}
+            req_done = bool(req_ids.intersection(roles))
+            used = self._gift_used(guild.id, member.id)
+            limit = self._gift_limit(boosts)
+            line = (
+                f"{member.mention} · {'✅ Req Role' if req_done else '❌ Belum Req Role'}"
+                f" · Gift **{max(0, limit-used)}/{limit}**"
+            )
+            (elite if boosts >= 2 else prime).append((member.display_name.casefold(), line))
+
+        prime.sort(key=lambda x: x[0])
+        elite.sort(key=lambda x: x[0])
+
+        def section(title, rows):
+            if not rows:
+                return f"**{title}**\n> Belum ada member.\n"
+            shown = [item[1] for item in rows[:20]]
+            extra = len(rows) - len(shown)
+            if extra:
+                shown.append(f"*…dan {extra} member lainnya.*")
+            return f"**{title} · {len(rows)} member**\n" + "\n".join(shown) + "\n"
+
+        embed = discord.Embed(
+            title="NANZ SERVER — BOOSTER DIRECTORY",
+            description=(
+                "Daftar booster aktif dan status benefit mereka.\n"
+                "Pilih **Kelola Booster** untuk memberikan Req Role atau Gift Role.\n\n"
+                + section("💎 PRIME", prime)
+                + "\n"
+                + section("👑 ELITE", elite)
+            ),
+            color=discord.Color.from_rgb(130, 80, 255),
+            timestamp=discord.utils.utcnow(),
+        )
+        embed.add_field(
+            name="Benefit Gift Role",
+            value="💎 Prime: **1 gift** · 👑 Elite: **3 gift**",
+            inline=False,
+        )
+        embed.set_footer(text="nanZ Server • Booster Management")
+        return embed
+
+    async def refresh_booster_panel(self, guild, force_send=False):
+        channel = guild.get_channel(BOOSTER_PANEL_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(BOOSTER_PANEL_CHANNEL_ID)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                print(f"[Booster] Channel panel {BOOSTER_PANEL_CHANNEL_ID} tidak dapat diakses.")
+                return
+
+        embed = await self.build_booster_panel(guild)
+        view = BoosterPanelView(self)
+        meta = self._booster_meta()
+        saved_id = meta["panel_message_ids"].get(str(guild.id))
+
+        if saved_id and not force_send:
+            try:
+                message = await channel.fetch_message(int(saved_id))
+                await message.edit(embed=embed, view=view)
+                return
+            except discord.NotFound:
+                pass
+            except discord.HTTPException as exc:
+                print(f"[Booster] Gagal memperbarui panel: {exc}")
+                return
+
+        try:
+            message = await channel.send(embed=embed, view=view)
+            meta["panel_message_ids"][str(guild.id)] = message.id
+            self._save()
+        except discord.HTTPException as exc:
+            print(f"[Booster] Gagal mengirim panel booster: {exc}")
 
     # -------------------- ADMIN COMMANDS --------------------
     @commands.command(name="boost_set")
@@ -1567,6 +1698,10 @@ class Booster(commands.Cog):
         async with self._lock:
             self._set(ctx.guild.id, member.id, jumlah)
         await self.apply_roles(member, jumlah)
+        if jumlah == 0:
+            self._booster_meta()["gift_usage"].setdefault(str(ctx.guild.id), {}).pop(str(member.id), None)
+            self._save()
+        await self.refresh_booster_panel(ctx.guild)
         await ctx.send(f"Jumlah boost {member.mention} diatur menjadi **{jumlah}**.",
                        allowed_mentions=discord.AllowedMentions.none())
 
@@ -1599,6 +1734,7 @@ class Booster(commands.Cog):
             role_ids.remove(role.id)
             async with self._lock:
                 self._set_benefit_roles(ctx.guild.id, role_ids)
+            await self.refresh_booster_panel(ctx.guild)
             await ctx.send(f"Role {role.mention} **dihapus dari daftar benefit**. Sistem Booster tidak akan lagi mengelola role ini.",
                            allowed_mentions=discord.AllowedMentions.none())
             return
@@ -1612,6 +1748,7 @@ class Booster(commands.Cog):
                            allowed_mentions=discord.AllowedMentions.none())
             return
         await self.sync_benefit_roles(ctx.guild)
+        await self.refresh_booster_panel(ctx.guild)
         await ctx.send(f"Role {role.mention} **terdaftar sebagai benefit booster** dan konfigurasi disimpan.",
                        allowed_mentions=discord.AllowedMentions.none())
 
@@ -1652,5 +1789,209 @@ class Booster(commands.Cog):
                            allowed_mentions=discord.AllowedMentions.none())
 
 
+
+
+class BoosterPanelView(discord.ui.View):
+    """Persistent panel publik; kontrol pengelolaan dibuka secara privat."""
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(
+        label="Kelola Booster", style=discord.ButtonStyle.primary,
+        emoji="🛠️", custom_id="nanz_booster:manage"
+    )
+    async def manage(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_roles:
+            await interaction.response.send_message(
+                "Kamu memerlukan izin **Manage Roles** untuk mengelola booster.",
+                ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            "Pilih booster, role Req Role, penerima gift, dan role gift. "
+            "Setelah itu tekan tombol aksi yang sesuai.",
+            view=BoosterManageView(self.cog, interaction.guild),
+            ephemeral=True
+        )
+
+
+class _BoosterUserSelect(discord.ui.UserSelect):
+    def __init__(self, parent, mode, row):
+        self.parent_view = parent
+        self.mode = mode
+        super().__init__(
+            placeholder=("1. Pilih member booster" if mode == "booster"
+                         else "3. Pilih penerima Gift Role"),
+            min_values=1, max_values=1, row=row
+        )
+
+    async def callback(self, interaction):
+        member = self.values[0]
+        if self.mode == "booster":
+            self.parent_view.booster_id = member.id
+            label = f"Booster dipilih: {member.mention}"
+        else:
+            self.parent_view.recipient_id = member.id
+            label = f"Penerima gift dipilih: {member.mention}"
+        await interaction.response.send_message(label, ephemeral=True)
+
+
+class _BoosterRoleSelect(discord.ui.RoleSelect):
+    def __init__(self, parent, mode, row):
+        self.parent_view = parent
+        self.mode = mode
+        super().__init__(
+            placeholder=("2. Pilih Req Role" if mode == "req"
+                         else "4. Pilih Gift Role"),
+            min_values=1, max_values=1, row=row
+        )
+
+    async def callback(self, interaction):
+        role = self.values[0]
+        if self.mode == "req":
+            self.parent_view.req_role_id = role.id
+        else:
+            self.parent_view.gift_role_id = role.id
+        await interaction.response.send_message(
+            f"Role dipilih: {role.mention}", ephemeral=True
+        )
+
+
+class BoosterManageView(discord.ui.View):
+    """State seleksi terisolasi per-view karena view dibuat secara ephemeral."""
+    def __init__(self, cog, guild):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.guild = guild
+        self.booster_id = None
+        self.req_role_id = None
+        self.recipient_id = None
+        self.gift_role_id = None
+        self.add_item(_BoosterUserSelect(self, "booster", 0))
+        self.add_item(_BoosterRoleSelect(self, "req", 1))
+        self.add_item(_BoosterUserSelect(self, "recipient", 2))
+        self.add_item(_BoosterRoleSelect(self, "gift", 3))
+
+    async def interaction_check(self, interaction):
+        if not interaction.user.guild_permissions.manage_roles:
+            await interaction.response.send_message(
+                "Kamu tidak memiliki izin **Manage Roles**.", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Tambahkan Req Role", style=discord.ButtonStyle.success, row=4)
+    async def add_req_role(self, interaction, button):
+        if not self.booster_id or not self.req_role_id:
+            await interaction.response.send_message(
+                "Pilih member booster dan Req Role terlebih dahulu.", ephemeral=True
+            )
+            return
+        member = self.guild.get_member(self.booster_id)
+        role = self.guild.get_role(self.req_role_id)
+        if member is None or role is None:
+            await interaction.response.send_message(
+                "Member atau role tidak ditemukan. Coba pilih ulang.", ephemeral=True
+            )
+            return
+        if member.premium_since is None and self.cog._get(self.guild.id, member.id) <= 0:
+            await interaction.response.send_message(
+                "Member yang dipilih bukan booster aktif.", ephemeral=True
+            )
+            return
+        if role.is_default() or role.managed or role >= self.guild.me.top_role:
+            await interaction.response.send_message(
+                "Role tidak dapat diberikan. Periksa role managed dan hierarki role bot.",
+                ephemeral=True
+            )
+            return
+        try:
+            if role not in member.roles:
+                await member.add_roles(role, reason=f"Booster Req Role by {interaction.user}")
+            self.cog._set_req_role(self.guild.id, role.id)
+            await self.cog.refresh_booster_panel(self.guild)
+            await interaction.response.send_message(
+                f"✅ {role.mention} berhasil diberikan kepada {member.mention}. "
+                "Status Req Role pada panel sudah diperbarui.",
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "Bot tidak memiliki izin atau posisi role bot terlalu rendah.", ephemeral=True
+            )
+        except discord.HTTPException as exc:
+            await interaction.response.send_message(
+                f"Gagal memberikan role: {exc}", ephemeral=True
+            )
+
+    @discord.ui.button(label="Kirim Gift Role", style=discord.ButtonStyle.primary, row=4)
+    async def gift_role(self, interaction, button):
+        if not all((self.booster_id, self.recipient_id, self.gift_role_id)):
+            await interaction.response.send_message(
+                "Pilih booster, penerima gift, dan Gift Role terlebih dahulu.", ephemeral=True
+            )
+            return
+
+        booster = self.guild.get_member(self.booster_id)
+        recipient = self.guild.get_member(self.recipient_id)
+        role = self.guild.get_role(self.gift_role_id)
+        if booster is None or recipient is None or role is None:
+            await interaction.response.send_message(
+                "Member atau role tidak ditemukan. Pilih ulang.", ephemeral=True
+            )
+            return
+        boosts = self.cog._get(self.guild.id, booster.id)
+        if boosts <= 0 or booster.premium_since is None:
+            await interaction.response.send_message(
+                "Member yang dipilih bukan booster aktif.", ephemeral=True
+            )
+            return
+        limit = self.cog._gift_limit(boosts)
+        used = self.cog._gift_used(self.guild.id, booster.id)
+        if used >= limit:
+            await interaction.response.send_message(
+                f"❌ Kuota gift {booster.mention} sudah habis ({used}/{limit}).",
+                ephemeral=True
+            )
+            return
+        if role.is_default() or role.managed or role >= self.guild.me.top_role:
+            await interaction.response.send_message(
+                "Role gift tidak dapat diberikan. Periksa hierarki role bot.", ephemeral=True
+            )
+            return
+        if role in recipient.roles:
+            await interaction.response.send_message(
+                f"{recipient.mention} sudah memiliki {role.mention}. Slot gift tidak digunakan.",
+                ephemeral=True
+            )
+            return
+        try:
+            await recipient.add_roles(
+                role, reason=f"Gift role dari booster {booster} oleh {interaction.user}"
+            )
+            used += 1
+            self.cog._set_gift_used(self.guild.id, booster.id, used)
+            await self.cog.refresh_booster_panel(self.guild)
+            await interaction.response.send_message(
+                f"🎁 {role.mention} berhasil diberikan kepada {recipient.mention} "
+                f"atas benefit {booster.mention}. Sisa slot: **{limit-used}/{limit}**.",
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "Bot tidak memiliki izin atau posisi role bot terlalu rendah.", ephemeral=True
+            )
+        except discord.HTTPException as exc:
+            await interaction.response.send_message(
+                f"Gagal mengirim Gift Role: {exc}", ephemeral=True
+            )
+
+
 async def setup(bot):
-    await bot.add_cog(Booster(bot))
+    cog = Booster(bot)
+    await bot.add_cog(cog)
+    # View persistent agar tombol panel tetap aktif setelah restart.
+    bot.add_view(BoosterPanelView(cog))
